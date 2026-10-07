@@ -90,12 +90,12 @@ CMake auto-detects vcpkg when `VCPKG_ROOT` is set and picks a host triplet if no
 
 #### Build
 
-**Recommended** — helper script (bootstraps vcpkg if needed, writes `.ptpn-build-dir` so other scripts find the binary):
+**Recommended** — helper script (bootstraps vcpkg if needed, writes `.ptpn-build-dir` so `run.py` finds the binary):
 
 ```bash
-./scripts/build.py
-./scripts/build.py --test          # build + ctest
-./scripts/build.py --build-dir build-asan   # non-default build tree
+./build.py
+./build.py --test          # build + ctest
+./build.py --build-dir build-asan   # non-default build tree
 ```
 
 **Manual CMake:**
@@ -110,23 +110,22 @@ Executables:
 - `build/ptpn` — main analyzer
 - `build/test/ptpn_test` — unit tests
 
-Other scripts (`run.py`, `run_lbench.py`, …) resolve the `ptpn` binary automatically:
+`run.py` resolves the `ptpn` binary automatically:
 
 1. `--ptpn PATH` if you pass it explicitly
 2. environment variable `PTPN_BUILD_DIR` (CMake build directory)
-3. `.ptpn-build-dir` at the repo root (written by `./scripts/build.py`)
+3. `.ptpn-build-dir` at the repo root (written by `./build.py`)
 4. fallback: `build/ptpn`
 
 ```bash
 # typical workflow — no --ptpn needed
-./scripts/build.py
-python3 scripts/run.py
-python3 scripts/run_lbench.py --all -m 5000000 --extrapolation
+./build.py
+python3 run.py                      # every experiment (p/s/t-bench + l-bench)
 
 # custom build directory
-./scripts/build.py --build-dir build-asan
+./build.py --build-dir build-asan
 export PTPN_BUILD_DIR=build-asan   # or rely on the updated .ptpn-build-dir marker
-python3 scripts/run.py
+python3 run.py
 ```
 
 #### Run Tests
@@ -240,18 +239,14 @@ JSON `configuration.policy` and `--policy` accept values such as:
 ./build/ptpn export ptopner -f example/p-bench/initial.json -o out.ppn \
   --policy fixed_prior_with_restart
 
-# l-bench: generate progressive pipeline TDG JSON (10–100 tasks)
-python3 scripts/generate_lbench.py --all
-python3 scripts/generate_lbench.py --validate --all   # structure + TDG DOT only
-
-# l-bench: run scaling experiments (auto-finds build/ptpn via .ptpn-build-dir)
-python3 scripts/run_lbench.py --all -m 5000000 --extrapolation
-python3 scripts/run_lbench.py --reviewer-case -m 20000
-python3 scripts/run_lbench.py --all --validate-tdg-only
+# l-bench: scaling experiments (auto-finds build/ptpn via .ptpn-build-dir)
+python3 run.py --lbench-cases pipeline-40t-8c-5l -m 5000000 --extrapolation
+python3 run.py --reviewer-case -m 20000
+python3 run.py --skip-suites --validate-tdg-only
 
 # p/s/t-bench: export PTPN/SCG DOT, Romeo CTS, PToPNer .ppn
-python3 scripts/run.py
-python3 scripts/run.py --suites p-bench t-bench --profiles ptpn
+python3 run.py
+python3 run.py --suites p-bench t-bench --profiles ptpn
 ```
 
 ## Example Inputs

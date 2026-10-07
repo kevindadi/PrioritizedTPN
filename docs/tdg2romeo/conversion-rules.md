@@ -102,7 +102,7 @@ Romeo is intended for qualitative state-class exploration and benchmark comparis
 
 ```bash
 ./build/ptpn export romeo -f example/s-bench/a.json -o example/romeo/s-bench/a.cts
-python3 scripts/run.py --profiles romeo
+python3 run.py --profiles romeo
 ```
 
 Golden files live under [`example/romeo/`](../../example/romeo/).
