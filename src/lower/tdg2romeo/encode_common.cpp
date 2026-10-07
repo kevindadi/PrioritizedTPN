@@ -302,9 +302,6 @@ void add_start_tokens(EncodeContext& ctx, const tdg::TDG& tdg) {
 
 void add_periodic_releases(EncodeContext& ctx, const tdg::TDG& tdg) {
   for (const auto& periodic : tdg.periodic_tasks) {
-    if (has_self_loop_release(tdg, periodic.task)) {
-      continue;
-    }
     const auto node_it = ctx.nodes.find(periodic.task);
     if (node_it == ctx.nodes.end()) {
       spdlog::warn("[TDG2ROMEO] Periodic task not found: {}", periodic.task);

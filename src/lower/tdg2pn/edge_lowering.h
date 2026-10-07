@@ -11,7 +11,7 @@ namespace converter::detail {
 //    task -> task        bridge transition, interval parsed from the edge label
 //    task -> fork/join   direct arc into the fork/join transition (label ignored)
 //    fork/join -> task   direct arc from the fork/join transition (label ignored)
-//    self-loop           label = period -> deadline monitor sub-net
+//    self-loop           ignored (allowed annotation, no monitor sub-net)
 //    dashed style        periodic release binding (handled by binding lowering)
 void lower_edges(petri::PTPN& ptpn, const tdg::TDG& tdg);
 

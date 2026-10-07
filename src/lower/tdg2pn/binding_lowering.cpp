@@ -16,12 +16,6 @@ bool has_non_self_successor(const tdg::TDG& tdg, const std::string& task_name) {
                      [&](const TdgEdge& edge) { return edge.leaves(task_name); });
 }
 
-bool has_self_loop_release(const tdg::TDG& tdg, const std::string& task_name) {
-  return std::any_of(tdg.tdg_edges.begin(), tdg.tdg_edges.end(), [&](const TdgEdge& edge) {
-    return edge.source == task_name && edge.is_self_loop();
-  });
-}
-
 void add_consume_transition(petri::PTPN& ptpn, const std::string& task_name,
                             petri::NodeRef end_ref) {
   const petri::TransitionId consume_trans = add_control_transition(ptpn, task_name + "_consume");
@@ -67,10 +61,6 @@ void add_end_consumers(petri::PTPN& ptpn, const tdg::TDG& tdg) {
 
 void add_periodic_release_bindings(petri::PTPN& ptpn, const tdg::TDG& tdg) {
   for (const auto& periodic_task : tdg.periodic_tasks) {
-    if (has_self_loop_release(tdg, periodic_task.task)) {
-      continue;
-    }
-
     const auto node_it = ptpn.node_start_end_map.find(periodic_task.task);
     const auto type_it = tdg.nodes_type.find(periodic_task.task);
     if (node_it == ptpn.node_start_end_map.end() || type_it == tdg.nodes_type.end()) {

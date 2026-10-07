@@ -74,12 +74,6 @@ bool has_non_self_successor(const tdg::TDG& tdg, const std::string& task_name) {
                      [&](const TdgEdge& edge) { return edge.leaves(task_name); });
 }
 
-bool has_self_loop_release(const tdg::TDG& tdg, const std::string& task_name) {
-  return std::any_of(tdg.tdg_edges.begin(), tdg.tdg_edges.end(), [&](const TdgEdge& edge) {
-    return edge.source == task_name && edge.is_self_loop();
-  });
-}
-
 std::unordered_map<int, std::vector<std::string>> group_tasks_by_core(const tdg::TDG& tdg) {
   std::unordered_map<int, std::vector<std::string>> by_core;
   for (const auto& node : tdg.all_task) {

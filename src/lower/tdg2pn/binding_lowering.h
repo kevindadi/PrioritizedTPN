@@ -10,8 +10,6 @@ namespace converter::detail {
 void add_start_bindings(petri::PTPN& ptpn, const tdg::TDG& tdg);
 
 // Periodic release sub-net: (period) -> [fire(P)] -> (period), (entry).
-// Skipped for tasks that already express periodic activation via a self-loop
-// release edge.
 void add_periodic_release_bindings(petri::PTPN& ptpn, const tdg::TDG& tdg);
 
 // Sink consume transitions for leaf tasks and explicit `end` tasks.

@@ -32,8 +32,6 @@ struct NodeEndpoints {
 
 bool has_non_self_successor(const tdg::TDG& tdg, const std::string& task_name);
 
-bool has_self_loop_release(const tdg::TDG& tdg, const std::string& task_name);
-
 std::unordered_map<int, std::vector<std::string>> group_tasks_by_core(const tdg::TDG& tdg);
 
 std::string core_place_name(int core_id);

@@ -199,8 +199,10 @@ Special cases:
 - If the edge `source` **or** `target` is a `fork`/`join`, the edge wires
   directly into that fork/join transition and the `label` is **ignored**
   (put timing on the fork/join node's `time` field instead).
-- A **self-loop** edge (`source == target`) uses the label as the task
-  **period** (a single integer), driving a periodic release.
+- A **self-loop** edge (`source == target`) is allowed as an annotation but is
+  **ignored** by lowering: the model captures task dependencies and task
+  attributes, not monitor sub-nets. Periodic activation comes from the
+  `periodic` configuration entry (or a dashed edge).
 - A **dashed** edge (`"style": "dashed"`) is a periodic release binding; its
   label is not used as a transition interval.
 
@@ -278,7 +280,6 @@ Warnings:
 
 - `start` task has predecessor edges
 - `end` task has successor edges
-- `periodic` task already has a self-loop release edge
 - No task nodes in the graph
 - `fork` or `join` nodes declare `locks` (ignored)
 - `fork` or `join` nodes declare more than one `time` interval (only the first is used)

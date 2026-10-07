@@ -81,45 +81,6 @@ petri::TimeInterval parse_edge_interval(const std::string& label, const std::str
   return petri::TimeInterval(earliest, latest);
 }
 
-void add_monitor(petri::PTPN& ptpn, const std::string& task_name, int task_period_time,
-                 petri::PlaceId start, petri::PlaceId end) {
-  const petri::PlaceId deadline = ptpn.add_place(task_name + "deadline", 1);
-  const petri::PlaceId timeout = ptpn.add_place(task_name + "timeout", 1);
-  const petri::PlaceId ok = ptpn.add_place(task_name + "ok", 1);
-  const petri::PlaceId end_place = ptpn.add_place(task_name + "end", 1);
-
-  const petri::TransitionId timed = add_control_transition(
-      ptpn, task_name + "timed", petri::TimeInterval(task_period_time, task_period_time));
-  const petri::TransitionId ending = add_control_transition(ptpn, task_name + "ending");
-  const petri::TransitionId complete = add_control_transition(ptpn, task_name + "complete");
-  const petri::TransitionId timeout_transition = add_control_transition(ptpn, task_name + "out");
-
-  ptpn.set_post_arc(ending, end_place, 1);
-  ptpn.set_pre_arc(end_place, complete, 1);
-  ptpn.set_post_arc(complete, ok, 1);
-  // Completion cancels the pending deadline: `complete` consumes the deadline
-  // token, so a task that finishes in time can never reach the timeout place.
-  ptpn.set_pre_arc(deadline, complete, 1);
-  ptpn.set_pre_arc(deadline, timeout_transition, 1);
-  ptpn.set_post_arc(timeout_transition, timeout, 1);
-
-  ptpn.set_pre_arc(end, ending, 1);
-
-  ptpn.set_pre_arc(start, timed, 1);
-  ptpn.set_post_arc(timed, deadline, 1);
-}
-
-void handle_self_loop(petri::PTPN& ptpn, const std::string& label, const std::string& source_name) {
-  const int task_period_time = std::stoi(label);
-  const auto task_start_end = ptpn.node_start_end_map.find(source_name);
-  if (task_start_end == ptpn.node_start_end_map.end()) {
-    throw std::runtime_error("Start/end nodes not found for: " + source_name);
-  }
-
-  add_monitor(ptpn, source_name, task_period_time, task_start_end->second.first.as_place(),
-              task_start_end->second.second.as_place());
-}
-
 void handle_dashed(petri::PTPN& ptpn, const std::string& source_name,
                    const std::string& target_name) {
   // Dashed edges are handled by periodic release bindings; no direct arc is
@@ -188,7 +149,10 @@ void lower_edges(petri::PTPN& ptpn, const tdg::TDG& tdg) {
   for (const auto& edge : tdg.tdg_edges) {
     try {
       if (edge.is_self_loop()) {
-        handle_self_loop(ptpn, edge.label, edge.source);
+        // Self-loops are allowed as annotations but carry no lowering: the
+        // model captures task dependencies and task attributes, not monitor
+        // sub-nets.
+        spdlog::debug("[TDG2PN] Ignoring self-loop edge on {}", edge.source);
         continue;
       }
 

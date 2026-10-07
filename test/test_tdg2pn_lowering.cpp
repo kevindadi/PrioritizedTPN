@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <string>
 
@@ -34,12 +35,49 @@ size_t find_transition(const petri::PTPN& net, const std::string& name) {
   return SIZE_MAX;
 }
 
+const char* kBaseGraph = R"({
+  "graph": {"name": "SelfLoop"},
+  "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed"},
+  "nodes": [
+    {"id": "A", "type": "task", "priority": 1, "core": 0, "time": [[2, 2]], "locks": []}
+  ],
+  "edges": []
+})";
+
+const char* kSelfLoopGraph = R"({
+  "graph": {"name": "SelfLoop"},
+  "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed"},
+  "nodes": [
+    {"id": "A", "type": "task", "priority": 1, "core": 0, "time": [[2, 2]], "locks": []}
+  ],
+  "edges": [{"source": "A", "target": "A", "label": "10"}]
+})";
+
 }  // namespace
 
-TEST(Tdg2pnLoweringTest, SelfLoopMonitorCompletionCancelsDeadline) {
+TEST(Tdg2pnLoweringTest, SelfLoopEdgeIsIgnored) {
+  const petri::PTPN plain = lower(kBaseGraph);
+  const petri::PTPN looped = lower(kSelfLoopGraph);
+
+  // The self-loop is an allowed annotation but lowers to nothing: same net,
+  // and no monitor sub-net places/transitions appear.
+  EXPECT_EQ(looped.num_places(), plain.num_places());
+  EXPECT_EQ(looped.num_transitions(), plain.num_transitions());
+  EXPECT_EQ(find_place(looped, "Adeadline"), SIZE_MAX);
+  EXPECT_EQ(find_place(looped, "Atimeout"), SIZE_MAX);
+  EXPECT_EQ(find_transition(looped, "Acomplete"), SIZE_MAX);
+  EXPECT_EQ(find_transition(looped, "Aout"), SIZE_MAX);
+}
+
+TEST(Tdg2pnLoweringTest, PeriodicReleaseAppliesDespiteSelfLoopEdge) {
   const std::string json = R"({
-    "graph": {"name": "Monitor"},
-    "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed"},
+    "graph": {"name": "SelfLoopPeriodic"},
+    "configuration": {
+      "num_cpus": 1,
+      "cores_per_cpu": 1,
+      "policy": "fixed",
+      "periodic": [{"task": "A", "period": 10}]
+    },
     "nodes": [
       {"id": "A", "type": "task", "priority": 1, "core": 0, "time": [[2, 2]], "locks": []}
     ],
@@ -47,20 +85,6 @@ TEST(Tdg2pnLoweringTest, SelfLoopMonitorCompletionCancelsDeadline) {
   })";
 
   const petri::PTPN net = lower(json);
-
-  const size_t deadline = find_place(net, "Adeadline");
-  const size_t end_place = find_place(net, "Aend");
-  const size_t complete = find_transition(net, "Acomplete");
-  const size_t timeout_transition = find_transition(net, "Aout");
-  ASSERT_NE(deadline, SIZE_MAX);
-  ASSERT_NE(end_place, SIZE_MAX);
-  ASSERT_NE(complete, SIZE_MAX);
-  ASSERT_NE(timeout_transition, SIZE_MAX);
-
-  const auto& pre = net.get_pre_matrix();
-  // Completion consumes the end marker and cancels the pending deadline.
-  EXPECT_EQ(pre[end_place][complete], 1);
-  EXPECT_EQ(pre[deadline][complete], 1);
-  // The timeout transition competes for the same deadline token.
-  EXPECT_EQ(pre[deadline][timeout_transition], 1);
+  EXPECT_NE(find_place(net, "A_period"), SIZE_MAX);
+  EXPECT_NE(find_transition(net, "A_fire"), SIZE_MAX);
 }

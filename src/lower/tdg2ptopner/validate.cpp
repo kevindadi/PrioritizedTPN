@@ -11,10 +11,6 @@ bool is_dashed_edge(const std::string& style) {
   return style.find("dashed") != std::string::npos;
 }
 
-bool is_self_loop_edge(const std::string& source, const std::string& target) {
-  return source == target;
-}
-
 void validate_point_intervals(const tdg::TDG& tdg, PtopnerValidationResult& result) {
   for (const auto& [name, node_type] : tdg.nodes_type) {
     std::vector<std::pair<int, int>> times;

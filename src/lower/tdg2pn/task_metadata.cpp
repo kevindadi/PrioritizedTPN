@@ -1,27 +1,16 @@
 #include "lower/tdg2pn/task_metadata.h"
 
-#include <exception>
 #include <string>
 #include <unordered_map>
 
 namespace converter::detail {
 
 void populate_task_info(petri::PTPN& ptpn, const tdg::TDG& tdg) {
-  // Period from explicit periodic bindings, then from self-loop edge labels
-  // (the deadline monitor uses the same value).
+  // Period comes from the explicit periodic bindings; tasks without one are
+  // aperiodic.
   std::unordered_map<std::string, int> period_of;
   for (const auto& binding : tdg.periodic_tasks) {
     period_of[binding.task] = binding.period;
-  }
-  for (const auto& edge : tdg.tdg_edges) {
-    if (!edge.is_self_loop() || period_of.count(edge.source)) {
-      continue;
-    }
-    try {
-      period_of[edge.source] = std::stoi(edge.label);
-    } catch (const std::exception&) {
-      // Non-numeric self-loop label: leave aperiodic.
-    }
   }
 
   for (const auto& node : tdg.all_task) {

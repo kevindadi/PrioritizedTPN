@@ -95,12 +95,6 @@ bool has_outgoing_edge(const parse::JsonGraph& graph, const std::string& node_id
   });
 }
 
-bool has_self_loop_edge(const parse::JsonGraph& graph, const std::string& node_id) {
-  return any_edge(graph, [&](const parse::JsonEdge& edge) {
-    return edge.source == node_id && edge.target == node_id;
-  });
-}
-
 std::string build_node_label(const parse::JsonNode& node) {
   std::ostringstream oss;
   oss << node.id << "\\n" << node.type;
@@ -455,10 +449,6 @@ ValidationResult Parser::validate() const {
     }
     if (periodic_task.period <= 0) {
       result.add_error("Periodic task period must be positive: " + periodic_task.task);
-    }
-    if (has_self_loop_edge(graph_, periodic_task.task)) {
-      result.add_warning("Periodic task " + periodic_task.task +
-                         " already has a self-loop release edge");
     }
   }
 
