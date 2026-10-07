@@ -117,42 +117,128 @@ else()
     message(STATUS "Boost ${Boost_VERSION} (system paths)")
 endif()
 
-include_directories(src)
-
-# Core library containing all logic
-add_library(PTPN_core STATIC
+# Module libraries. Each target owns one layer of the pipeline and declares
+# only the dependencies it actually uses, so build order and layering stay
+# explicit. `PTPN_core` below is the aggregate used by the executables.
+add_library(ptpn_types STATIC
     src/types/types.cpp
+)
+target_include_directories(ptpn_types PUBLIC src)
+
+add_library(ptpn_json STATIC
     src/json/json.cpp
+)
+target_link_libraries(ptpn_json
+    PUBLIC
+    ptpn_types
+    nlohmann_json::nlohmann_json
+    PRIVATE
+    spdlog::spdlog
+)
+
+add_library(ptpn_tdg STATIC
     src/tdg/tdg.cpp
+)
+target_link_libraries(ptpn_tdg
+    PUBLIC
+    ptpn_types
+    PRIVATE
+    ptpn_json
+    spdlog::spdlog
+)
+
+add_library(ptpn_petri STATIC
     src/petri/petri.cpp
     src/petri/export_ptpn.cpp
     src/petri/export_dot.cpp
+)
+target_link_libraries(ptpn_petri
+    PUBLIC
+    ptpn_types
+    Boost::filesystem
+    PRIVATE
+    spdlog::spdlog
+)
+
+add_library(ptpn_lowering STATIC
     src/tdg2pn/tdg2pn.cpp
+)
+target_link_libraries(ptpn_lowering
+    PUBLIC
+    ptpn_petri
+    ptpn_tdg
+    PRIVATE
+    spdlog::spdlog
+)
+
+add_library(ptpn_romeo STATIC
     src/tdg2romeo/cts_writer.cpp
     src/tdg2romeo/encode_common.cpp
     src/tdg2romeo/inhibitor_arc.cpp
     src/tdg2romeo/scheduling_net.cpp
     src/tdg2romeo/tdg2romeo.cpp
     src/tdg2romeo/tdg_helpers.cpp
+)
+target_link_libraries(ptpn_romeo
+    PUBLIC
+    ptpn_tdg
+    PRIVATE
+    Boost::filesystem
+    spdlog::spdlog
+)
+
+add_library(ptpn_ptopner STATIC
     src/tdg2ptopner/validate.cpp
     src/tdg2ptopner/export_ppn.cpp
     src/tdg2ptopner/ptpn_to_ppn.cpp
     src/tdg2ptopner/tdg2ptopner.cpp
+)
+target_link_libraries(ptpn_ptopner
+    PUBLIC
+    ptpn_petri
+    ptpn_tdg
+    PRIVATE
+    ptpn_lowering
+    spdlog::spdlog
+)
+
+add_library(ptpn_parser STATIC
+    src/parser/ptpn_parser.cpp
+)
+target_link_libraries(ptpn_parser
+    PUBLIC
+    ptpn_petri
+)
+
+add_library(ptpn_analysis STATIC
     src/analysis/dbm.cpp
     src/analysis/state_class.cpp
     src/analysis/ptpn_analysis.cpp
     src/analysis/canonicalization.cpp
     src/analysis/scheduling.cpp
     src/analysis/metrics.cpp
-    src/parser/ptpn_parser.cpp
 )
-target_include_directories(PTPN_core PUBLIC src)
-target_link_libraries(PTPN_core PUBLIC
+target_link_libraries(ptpn_analysis
+    PUBLIC
+    ptpn_petri
     Boost::graph
-    Boost::filesystem
-    Boost::thread
-    Boost::date_time
-    nlohmann_json::nlohmann_json
+    PRIVATE
+    spdlog::spdlog
+)
+
+# Aggregate facade kept for the executables and tests.
+add_library(PTPN_core INTERFACE)
+target_link_libraries(PTPN_core
+    INTERFACE
+    ptpn_types
+    ptpn_json
+    ptpn_tdg
+    ptpn_petri
+    ptpn_lowering
+    ptpn_romeo
+    ptpn_ptopner
+    ptpn_parser
+    ptpn_analysis
     spdlog::spdlog
     fmt::fmt
 )
