@@ -26,8 +26,8 @@ void add_consume_transition(petri::PTPN& ptpn, const std::string& task_name,
 
 void add_start_bindings(petri::PTPN& ptpn, const tdg::TDG& tdg) {
   for (const auto& start_binding : tdg.start_tasks) {
-    const auto node_it = ptpn.node_start_end_map.find(start_binding.task);
-    if (node_it == ptpn.node_start_end_map.end()) {
+    const auto node_it = ptpn.node_start_end_map().find(start_binding.task);
+    if (node_it == ptpn.node_start_end_map().end()) {
       spdlog::warn("[TDG2PN] Start task not found in node map: {}", start_binding.task);
       continue;
     }
@@ -50,8 +50,8 @@ void add_end_consumers(petri::PTPN& ptpn, const tdg::TDG& tdg) {
   consume_tasks.insert(tdg.end_tasks.begin(), tdg.end_tasks.end());
 
   for (const auto& task_name : consume_tasks) {
-    const auto node_it = ptpn.node_start_end_map.find(task_name);
-    if (node_it == ptpn.node_start_end_map.end()) {
+    const auto node_it = ptpn.node_start_end_map().find(task_name);
+    if (node_it == ptpn.node_start_end_map().end()) {
       spdlog::warn("[TDG2PN] End task not found in node map: {}", task_name);
       continue;
     }
@@ -61,9 +61,9 @@ void add_end_consumers(petri::PTPN& ptpn, const tdg::TDG& tdg) {
 
 void add_periodic_release_bindings(petri::PTPN& ptpn, const tdg::TDG& tdg) {
   for (const auto& periodic_task : tdg.periodic_tasks) {
-    const auto node_it = ptpn.node_start_end_map.find(periodic_task.task);
+    const auto node_it = ptpn.node_start_end_map().find(periodic_task.task);
     const auto type_it = tdg.nodes_type.find(periodic_task.task);
-    if (node_it == ptpn.node_start_end_map.end() || type_it == tdg.nodes_type.end()) {
+    if (node_it == ptpn.node_start_end_map().end() || type_it == tdg.nodes_type.end()) {
       spdlog::warn("[TDG2PN] Periodic task not found for release binding: {}", periodic_task.task);
       continue;
     }

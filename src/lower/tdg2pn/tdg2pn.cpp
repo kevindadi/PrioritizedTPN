@@ -16,13 +16,7 @@ void TDG2PN::transform(const tdg::TDG& tdg, petri::PTPN& ptpn) {
   try {
     spdlog::info("[TDG2PN] Starting TDG to PTPN transformation");
 
-    ptpn.node_start_end_map.clear();
-    ptpn.node_pn_map.clear();
-    ptpn.cpus_place.clear();
-    ptpn.core_parallelism.clear();
-    ptpn.locks_place.clear();
-    ptpn.task_info.clear();
-    ptpn.node_index = 0;
+    ptpn.clear_lowering_metadata();
 
     spdlog::info("[TDG2PN] Transforming vertices");
     detail::lower_vertices(ptpn, tdg);
@@ -42,7 +36,7 @@ void TDG2PN::transform(const tdg::TDG& tdg, petri::PTPN& ptpn) {
     detail::populate_task_info(ptpn, tdg);
 
     spdlog::info("[TDG2PN] TDG transformation completed: {} places, {} transitions",
-                 ptpn.places.size(), ptpn.transitions.size());
+                 ptpn.num_places(), ptpn.num_transitions());
 
     if (!ptpn.verify_structure()) {
       spdlog::warn("[TDG2PN] Structure verification failed, continuing anyway");

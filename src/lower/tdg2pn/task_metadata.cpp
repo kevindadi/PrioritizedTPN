@@ -36,7 +36,7 @@ void populate_task_info(petri::PTPN& ptpn, const tdg::TDG& tdg) {
     } else {
       info.locks = task->lock;
     }
-    ptpn.task_info[task->name] = std::move(info);
+    ptpn.set_task_info(task->name, std::move(info));
   }
 }
 

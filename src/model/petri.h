@@ -220,110 +220,220 @@ struct TaskInfo {
   std::vector<std::string> locks;
 };
 
+// A Priority Timed Petri Net.
+//
+// Data is private: construction goes through the add_*/set_* methods, and
+// readers use the accessors below. The lowering pipeline is the only writer;
+// the analysis layer receives `const PTPN&` and can never mutate the net.
 class PTPN {
  public:
   PTPN() = default;
 
+  // --- Construction ------------------------------------------------------
+
   PlaceId add_place(const std::string& name, int capacity = 1, bool saturate = false) {
-    places.emplace_back(std::to_string(places.size()), name, capacity, saturate);
-    Pre.emplace_back(std::vector<int>(transitions.size(), 0));
-    M0.push_back(0);
-    for (auto& row : Post) {
+    places_.emplace_back(std::to_string(places_.size()), name, capacity, saturate);
+    pre_matrix_.emplace_back(std::vector<int>(transitions_.size(), 0));
+    m0_.push_back(0);
+    for (auto& row : post_matrix_) {
       row.push_back(0);
     }
-    return PlaceId{places.size() - 1};
+    return PlaceId{places_.size() - 1};
   }
 
   TransitionId add_transition(const std::string& name,
                               const TimeInterval& interval = TimeInterval(), int priority = INT_MAX,
                               int core = -1, bool suspendable = false) {
-    transitions.emplace_back(std::to_string(transitions.size()), name, interval, priority, core,
-                             suspendable);
-    for (auto& row : Pre) {
+    transitions_.emplace_back(std::to_string(transitions_.size()), name, interval, priority, core,
+                              suspendable);
+    for (auto& row : pre_matrix_) {
       row.push_back(0);
     }
-    Post.emplace_back(std::vector<int>(places.size(), 0));
-    pre_arcs.emplace_back();
-    post_arcs.emplace_back();
-    return TransitionId{transitions.size() - 1};
+    post_matrix_.emplace_back(std::vector<int>(places_.size(), 0));
+    pre_arcs_.emplace_back();
+    post_arcs_.emplace_back();
+    return TransitionId{transitions_.size() - 1};
   }
 
   void set_pre_arc(PlaceId place, TransitionId transition, int weight = 1) {
-    if (place.index() >= Pre.size() || transition.index() >= transitions.size()) {
+    if (place.index() >= pre_matrix_.size() || transition.index() >= transitions_.size()) {
       throw std::out_of_range("Invalid place or transition index");
     }
-    Pre[place.index()][transition.index()] = weight;
+    pre_matrix_[place.index()][transition.index()] = weight;
     rebuild_sparse_arcs();
   }
 
   void set_post_arc(TransitionId transition, PlaceId place, int weight = 1) {
-    if (transition.index() >= Post.size() || place.index() >= places.size()) {
+    if (transition.index() >= post_matrix_.size() || place.index() >= places_.size()) {
       throw std::out_of_range("Invalid transition or place index");
     }
-    Post[transition.index()][place.index()] = weight;
+    post_matrix_[transition.index()][place.index()] = weight;
     rebuild_sparse_arcs();
   }
 
   void set_initial_marking(const Marking& marking) {
-    if (marking.size() != places.size()) {
+    if (marking.size() != places_.size()) {
       throw std::invalid_argument("Marking size must match number of places");
     }
-    M0 = marking;
+    m0_ = marking;
   }
 
   void set_initial_marking(PlaceId place, int tokens) {
-    if (place.index() >= places.size()) {
+    if (place.index() >= places_.size()) {
       throw std::out_of_range("Invalid place index");
     }
     if (tokens < 0) {
       throw std::invalid_argument("Token count cannot be negative");
     }
-    M0[place.index()] = tokens;
+    m0_[place.index()] = tokens;
   }
 
+  // --- Lowering metadata -------------------------------------------------
+
+  // Flips the suspendable flag of an already-created transition (used by the
+  // restart preemption strategy and by spin-lock lowering).
+  void set_suspendable(TransitionId transition, bool suspendable) {
+    if (transition.index() >= transitions_.size()) {
+      throw std::out_of_range("Invalid transition index");
+    }
+    transitions_[transition.index()].suspendable = suspendable;
+  }
+
+  // Maximum number of transitions that may run simultaneously on a real core.
+  void set_core_parallelism(int core_id, int parallelism) {
+    core_parallelism_[core_id] = parallelism;
+  }
+
+  // Monotonic counter used to name generated nodes (Fork0, Join1, ...).
+  size_t next_node_index() {
+    return node_index_++;
+  }
+
+  void set_node_span(const std::string& name, NodeRef start, NodeRef end) {
+    node_start_end_map_[name] = {start, end};
+  }
+
+  void set_task_chain(const std::string& task, std::vector<NodeRef> chain) {
+    node_pn_map_[task] = std::move(chain);
+  }
+
+  void add_cpu_place(PlaceId place) {
+    cpus_place_.push_back(place);
+  }
+
+  void set_lock_place(const std::string& lock, PlaceId place) {
+    locks_place_[lock] = place;
+  }
+
+  void set_task_info(const std::string& task, TaskInfo info) {
+    task_info_[task] = std::move(info);
+  }
+
+  void clear_lowering_metadata() {
+    node_start_end_map_.clear();
+    node_pn_map_.clear();
+    cpus_place_.clear();
+    core_parallelism_.clear();
+    locks_place_.clear();
+    task_info_.clear();
+    node_index_ = 0;
+  }
+
+  // --- Read-only access --------------------------------------------------
+
   [[nodiscard]] size_t num_places() const {
-    return places.size();
+    return places_.size();
   }
 
   [[nodiscard]] size_t num_transitions() const {
-    return transitions.size();
+    return transitions_.size();
+  }
+
+  [[nodiscard]] const std::vector<Place>& places() const {
+    return places_;
+  }
+
+  [[nodiscard]] const std::vector<Transition>& transitions() const {
+    return transitions_;
   }
 
   [[nodiscard]] const Place& get_place(PlaceId place) const {
-    if (place.index() >= places.size()) {
+    if (place.index() >= places_.size()) {
       throw std::out_of_range("Invalid place index");
     }
-    return places[place.index()];
+    return places_[place.index()];
   }
 
   [[nodiscard]] const Transition& get_transition(TransitionId transition) const {
-    if (transition.index() >= transitions.size()) {
+    if (transition.index() >= transitions_.size()) {
       throw std::out_of_range("Invalid transition index");
     }
-    return transitions[transition.index()];
+    return transitions_[transition.index()];
   }
 
   [[nodiscard]] const Marking& get_marking() const {
-    return M0;
+    return m0_;
   }
 
   [[nodiscard]] const std::vector<std::vector<int>>& get_pre_matrix() const {
-    return Pre;
+    return pre_matrix_;
   }
 
   [[nodiscard]] const std::vector<std::vector<int>>& get_post_matrix() const {
-    return Post;
+    return post_matrix_;
   }
 
+  [[nodiscard]] const std::vector<std::vector<std::pair<size_t, int>>>& pre_arcs() const {
+    return pre_arcs_;
+  }
+
+  [[nodiscard]] const std::vector<std::vector<std::pair<size_t, int>>>& post_arcs() const {
+    return post_arcs_;
+  }
+
+  [[nodiscard]] const std::map<std::string, std::pair<NodeRef, NodeRef>>& node_start_end_map()
+      const {
+    return node_start_end_map_;
+  }
+
+  [[nodiscard]] const std::unordered_map<std::string, std::vector<NodeRef>>& node_pn_map() const {
+    return node_pn_map_;
+  }
+
+  [[nodiscard]] const std::vector<PlaceId>& cpu_places() const {
+    return cpus_place_;
+  }
+
+  [[nodiscard]] const std::unordered_map<std::string, PlaceId>& lock_places() const {
+    return locks_place_;
+  }
+
+  [[nodiscard]] const std::unordered_map<std::string, TaskInfo>& task_info() const {
+    return task_info_;
+  }
+
+  // How many transitions may run simultaneously on `core_id`. Returns 0 to mean
+  // "no bound": the control core (-1) is never resource-limited, and cores
+  // without a registered parallelism keep the legacy highest-priority behaviour.
+  [[nodiscard]] int parallelism_of_core(int core_id) const {
+    if (core_id < 0) {
+      return 0;
+    }
+    auto it = core_parallelism_.find(core_id);
+    return it == core_parallelism_.end() ? 0 : it->second;
+  }
+
+  // --- Semantics ---------------------------------------------------------
+
   static bool is_enabled(const Marking& M, const PTPN& net, TransitionId transition) {
-    if (transition.index() >= net.transitions.size()) {
+    if (transition.index() >= net.transitions_.size()) {
       throw std::out_of_range("Invalid transition index");
     }
-    if (M.size() != net.places.size()) {
+    if (M.size() != net.places_.size()) {
       throw std::invalid_argument("Marking size must match number of places");
     }
 
-    for (const auto& [place_idx, weight] : net.pre_arcs[transition.index()]) {
+    for (const auto& [place_idx, weight] : net.pre_arcs_[transition.index()]) {
       if (M[place_idx] < weight) {
         return false;
       }
@@ -342,13 +452,13 @@ class PTPN {
 
     Marking new_marking = M;
 
-    for (const auto& [place_idx, weight] : net.pre_arcs[transition.index()]) {
+    for (const auto& [place_idx, weight] : net.pre_arcs_[transition.index()]) {
       new_marking[place_idx] -= weight;
     }
 
-    for (const auto& [place_idx, weight] : net.post_arcs[transition.index()]) {
+    for (const auto& [place_idx, weight] : net.post_arcs_[transition.index()]) {
       new_marking[place_idx] += weight;
-      const auto& place = net.places[place_idx];
+      const auto& place = net.places_[place_idx];
       if (place.capacity != INF && new_marking[place_idx] > place.capacity) {
         // Firing always happens (enabling is input-driven). Overflow is clamped
         // to capacity; a NON-saturating place being clamped is recorded as an
@@ -366,35 +476,37 @@ class PTPN {
   [[nodiscard]] std::string to_string() const {
     std::ostringstream oss;
     oss << "=== PTPN ===\n";
-    oss << "Places (" << places.size() << "):\n";
-    for (size_t i = 0; i < places.size(); ++i) {
-      oss << "  P" << i << ": " << places[i].name
-          << " [capacity=" << (places[i].capacity == INF ? "∞" : std::to_string(places[i].capacity))
-          << ", tokens=" << M0[i] << "]\n";
+    oss << "Places (" << places_.size() << "):\n";
+    for (size_t i = 0; i < places_.size(); ++i) {
+      oss << "  P" << i << ": " << places_[i].name << " [capacity="
+          << (places_[i].capacity == INF ? "∞" : std::to_string(places_[i].capacity))
+          << ", tokens=" << m0_[i] << "]\n";
     }
 
-    oss << "\nTransitions (" << transitions.size() << "):\n";
-    for (size_t i = 0; i < transitions.size(); ++i) {
-      oss << "  T" << i << ": " << transitions[i].name
-          << " [time=" << transitions[i].time_interval.to_string()
-          << ", priority=" << transitions[i].priority << ", core=" << transitions[i].core
-          << ", suspendable=" << (transitions[i].suspendable ? "yes" : "no") << "]\n";
+    oss << "\nTransitions (" << transitions_.size() << "):\n";
+    for (size_t i = 0; i < transitions_.size(); ++i) {
+      oss << "  T" << i << ": " << transitions_[i].name
+          << " [time=" << transitions_[i].time_interval.to_string()
+          << ", priority=" << transitions_[i].priority << ", core=" << transitions_[i].core
+          << ", suspendable=" << (transitions_[i].suspendable ? "yes" : "no") << "]\n";
     }
 
-    oss << "\nPre Matrix (" << Pre.size() << "x" << (Pre.empty() ? 0 : Pre[0].size()) << "):\n";
-    for (size_t p = 0; p < Pre.size(); ++p) {
+    oss << "\nPre Matrix (" << pre_matrix_.size() << "x"
+        << (pre_matrix_.empty() ? 0 : pre_matrix_[0].size()) << "):\n";
+    for (size_t p = 0; p < pre_matrix_.size(); ++p) {
       oss << "  P" << p << ": ";
-      for (size_t t = 0; t < Pre[p].size(); ++t) {
-        oss << Pre[p][t] << " ";
+      for (size_t t = 0; t < pre_matrix_[p].size(); ++t) {
+        oss << pre_matrix_[p][t] << " ";
       }
       oss << "\n";
     }
 
-    oss << "\nPost Matrix (" << Post.size() << "x" << (Post.empty() ? 0 : Post[0].size()) << "):\n";
-    for (size_t t = 0; t < Post.size(); ++t) {
+    oss << "\nPost Matrix (" << post_matrix_.size() << "x"
+        << (post_matrix_.empty() ? 0 : post_matrix_[0].size()) << "):\n";
+    for (size_t t = 0; t < post_matrix_.size(); ++t) {
       oss << "  T" << t << ": ";
-      for (size_t p = 0; p < Post[t].size(); ++p) {
-        oss << Post[t][p] << " ";
+      for (size_t p = 0; p < post_matrix_[t].size(); ++p) {
+        oss << post_matrix_[t][p] << " ";
       }
       oss << "\n";
     }
@@ -402,61 +514,45 @@ class PTPN {
     return oss.str();
   }
 
-  // How many transitions may run simultaneously on `core_id`. Returns 0 to mean
-  // "no bound": the control core (-1) is never resource-limited, and cores
-  // without a registered parallelism keep the legacy highest-priority behaviour.
-  [[nodiscard]] int parallelism_of_core(int core_id) const {
-    if (core_id < 0) {
-      return 0;
-    }
-    auto it = core_parallelism.find(core_id);
-    return it == core_parallelism.end() ? 0 : it->second;
-  }
-
-  void rebuild_sparse_arcs() {
-    pre_arcs.assign(transitions.size(), {});
-    post_arcs.assign(transitions.size(), {});
-
-    for (size_t p = 0; p < Pre.size(); ++p) {
-      for (size_t t = 0; t < Pre[p].size(); ++t) {
-        if (Pre[p][t] > 0) {
-          pre_arcs[t].push_back({p, Pre[p][t]});
-        }
-      }
-    }
-
-    for (size_t t = 0; t < Post.size(); ++t) {
-      for (size_t p = 0; p < Post[t].size(); ++p) {
-        if (Post[t][p] > 0) {
-          post_arcs[t].push_back({p, Post[t][p]});
-        }
-      }
-    }
-  }
-
   [[nodiscard]] bool verify_structure() const;
 
-  std::vector<Place> places;
-  std::vector<Transition> transitions;
-  std::vector<std::vector<int>> Pre;
-  std::vector<std::vector<int>> Post;
-  std::vector<std::vector<std::pair<size_t, int>>> pre_arcs;
-  std::vector<std::vector<std::pair<size_t, int>>> post_arcs;
-  Marking M0;
+ private:
+  void rebuild_sparse_arcs() {
+    pre_arcs_.assign(transitions_.size(), {});
+    post_arcs_.assign(transitions_.size(), {});
 
-  std::map<std::string, std::pair<NodeRef, NodeRef>> node_start_end_map;
-  std::unordered_map<std::string, std::vector<NodeRef>> node_pn_map;
-  std::vector<PlaceId> cpus_place;
-  std::unordered_map<std::string, PlaceId> locks_place;
-  // Maximum number of transitions that may run simultaneously on a real core
-  // (i.e. the CPU's cores_per_cpu). Used by the scheduler's per-core priority
-  // filter to bound parallelism. An absent entry means "no bound" (the legacy
-  // behaviour of keeping every highest-priority transition).
-  std::unordered_map<int, int> core_parallelism;
-  // Per-task scheduling metadata keyed by TDG node name (see TaskInfo). Empty for
-  // direct .ptpn input.
-  std::unordered_map<std::string, TaskInfo> task_info;
-  int node_index = 0;
+    for (size_t p = 0; p < pre_matrix_.size(); ++p) {
+      for (size_t t = 0; t < pre_matrix_[p].size(); ++t) {
+        if (pre_matrix_[p][t] > 0) {
+          pre_arcs_[t].push_back({p, pre_matrix_[p][t]});
+        }
+      }
+    }
+
+    for (size_t t = 0; t < post_matrix_.size(); ++t) {
+      for (size_t p = 0; p < post_matrix_[t].size(); ++p) {
+        if (post_matrix_[t][p] > 0) {
+          post_arcs_[t].push_back({p, post_matrix_[t][p]});
+        }
+      }
+    }
+  }
+
+  std::vector<Place> places_;
+  std::vector<Transition> transitions_;
+  std::vector<std::vector<int>> pre_matrix_;
+  std::vector<std::vector<int>> post_matrix_;
+  std::vector<std::vector<std::pair<size_t, int>>> pre_arcs_;
+  std::vector<std::vector<std::pair<size_t, int>>> post_arcs_;
+  Marking m0_;
+
+  std::map<std::string, std::pair<NodeRef, NodeRef>> node_start_end_map_;
+  std::unordered_map<std::string, std::vector<NodeRef>> node_pn_map_;
+  std::vector<PlaceId> cpus_place_;
+  std::unordered_map<std::string, PlaceId> locks_place_;
+  std::unordered_map<int, int> core_parallelism_;
+  std::unordered_map<std::string, TaskInfo> task_info_;
+  size_t node_index_ = 0;
 };
 
 }  // namespace petri

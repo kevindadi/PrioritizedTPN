@@ -37,10 +37,10 @@ petri::PTPN make_single_task_net(bool with_consume) {
     ptpn.set_post_arc(consume, done, 1);
   }
 
-  ptpn.node_pn_map["T"] = {petri::NodeRef::of(entry), petri::NodeRef::of(get_core),
-                           petri::NodeRef::of(ready), petri::NodeRef::of(exec),
-                           petri::NodeRef::of(exit)};
-  ptpn.node_start_end_map["T"] = {petri::NodeRef::of(entry), petri::NodeRef::of(exit)};
+  ptpn.set_task_chain(
+      "T", {petri::NodeRef::of(entry), petri::NodeRef::of(get_core), petri::NodeRef::of(ready),
+            petri::NodeRef::of(exec), petri::NodeRef::of(exit)});
+  ptpn.set_node_span("T", petri::NodeRef::of(entry), petri::NodeRef::of(exit));
 
   petri::TaskInfo info;
   info.core = 0;
@@ -49,7 +49,7 @@ petri::PTPN make_single_task_net(bool with_consume) {
   info.bcet = 3;
   info.period = 0;
   info.deadline = 0;
-  ptpn.task_info["T"] = info;
+  ptpn.set_task_info("T", info);
   return ptpn;
 }
 
@@ -97,12 +97,12 @@ TEST(MetricsTest, StuckTaskIsReportedAsDeadlock) {
   net.set_pre_arc(cpu, get_core, 1);  // cpu has 0 tokens -> permanently blocked
   net.set_post_arc(get_core, ready, 1);
 
-  net.node_pn_map["U"] = {petri::NodeRef::of(entry), petri::NodeRef::of(get_core),
-                          petri::NodeRef::of(ready)};
-  net.node_start_end_map["U"] = {petri::NodeRef::of(entry), petri::NodeRef::of(ready)};
+  net.set_task_chain(
+      "U", {petri::NodeRef::of(entry), petri::NodeRef::of(get_core), petri::NodeRef::of(ready)});
+  net.set_node_span("U", petri::NodeRef::of(entry), petri::NodeRef::of(ready));
   petri::TaskInfo info;
   info.core = 0;
-  net.task_info["U"] = info;
+  net.set_task_info("U", info);
 
   const MetricsReport report = analyze(net);
   EXPECT_FALSE(report.deadlock_states.empty());

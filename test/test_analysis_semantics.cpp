@@ -283,7 +283,7 @@ TEST(PtpnAnalysisTest, CoreCapacityOneEnforcesMutualExclusion) {
   // single transition stays active (the lower index wins the deterministic
   // tie-break) and the other is suspended.
   petri::PTPN ptpn = make_same_core_equal_priority_net();
-  ptpn.core_parallelism[0] = 1;
+  ptpn.set_core_parallelism(0, 1);
 
   StateClassReachabilityGraph graph(ptpn);
   const StateClass initial = graph.compute_initial_class();
@@ -295,7 +295,7 @@ TEST(PtpnAnalysisTest, CoreCapacityTwoAllowsParallelExecution) {
   // The same core declared with two slots lets both equal-priority tasks run
   // in parallel, so both are active and neither is suspended.
   petri::PTPN ptpn = make_same_core_equal_priority_net();
-  ptpn.core_parallelism[0] = 2;
+  ptpn.set_core_parallelism(0, 2);
 
   StateClassReachabilityGraph graph(ptpn);
   const StateClass initial = graph.compute_initial_class();

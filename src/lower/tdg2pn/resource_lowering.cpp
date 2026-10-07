@@ -17,7 +17,7 @@ void add_cpu_resource(petri::PTPN& ptpn, int cpus, int cores_per_cpu) {
   for (int core = 0; core < cpus; ++core) {
     const std::string core_name = "core" + std::to_string(core);
     const petri::PlaceId core_place = ptpn.add_place(core_name, cores_per_cpu);
-    ptpn.cpus_place.push_back(core_place);
+    ptpn.add_cpu_place(core_place);
     ptpn.set_initial_marking(core_place, cores_per_cpu);
   }
   spdlog::info("[TDG2PN] Created core resources");
@@ -31,7 +31,7 @@ void add_lock_resource(petri::PTPN& ptpn, const std::set<std::string>& locks_nam
 
   for (const auto& lock_name : locks_name) {
     const petri::PlaceId lock_place = ptpn.add_place(lock_name, 1);
-    ptpn.locks_place.emplace(lock_name, lock_place);
+    ptpn.set_lock_place(lock_name, lock_place);
     ptpn.set_initial_marking(lock_place, 1);
   }
   spdlog::info("[TDG2PN] Created lock resources");
@@ -44,8 +44,8 @@ void task_bind_cpu_resource(petri::PTPN& ptpn, const std::vector<NodeType>& all_
       continue;
     }
 
-    const auto chain_it = ptpn.node_pn_map.find(task->name);
-    if (chain_it == ptpn.node_pn_map.end()) {
+    const auto chain_it = ptpn.node_pn_map().find(task->name);
+    if (chain_it == ptpn.node_pn_map().end()) {
       continue;
     }
 
@@ -54,9 +54,9 @@ void task_bind_cpu_resource(petri::PTPN& ptpn, const std::vector<NodeType>& all_
       continue;
     }
 
-    ptpn.set_pre_arc(ptpn.cpus_place[task->core], chain[TaskChainLayout::kGetCore].as_transition(),
-                     1);
-    ptpn.set_post_arc(chain[chain.size() - 2].as_transition(), ptpn.cpus_place[task->core], 1);
+    ptpn.set_pre_arc(ptpn.cpu_places()[task->core],
+                     chain[TaskChainLayout::kGetCore].as_transition(), 1);
+    ptpn.set_post_arc(chain[chain.size() - 2].as_transition(), ptpn.cpu_places()[task->core], 1);
   }
 }
 
@@ -93,8 +93,8 @@ void bind_task_locks(petri::PTPN& ptpn, const std::string& task_name,
     const petri::TransitionId release_transition =
         task_pt_chain[release_chain_index].as_transition();
 
-    const auto lock_it = ptpn.locks_place.find(lock_type);
-    if (lock_it == ptpn.locks_place.end()) {
+    const auto lock_it = ptpn.lock_places().find(lock_type);
+    if (lock_it == ptpn.lock_places().end()) {
       throw std::runtime_error("Lock place not found: " + lock_type);
     }
 
@@ -118,8 +118,8 @@ void task_bind_lock_resource(petri::PTPN& ptpn, const std::vector<NodeType>& all
       continue;
     }
 
-    const auto chain_it = ptpn.node_pn_map.find(task->name);
-    if (chain_it == ptpn.node_pn_map.end()) {
+    const auto chain_it = ptpn.node_pn_map().find(task->name);
+    if (chain_it == ptpn.node_pn_map().end()) {
       continue;
     }
 
@@ -138,7 +138,7 @@ void add_resources_and_bindings(petri::PTPN& ptpn, const tdg::TDG& tdg) {
     // One task per core, matching the physical model (cores_per_cpu parallelism
     // is intentionally not used here).
     for (int cpu = 0; cpu < tdg.num_cpus; ++cpu) {
-      ptpn.core_parallelism[cpu] = 1;
+      ptpn.set_core_parallelism(cpu, 1);
     }
   }
   add_lock_resource(ptpn, tdg.lock_set);

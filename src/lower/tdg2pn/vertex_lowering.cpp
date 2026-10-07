@@ -98,8 +98,10 @@ std::pair<petri::NodeRef, petri::NodeRef> add_task_node(petri::PTPN& ptpn, const
   std::vector<petri::NodeRef> chain =
       add_execution_chain(ptpn, task.name, task.time, task.lock, task.priority, task.core,
                           resume_mode, task_place_capacity);
-  ptpn.node_pn_map[task.name] = chain;
-  return {chain.front(), chain.back()};
+  const petri::NodeRef start = chain.front();
+  const petri::NodeRef end = chain.back();
+  ptpn.set_task_chain(task.name, std::move(chain));
+  return {start, end};
 }
 
 std::pair<petri::NodeRef, petri::NodeRef> add_node(petri::PTPN& ptpn, const NodeType& node_type,
@@ -114,21 +116,21 @@ std::pair<petri::NodeRef, petri::NodeRef> add_node(petri::PTPN& ptpn, const Node
     if constexpr (std::is_same_v<Node, JoinTask>) {
       const petri::TimeInterval interval(node.time.first, node.time.second);
       const petri::TransitionId join_trans =
-          ptpn.add_transition("Join" + std::to_string(ptpn.node_index++), interval, node.priority,
-                              node.core, /*suspendable=*/false);
+          ptpn.add_transition("Join" + std::to_string(ptpn.next_node_index()), interval,
+                              node.priority, node.core, /*suspendable=*/false);
       return {petri::NodeRef::of(join_trans), petri::NodeRef::of(join_trans)};
     }
 
     if constexpr (std::is_same_v<Node, ForkTask>) {
       const petri::TimeInterval interval(node.time.first, node.time.second);
       const petri::TransitionId fork_trans =
-          ptpn.add_transition("Fork" + std::to_string(ptpn.node_index++), interval, node.priority,
-                              node.core, /*suspendable=*/false);
+          ptpn.add_transition("Fork" + std::to_string(ptpn.next_node_index()), interval,
+                              node.priority, node.core, /*suspendable=*/false);
       return {petri::NodeRef::of(fork_trans), petri::NodeRef::of(fork_trans)};
     }
 
     const petri::PlaceId empty_place =
-        ptpn.add_place("Empty" + std::to_string(ptpn.node_index++), 1);
+        ptpn.add_place("Empty" + std::to_string(ptpn.next_node_index()), 1);
     return {petri::NodeRef::of(empty_place), petri::NodeRef::of(empty_place)};
   });
 }
@@ -144,7 +146,7 @@ void lower_vertices(petri::PTPN& ptpn, const tdg::TDG& tdg) {
 
     try {
       const auto [start, end] = add_node(ptpn, node_type, resume_mode, tdg.task_place_capacity);
-      ptpn.node_start_end_map[vertex_name] = {start, end};
+      ptpn.set_node_span(vertex_name, start, end);
     } catch (const std::exception& e) {
       spdlog::error("[TDG2PN] Failed to transform vertex {}: {}", vertex_name, e.what());
       throw;

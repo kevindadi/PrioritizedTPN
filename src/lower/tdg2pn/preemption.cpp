@@ -95,7 +95,7 @@ void add_restart_preemption(petri::PTPN& ptpn,
     }
 
     const petri::TransitionId l_exec = l_t_pn[3].as_transition();
-    ptpn.transitions[l_exec.index()].suspendable = true;
+    ptpn.set_suspendable(l_exec, true);
 
     const petri::PlaceId l_entry = l_t_pn[0].as_place();
     const petri::PlaceId l_preempt_place = l_t_pn[2].as_place();
@@ -103,7 +103,7 @@ void add_restart_preemption(petri::PTPN& ptpn,
     const petri::PlaceId h_ready = h_t_pn[2].as_place();
 
     const std::string preempt_name =
-        h_t_name + "_restart_preempt_" + l_t_name + "_" + std::to_string(ptpn.node_index++);
+        h_t_name + "_restart_preempt_" + l_t_name + "_" + std::to_string(ptpn.next_node_index());
     const petri::TimeInterval preempt_interval(0, 0);
     const petri::TransitionId preempt_trans =
         ptpn.add_transition(preempt_name, preempt_interval, preempt_priority, h_tc.core, false);
@@ -127,11 +127,11 @@ void add_restart_preemption(petri::PTPN& ptpn,
 
         const size_t idx = l_t_pn.size() - 2 - 2 * (i + 1);
         const petri::TransitionId lock_exec = l_t_pn[idx].as_transition();
-        ptpn.transitions[lock_exec.index()].suspendable = true;
+        ptpn.set_suspendable(lock_exec, true);
 
         const petri::PlaceId lock_preempt_place = l_t_pn[idx - 1].as_place();
         const std::string lock_preempt_name = h_t_name + "_restart_lock_preempt_" + l_t_name + "_" +
-                                              std::to_string(ptpn.node_index++);
+                                              std::to_string(ptpn.next_node_index());
         const petri::TimeInterval lock_preempt_interval(0, 0);
         const petri::TransitionId lock_preempt_trans = ptpn.add_transition(
             lock_preempt_name, lock_preempt_interval, preempt_priority, h_tc.core, false);
@@ -173,9 +173,9 @@ void add_restart_preemption(petri::PTPN& ptpn,
           continue;
         }
 
-        const auto l_t_pns_it = ptpn.node_pn_map.find(l_t_name);
-        const auto h_t_pns_it = ptpn.node_pn_map.find(h_t_name);
-        if (l_t_pns_it == ptpn.node_pn_map.end() || h_t_pns_it == ptpn.node_pn_map.end()) {
+        const auto l_t_pns_it = ptpn.node_pn_map().find(l_t_name);
+        const auto h_t_pns_it = ptpn.node_pn_map().find(h_t_name);
+        if (l_t_pns_it == ptpn.node_pn_map().end() || h_t_pns_it == ptpn.node_pn_map().end()) {
           spdlog::warn("[TDG2PN] Cannot find task chain: {} or {}", l_t_name, h_t_name);
           continue;
         }

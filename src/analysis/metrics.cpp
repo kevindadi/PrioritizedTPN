@@ -121,15 +121,15 @@ void MetricsAnalyzer::build_topology() {
   transition_task_.assign(net_.num_transitions(), -1);
   transition_is_exec_.assign(net_.num_transitions(), false);
   place_lock_.assign(net_.num_places(), "");
-  for (const auto& [lock_name, place_idx] : net_.locks_place) {
+  for (const auto& [lock_name, place_idx] : net_.lock_places()) {
     if (place_idx.index() < place_lock_.size()) {
       place_lock_[place_idx.index()] = lock_name;
     }
   }
 
-  for (const auto& [name, info] : net_.task_info) {
-    const auto chain_it = net_.node_pn_map.find(name);
-    if (chain_it == net_.node_pn_map.end() || chain_it->second.empty()) {
+  for (const auto& [name, info] : net_.task_info()) {
+    const auto chain_it = net_.node_pn_map().find(name);
+    if (chain_it == net_.node_pn_map().end() || chain_it->second.empty()) {
       continue;
     }
     const std::vector<petri::NodeRef>& chain = chain_it->second;
@@ -344,8 +344,8 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
     tm.name = task.name;
     tm.core = task.core;
     tm.priority = task.priority;
-    const auto info_it = net_.task_info.find(task.name);
-    if (info_it != net_.task_info.end()) {
+    const auto info_it = net_.task_info().find(task.name);
+    if (info_it != net_.task_info().end()) {
       tm.wcet = info_it->second.wcet;
       tm.bcet = info_it->second.bcet;
       tm.period = info_it->second.period;
@@ -428,7 +428,7 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
 
 void MetricsAnalyzer::compute_locks(MetricsReport& report) {
   // Map lock name -> resource place index.
-  for (const auto& [lock_name, lock_place] : net_.locks_place) {
+  for (const auto& [lock_name, lock_place] : net_.lock_places()) {
     LockMetrics lm;
     lm.name = lock_name;
     long long total_hold = 0;
@@ -465,8 +465,8 @@ void MetricsAnalyzer::compute_locks(MetricsReport& report) {
       // held.
       bool contended = false;
       for (const TaskTopology& task : tasks_) {
-        const auto info_it = net_.task_info.find(task.name);
-        if (info_it == net_.task_info.end()) {
+        const auto info_it = net_.task_info().find(task.name);
+        if (info_it == net_.task_info().end()) {
           continue;
         }
         const auto& locks = info_it->second.locks;
@@ -498,7 +498,7 @@ void MetricsAnalyzer::compute_locks(MetricsReport& report) {
 void MetricsAnalyzer::compute_utilisation(MetricsReport& report) {
   // Hyperperiod = lcm of task periods.
   long long hyper = 0;
-  for (const auto& [name, info] : net_.task_info) {
+  for (const auto& [name, info] : net_.task_info()) {
     if (info.period > 0) {
       hyper = (hyper == 0) ? info.period : lcm_ll(hyper, info.period);
     }
@@ -588,7 +588,7 @@ void MetricsAnalyzer::compute_utilisation(MetricsReport& report) {
 
   // Collect all real cores.
   std::set<int> cores;
-  for (const auto& [name, info] : net_.task_info) {
+  for (const auto& [name, info] : net_.task_info()) {
     if (info.core >= 0) {
       cores.insert(info.core);
     }
@@ -600,7 +600,7 @@ void MetricsAnalyzer::compute_utilisation(MetricsReport& report) {
     // Analytic interval U = sum C_i / T_i over tasks on this core.
     double umin = 0.0;
     double umax = 0.0;
-    for (const auto& [name, info] : net_.task_info) {
+    for (const auto& [name, info] : net_.task_info()) {
       if (info.core != core || info.period <= 0) {
         continue;
       }

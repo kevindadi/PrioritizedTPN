@@ -92,10 +92,11 @@ void handle_dashed(petri::PTPN& ptpn, const std::string& source_name,
 
 void handle_normal(petri::PTPN& ptpn, const tdg::TDG& tdg, const std::string& source_name,
                    const std::string& target_name, const std::string& label) {
-  const auto source_it = ptpn.node_start_end_map.find(source_name);
-  const auto target_it = ptpn.node_start_end_map.find(target_name);
+  const auto source_it = ptpn.node_start_end_map().find(source_name);
+  const auto target_it = ptpn.node_start_end_map().find(target_name);
 
-  if (source_it == ptpn.node_start_end_map.end() || target_it == ptpn.node_start_end_map.end()) {
+  if (source_it == ptpn.node_start_end_map().end() ||
+      target_it == ptpn.node_start_end_map().end()) {
     throw std::runtime_error("Node mapping not found for edge: " + source_name + " -> " +
                              target_name);
   }
