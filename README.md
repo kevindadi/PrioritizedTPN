@@ -271,14 +271,12 @@ TDG JSON format: [docs/json_format.md](docs/json_format.md). PTPN language: [doc
 
 | Module | Directory | Description |
 |--------|-----------|-------------|
-| JSON parser | [src/json/](src/json/) | TDG JSON parsing and validation |
-| TDG | [src/tdg/](src/tdg/) | Task dependency graph model |
-| PTPN parser | [src/parser/](src/parser/) | `.ptpn` language parsing |
-| PTPN core | [src/petri/](src/petri/) | P-TPN model and DOT export |
-| TDG2PN | [src/tdg2pn/](src/tdg2pn/) | TDG → PTPN lowering ([rules](docs/rule.md)) |
-| TDG2Romeo | [src/tdg2romeo/](src/tdg2romeo/) | TDG → Romeo `.cts` ([rules](docs/tdg2romeo/conversion-rules.md)) |
-| PToPNer | [src/tdg2ptopner/](src/tdg2ptopner/) | PToPNer validation and `.ppn` export |
+| Model | [src/model/](src/model/) | Types, TDG and PTPN data models |
+| Parsing | [src/parse/](src/parse/) | TDG JSON parsing/validation and `.ptpn` language parsing |
+| Exporters | [src/export/](src/export/) | PTPN structure / Graphviz export models |
+| Lowering | [src/lower/](src/lower/) | TDG → PTPN / Romeo `.cts` / PToPNer `.ppn` |
 | Analysis | [src/analysis/](src/analysis/) | State classes, DBM, scheduling, metrics |
+| App | [src/app/](src/app/) | CLI entry and pipeline orchestration |
 | Examples | [example/](example/) | TDG benchmark inputs |
 | Tests | [test/](test/) | GoogleTest suite (`ptpn_test`) |
 

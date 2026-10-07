@@ -1,6 +1,6 @@
 # TDG → Romeo Conversion Rules
 
-This document describes how TDG JSON is lowered to Romeo `.cts` files through the standalone [`src/tdg2romeo/`](../../src/tdg2romeo/) module. It is **not** routed through `petri::PTPN`.
+This document describes how TDG JSON is lowered to Romeo `.cts` files through the standalone [`src/lower/tdg2romeo/`](../../src/lower/tdg2romeo/) module. It is **not** routed through `petri::PTPN`.
 
 ## Pipeline architecture
 

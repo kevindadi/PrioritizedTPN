@@ -2,7 +2,7 @@
 
 #include "analysis/metrics.h"
 #include "analysis/ptpn_analysis.h"
-#include "petri/petri.h"
+#include "model/petri.h"
 
 namespace {
 

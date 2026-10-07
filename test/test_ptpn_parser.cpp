@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "parser/ptpn_parser.h"
+#include "parse/ptpn_parser.h"
 
 namespace parser {
 

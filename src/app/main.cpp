@@ -21,17 +21,17 @@
 
 #include "analysis/metrics.h"
 #include "analysis/ptpn_analysis.h"
-#include "json/json.h"
-#include "parser/ptpn_parser.h"
-#include "petri/export_dot.h"
-#include "petri/export_ptpn.h"
-#include "petri/petri.h"
-#include "tdg/tdg.h"
-#include "tdg2pn/tdg2pn.h"
-#include "tdg2ptopner/tdg2ptopner.h"
-#include "tdg2ptopner/validate.h"
-#include "tdg2romeo/tdg2romeo.h"
-#include "types/types.h"
+#include "export/export_dot.h"
+#include "export/export_ptpn.h"
+#include "lower/tdg2pn/tdg2pn.h"
+#include "lower/tdg2ptopner/tdg2ptopner.h"
+#include "lower/tdg2ptopner/validate.h"
+#include "lower/tdg2romeo/tdg2romeo.h"
+#include "model/petri.h"
+#include "model/tdg.h"
+#include "model/types.h"
+#include "parse/json.h"
+#include "parse/ptpn_parser.h"
 
 using namespace std;
 namespace fs = std::filesystem;

@@ -6,27 +6,27 @@ PToPNer export is not a generic "any TDG can be emitted" path. This repository v
 
 ## Main export chain
 
-The CLI path in `src/main.cpp` is:
+The CLI path in `src/app/main.cpp` is:
 
 1. Parse TDG JSON.
 2. Build `tdg::TDG`.
 3. Run `ptopner_export::validate_for_ptopner(tdg)`.
 4. If validation passes, lower / export toward `.ppn`.
 
-Relevant anchors in `src/main.cpp`:
+Relevant anchors in `src/app/main.cpp`:
 
 ```cpp
 const auto ppn_validation = ptopner_export::validate_for_ptopner(tdg);
 const auto ppn_export = ptopner_export::export_ptpn_to_ppn_file(ptpn, opts.ppn_file);
 ```
 
-The validator implementation is in `src/tdg2ptopner/validate.cpp`.
+The validator implementation is in `src/lower/tdg2ptopner/validate.cpp`.
 
 ## Hard rejection rules
 
 ### 1. Scheduling policy must be `fixed_prior_with_restart`
 
-`src/tdg2ptopner/validate.cpp:187`:
+`src/lower/tdg2ptopner/validate.cpp:187`:
 
 ```cpp
 if (tdg.policy != SchedulePolicy::FIXED_PRIOR_WITH_RESTART) {
@@ -39,13 +39,13 @@ If the TDG uses another policy, export is rejected immediately.
 
 ### 2. Every task / fork / join time must be a point interval
 
-`validate_point_intervals` (`src/tdg2ptopner/validate.cpp:22`) walks task-like nodes and rejects any interval with `min != max`.
+`validate_point_intervals` (`src/lower/tdg2ptopner/validate.cpp:22`) walks task-like nodes and rejects any interval with `min != max`.
 
 So PToPNer export accepts deterministic durations, not general `[earliest, latest]` intervals.
 
 ### 3. No lock modeling is allowed
 
-`validate_no_locks` (`src/tdg2ptopner/validate.cpp:48`) rejects both:
+`validate_no_locks` (`src/lower/tdg2ptopner/validate.cpp:48`) rejects both:
 
 - non-empty global `tdg.lock_set`
 - task-local `task.lock`
@@ -54,7 +54,7 @@ This means the PToPNer path currently does not support shared-lock semantics.
 
 ## Warning-only behavior
 
-`validate_warnings` (`src/tdg2ptopner/validate.cpp:172`) emits warnings for two cases.
+`validate_warnings` (`src/lower/tdg2ptopner/validate.cpp:172`) emits warnings for two cases.
 
 ### Dashed edges are ignored
 
@@ -82,11 +82,11 @@ Typical failure explanations are therefore semantic / compatibility explanations
 
 ## Key files
 
-- `src/main.cpp:230` — validation call in CLI path
-- `src/tdg2ptopner/validate.cpp:22` — point-interval validation
-- `src/tdg2ptopner/validate.cpp:48` — lock rejection
-- `src/tdg2ptopner/validate.cpp:78` — warning-only cases
-- `src/tdg2ptopner/validate.cpp:187` — top-level `validate_for_ptopner`
+- `src/app/main.cpp:230` — validation call in CLI path
+- `src/lower/tdg2ptopner/validate.cpp:22` — point-interval validation
+- `src/lower/tdg2ptopner/validate.cpp:48` — lock rejection
+- `src/lower/tdg2ptopner/validate.cpp:78` — warning-only cases
+- `src/lower/tdg2ptopner/validate.cpp:187` — top-level `validate_for_ptopner`
 
 ## FAQ-style quick answers
 

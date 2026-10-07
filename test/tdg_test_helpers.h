@@ -4,8 +4,8 @@
 #include <stdexcept>
 #include <string>
 
-#include "json/json.h"
-#include "tdg/tdg.h"
+#include "model/tdg.h"
+#include "parse/json.h"
 
 namespace ptpn_test {
 

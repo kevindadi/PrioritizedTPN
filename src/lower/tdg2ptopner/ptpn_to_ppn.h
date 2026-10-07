@@ -1,7 +1,7 @@
 #ifndef PTPN_TO_PPN_H
 #define PTPN_TO_PPN_H
 
-#include "petri/petri.h"
+#include "model/petri.h"
 #include "ppn_model.h"
 
 namespace ptopner_export {

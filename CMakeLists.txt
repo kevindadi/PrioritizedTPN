@@ -121,12 +121,12 @@ endif()
 # only the dependencies it actually uses, so build order and layering stay
 # explicit. `PTPN_core` below is the aggregate used by the executables.
 add_library(ptpn_types STATIC
-    src/types/types.cpp
+    src/model/types.cpp
 )
 target_include_directories(ptpn_types PUBLIC src)
 
 add_library(ptpn_json STATIC
-    src/json/json.cpp
+    src/parse/json.cpp
 )
 target_link_libraries(ptpn_json
     PUBLIC
@@ -137,7 +137,7 @@ target_link_libraries(ptpn_json
 )
 
 add_library(ptpn_tdg STATIC
-    src/tdg/tdg.cpp
+    src/model/tdg.cpp
 )
 target_link_libraries(ptpn_tdg
     PUBLIC
@@ -148,20 +148,29 @@ target_link_libraries(ptpn_tdg
 )
 
 add_library(ptpn_petri STATIC
-    src/petri/petri.cpp
-    src/petri/export_ptpn.cpp
-    src/petri/export_dot.cpp
+    src/model/petri.cpp
 )
 target_link_libraries(ptpn_petri
     PUBLIC
     ptpn_types
-    Boost::filesystem
     PRIVATE
     spdlog::spdlog
 )
 
+add_library(ptpn_export STATIC
+    src/export/export_ptpn.cpp
+    src/export/export_dot.cpp
+)
+target_link_libraries(ptpn_export
+    PUBLIC
+    ptpn_petri
+    PRIVATE
+    Boost::filesystem
+    spdlog::spdlog
+)
+
 add_library(ptpn_lowering STATIC
-    src/tdg2pn/tdg2pn.cpp
+    src/lower/tdg2pn/tdg2pn.cpp
 )
 target_link_libraries(ptpn_lowering
     PUBLIC
@@ -172,12 +181,12 @@ target_link_libraries(ptpn_lowering
 )
 
 add_library(ptpn_romeo STATIC
-    src/tdg2romeo/cts_writer.cpp
-    src/tdg2romeo/encode_common.cpp
-    src/tdg2romeo/inhibitor_arc.cpp
-    src/tdg2romeo/scheduling_net.cpp
-    src/tdg2romeo/tdg2romeo.cpp
-    src/tdg2romeo/tdg_helpers.cpp
+    src/lower/tdg2romeo/cts_writer.cpp
+    src/lower/tdg2romeo/encode_common.cpp
+    src/lower/tdg2romeo/inhibitor_arc.cpp
+    src/lower/tdg2romeo/scheduling_net.cpp
+    src/lower/tdg2romeo/tdg2romeo.cpp
+    src/lower/tdg2romeo/tdg_helpers.cpp
 )
 target_link_libraries(ptpn_romeo
     PUBLIC
@@ -188,10 +197,10 @@ target_link_libraries(ptpn_romeo
 )
 
 add_library(ptpn_ptopner STATIC
-    src/tdg2ptopner/validate.cpp
-    src/tdg2ptopner/export_ppn.cpp
-    src/tdg2ptopner/ptpn_to_ppn.cpp
-    src/tdg2ptopner/tdg2ptopner.cpp
+    src/lower/tdg2ptopner/validate.cpp
+    src/lower/tdg2ptopner/export_ppn.cpp
+    src/lower/tdg2ptopner/ptpn_to_ppn.cpp
+    src/lower/tdg2ptopner/tdg2ptopner.cpp
 )
 target_link_libraries(ptpn_ptopner
     PUBLIC
@@ -203,7 +212,7 @@ target_link_libraries(ptpn_ptopner
 )
 
 add_library(ptpn_parser STATIC
-    src/parser/ptpn_parser.cpp
+    src/parse/ptpn_parser.cpp
 )
 target_link_libraries(ptpn_parser
     PUBLIC
@@ -234,6 +243,7 @@ target_link_libraries(PTPN_core
     ptpn_json
     ptpn_tdg
     ptpn_petri
+    ptpn_export
     ptpn_lowering
     ptpn_romeo
     ptpn_ptopner
@@ -244,7 +254,7 @@ target_link_libraries(PTPN_core
 )
 
 # Main executable
-add_executable(ptpn src/main.cpp)
+add_executable(ptpn src/app/main.cpp)
 target_include_directories(ptpn PUBLIC src)
 target_link_libraries(ptpn PRIVATE PTPN_core CLI11::CLI11)
 

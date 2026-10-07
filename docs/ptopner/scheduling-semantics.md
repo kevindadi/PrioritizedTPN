@@ -114,7 +114,7 @@ segments non-suspendable.
 
 - `src/analysis/scheduling.cpp` — `structural_enabled`, `filter_priority_per_core`
 - `src/analysis/ptpn_analysis.cpp` — `recompute_sets`, `time_elapse`, `is_firable`, `fire`, `build`, `build_successor_zone`
-- `src/tdg2pn/tdg2pn.cpp` — `is_resume_policy`, `add_resources_and_bindings_matrix`, `add_execution_chain`, `fixed_prior_with_restart`
+- `src/lower/tdg2pn/tdg2pn.cpp` — `is_resume_policy`, `add_resources_and_bindings_matrix`, `add_execution_chain`, `fixed_prior_with_restart`
 
 ## Contrast with Roméo
 

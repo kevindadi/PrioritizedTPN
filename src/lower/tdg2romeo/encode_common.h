@@ -4,8 +4,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "model/tdg.h"
 #include "romeo_model.h"
-#include "tdg/tdg.h"
 #include "tdg_helpers.h"
 
 namespace romeo {

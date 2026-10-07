@@ -1,11 +1,11 @@
-#include "tdg/tdg.h"
+#include "model/tdg.h"
 
 #include <fstream>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 
-#include "json/json.h"
+#include "parse/json.h"
 
 namespace tdg {
 

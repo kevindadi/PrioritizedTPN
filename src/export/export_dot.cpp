@@ -1,4 +1,4 @@
-#include "petri/export_dot.h"
+#include "export/export_dot.h"
 
 #include <boost/filesystem.hpp>
 #include <fstream>

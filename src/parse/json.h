@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "types/types.h"
+#include "model/types.h"
 
 namespace parse {
 

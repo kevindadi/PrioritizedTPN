@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "petri/petri.h"
+#include "model/petri.h"
 
 namespace petri::exporting {
 

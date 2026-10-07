@@ -3,8 +3,8 @@
 
 #include <string>
 
-#include "petri/petri.h"
-#include "tdg/tdg.h"
+#include "model/petri.h"
+#include "model/tdg.h"
 #include "validate.h"
 
 namespace ptopner_export {

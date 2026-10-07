@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "json/json.h"
+#include "parse/json.h"
 
 using parse::JsonNode;
 using parse::Parser;

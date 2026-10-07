@@ -49,7 +49,7 @@
 
 ## 为什么某个 TDG 不能导出到 PToPNer？
 
-先看 `src/tdg2ptopner/validate.cpp` 的 `validate_for_ptopner`.最常见的三类硬失败是:
+先看 `src/lower/tdg2ptopner/validate.cpp` 的 `validate_for_ptopner`.最常见的三类硬失败是:
 
 1. 调度策略不是 `fixed_prior_with_restart`
 2. 存在非点区间 `min != max`
@@ -64,7 +64,7 @@
 - 虚线边:warning,并在导出时忽略
 - periodic:warning,并复用 `tdg2pn` 的 period release 建模
 
-这两类行为都在 `src/tdg2ptopner/validate.cpp:172` 的 warning 逻辑里.
+这两类行为都在 `src/lower/tdg2ptopner/validate.cpp:172` 的 warning 逻辑里.
 
 ## 这里和 Roméo 的 priority / time 处理差异是什么？
 

@@ -1,4 +1,4 @@
-#include "petri/petri.h"
+#include "model/petri.h"
 
 #include <spdlog/spdlog.h>
 

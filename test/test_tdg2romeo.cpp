@@ -3,9 +3,9 @@
 #include <sstream>
 #include <string>
 
-#include "json/json.h"
-#include "tdg/tdg.h"
-#include "tdg2romeo/tdg2romeo.h"
+#include "lower/tdg2romeo/tdg2romeo.h"
+#include "model/tdg.h"
+#include "parse/json.h"
 #include "tdg_test_helpers.h"
 
 namespace {

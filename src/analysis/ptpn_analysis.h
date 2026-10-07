@@ -11,7 +11,7 @@
 
 #include "analysis/canonicalization.h"
 #include "analysis/state_class.h"
-#include "petri/petri.h"
+#include "model/petri.h"
 
 namespace state_class {
 

@@ -3,8 +3,8 @@
 
 #include <string>
 
+#include "model/tdg.h"
 #include "romeo_model.h"
-#include "tdg/tdg.h"
 
 namespace romeo {
 

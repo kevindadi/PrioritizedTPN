@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "petri/export_ptpn.h"
+#include "export/export_ptpn.h"
 
 namespace petri::exporting {
 

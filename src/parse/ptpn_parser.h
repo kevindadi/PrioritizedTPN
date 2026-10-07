@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "common/result.h"
-#include "petri/petri.h"
+#include "model/petri.h"
 
 namespace parser {
 

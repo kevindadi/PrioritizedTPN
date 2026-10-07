@@ -4,12 +4,12 @@
 
 | Symbol | File | Notes |
 |---|---|---|
-| `Transition.time_interval` | `src/petri/petri.h:69` | `[earliest, latest]` time bounds |
-| `Transition.priority` | `src/petri/petri.h:70` | higher value = higher priority |
-| `Transition.core` | `src/petri/petri.h:71` | -1 = control, ≥0 = core id |
-| `Transition.suspendable` | `src/petri/petri.h:72` | whether the transition can be suspended |
-| `kControlTransitionCore` | `src/petri/petri.h:21` | constant -1, marks control transitions |
-| `Marking` | `src/petri/petri.h:85` | `vector<int>` of token counts per place |
+| `Transition.time_interval` | `src/model/petri.h:69` | `[earliest, latest]` time bounds |
+| `Transition.priority` | `src/model/petri.h:70` | higher value = higher priority |
+| `Transition.core` | `src/model/petri.h:71` | -1 = control, ≥0 = core id |
+| `Transition.suspendable` | `src/model/petri.h:72` | whether the transition can be suspended |
+| `kControlTransitionCore` | `src/model/petri.h:21` | constant -1, marks control transitions |
+| `Marking` | `src/model/petri.h:85` | `vector<int>` of token counts per place |
 
 ## State-class representation
 
@@ -46,16 +46,16 @@
 
 | Symbol | File | Notes |
 |---|---|---|
-| `validate_for_ptopner` | `src/tdg2ptopner/validate.cpp:187` | top-level validation entry |
-| `validate_point_intervals` | `src/tdg2ptopner/validate.cpp:22` | rejects non-point time intervals |
-| `validate_no_locks` | `src/tdg2ptopner/validate.cpp:48` | rejects TDG with lock modeling |
-| `export_ptpn_to_ppn_file` | `src/tdg2ptopner/tdg2ptopner.cpp` | actual .ppn file generation |
+| `validate_for_ptopner` | `src/lower/tdg2ptopner/validate.cpp:187` | top-level validation entry |
+| `validate_point_intervals` | `src/lower/tdg2ptopner/validate.cpp:22` | rejects non-point time intervals |
+| `validate_no_locks` | `src/lower/tdg2ptopner/validate.cpp:48` | rejects TDG with lock modeling |
+| `export_ptpn_to_ppn_file` | `src/lower/tdg2ptopner/tdg2ptopner.cpp` | actual .ppn file generation |
 
 ## TDG lowering
 
 | Symbol | File | Notes |
 |---|---|---|
-| `converter::TDG2PN::transform` | `src/tdg2pn/tdg2pn.h` | TDG → PTPN lowering entry |
+| `converter::TDG2PN::transform` | `src/lower/tdg2pn/tdg2pn.h` | TDG → PTPN lowering entry |
 
 ## Where E, X, R live in code
 

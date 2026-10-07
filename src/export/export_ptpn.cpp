@@ -1,4 +1,4 @@
-#include "petri/export_ptpn.h"
+#include "export/export_ptpn.h"
 
 #include <limits>
 #include <spdlog/spdlog.h>

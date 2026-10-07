@@ -6,25 +6,25 @@ This repository has two main entry points: `ptpn tdg` (JSON TDG → PTPN analysi
 
 ## CLI entry
 
-`src/main.cpp` defines the top-level CLI via CLI11. Two subcommands are relevant:
+`src/app/main.cpp` defines the top-level CLI via CLI11. Two subcommands are relevant:
 
 - **`ptpn tdg <json>`** — JSON TDG input
 - **`ptpn ptpn <ptpn-source>`** — PTPN source input
 
-Both ultimately route to `run_ptpn_analysis` (for the analysis pipeline) after optional TDG→PTPN lowering.
+Both ultimately route to `run_ptpn_postprocess` (for the analysis pipeline) after optional TDG→PTPN lowering.
 
 ## TDG → PTPN lowering
 
 ```cpp
-// src/main.cpp:248
+// src/app/main.cpp, build_ptpn_from_tdg()
 converter::TDG2PN::transform(tdg, ptpn);
 ```
 
-This is implemented in `src/tdg2pn/tdg2pn.h` and `src/tdg2pn/tdg2pn.cpp`. It converts a task-dependency graph (from JSON) into a PTPN. Full lowering rules are in `docs/rule.md`.
+This is implemented in `src/lower/tdg2pn/tdg2pn.h` and `src/lower/tdg2pn/tdg2pn.cpp`. It converts a task-dependency graph (from JSON) into a PTPN. Full lowering rules are in `docs/rule.md`.
 
 ## PTPN core model
 
-`src/petri/petri.h` defines the PTPN net:
+`src/model/petri.h` defines the PTPN net:
 
 ```cpp
 struct Transition {
@@ -40,51 +40,49 @@ Places hold tokens; a `Marking` is a `vector<int>`. Full formal semantics are in
 ## State-class reachability analysis
 
 ```cpp
-// src/main.cpp:136
+// src/app/main.cpp, run_ptpn_postprocess()
 state_class::StateClassReachabilityGraph reachability_graph(ptpn);
 reachability_graph.set_canonicalization_mode(canonicalization);
 reachability_graph.build(opts.max_states);
 ```
 
-`src/analysis/graph.h` defines `StateClassReachabilityGraph`, which drives timed exploration:
+`src/analysis/ptpn_analysis.h` defines `StateClassReachabilityGraph`, which drives timed exploration:
 
 - `build()` — construct the reachability graph
-- `advance_time()` — push all active clocks forward (min of active upper bounds)
-- `fire_with_time()` — fire a transition at a specific time, update marking and clocks
-- `recompute_enabled_sets()` — recompute enabled/active/suspended after a marking change
+- `time_elapse()` — push all active clocks forward (min of active upper bounds)
+- `fire()` — fire a transition from a time-elapsed class, update marking and clocks
+- `recompute_sets()` — recompute enabled/active/suspended after a marking change
 
 ## Scheduling and suspension
 
-`src/analysis/scheduling.h` and `src/analysis/scheduling.cpp` define `SchedulingAlgorithms`:
+`src/analysis/scheduling.h` and `src/analysis/scheduling.cpp` define `Scheduling`:
 
-- `select_active_per_core()` — for each core k≥0, keep all enabled transitions with maximal priority on that core (control transitions, core < 0, are kept as-is)
-- `compute_suspended()` — transitions that are enabled but not active and have a higher-priority active transition on the same core are suspended
-- `should_suspend()` / `should_restore()` — per-transition suspension judgment
+- `structural_enabled()` — E_struct(M): transitions whose input places hold enough tokens
+- `filter_priority_per_core()` — E_pri(M): per-core maximal-priority filter, bounded by the core's parallelism when declared
 
 ## PToPNer export
 
 ```cpp
-// src/main.cpp:230
+// src/app/main.cpp, run_tdg_pipeline() / run_export_ptopner()
 const auto ppn_validation = ptopner_export::validate_for_ptopner(tdg);
-
-// src/main.cpp:116
 const auto ppn_export = ptopner_export::export_ptpn_to_ppn_file(ptpn, opts.ppn_file);
 ```
 
-Validation and export live in `src/tdg2ptopner/validate.cpp` and `src/tdg2ptopner/tdg2ptopner.cpp`. The export is constrained: point intervals only, no locks, and `fixed_prior_with_restart` policy.
+Validation and export live in `src/lower/tdg2ptopner/validate.cpp` and `src/lower/tdg2ptopner/tdg2ptopner.cpp`. The export is constrained: point intervals only, no locks, and `fixed_prior_with_restart` policy.
 
 ## Key file map
 
 | File | Role |
 |---|---|
-| `src/main.cpp` | CLI entry, pipeline orchestration |
-| `src/petri/petri.h` | PTPN net model: Place, Transition, Marking, is_enabled, fire |
-| `src/analysis/graph.h` | StateClassReachabilityGraph: build, advance_time, fire_with_time, recompute_enabled_sets |
-| `src/analysis/state.h` | StateClass: marking, clocks, zone, enabled, active, suspended |
-| `src/analysis/scheduling.h/.cpp` | SchedulingAlgorithms: select_active_per_core, compute_suspended, should_suspend/should_restore |
-| `src/tdg2pn/tdg2pn.h/.cpp` | TDG → PTPN lowering |
-| `src/tdg2ptopner/validate.cpp` | PToPNer validation: point intervals, no locks, fixed_prior_with_restart |
-| `src/tdg2ptopner/tdg2ptopner.cpp` | PTPN → .ppn export |
+| `src/app/main.cpp` | CLI entry, pipeline orchestration |
+| `src/model/petri.h` | PTPN net model: Place, Transition, Marking, is_enabled, fire |
+| `src/analysis/ptpn_analysis.h/.cpp` | StateClassReachabilityGraph: build, time_elapse, fire, recompute_sets |
+| `src/analysis/state_class.h` | StateClass: marking, clocks, zone, enabled/active/suspended sets |
+| `src/analysis/scheduling.h/.cpp` | Scheduling: structural_enabled, filter_priority_per_core |
+| `src/analysis/metrics.h/.cpp` | MetricsAnalyzer: schedulability, task/lock/core metrics |
+| `src/lower/tdg2pn/tdg2pn.h/.cpp` | TDG → PTPN lowering |
+| `src/lower/tdg2ptopner/validate.cpp` | PToPNer validation: point intervals, no locks, fixed_prior_with_restart |
+| `src/lower/tdg2ptopner/tdg2ptopner.cpp` | PTPN → .ppn export |
 
 ## Further reading
 

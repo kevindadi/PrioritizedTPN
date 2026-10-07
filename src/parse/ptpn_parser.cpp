@@ -1,4 +1,4 @@
-#include "parser/ptpn_parser.h"
+#include "parse/ptpn_parser.h"
 
 #include <fstream>
 #include <set>

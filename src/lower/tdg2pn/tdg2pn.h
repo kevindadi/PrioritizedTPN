@@ -9,9 +9,9 @@
 #include <utility>
 #include <vector>
 
-#include "petri/petri.h"
-#include "tdg/tdg.h"
-#include "types/types.h"
+#include "model/petri.h"
+#include "model/tdg.h"
+#include "model/types.h"
 
 namespace converter {
 

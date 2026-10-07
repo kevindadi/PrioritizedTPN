@@ -1,4 +1,4 @@
-#include "types/types.h"
+#include "model/types.h"
 
 SchedulePolicy parse_policy_string(const std::string& policy) {
   if (policy == "fixed") {

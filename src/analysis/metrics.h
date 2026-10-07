@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "analysis/ptpn_analysis.h"
-#include "petri/petri.h"
+#include "model/petri.h"
 
 namespace state_class {
 
