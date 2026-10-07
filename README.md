@@ -267,19 +267,6 @@ python3 scripts/run.py --suites p-bench t-bench --profiles ptpn
 
 TDG JSON format: [docs/json_format.md](docs/json_format.md). PTPN language: [docs/ptpn-language-spec.md](docs/ptpn-language-spec.md).
 
-## Project Layout
-
-| Module | Directory | Description |
-|--------|-----------|-------------|
-| Model | [src/model/](src/model/) | Types, TDG and PTPN data models |
-| Parsing | [src/parse/](src/parse/) | TDG JSON parsing/validation and `.ptpn` language parsing |
-| Exporters | [src/export/](src/export/) | PTPN structure / Graphviz export models |
-| Lowering | [src/lower/](src/lower/) | TDG → PTPN / Romeo `.cts` / PToPNer `.ppn` |
-| Analysis | [src/analysis/](src/analysis/) | State classes, DBM, scheduling, metrics |
-| App | [src/app/](src/app/) | CLI entry and pipeline orchestration |
-| Examples | [example/](example/) | TDG benchmark inputs |
-| Tests | [test/](test/) | GoogleTest suite (`ptpn_test`) |
-
 ## Documentation
 
 | Document | Contents |
@@ -290,7 +277,6 @@ TDG JSON format: [docs/json_format.md](docs/json_format.md). PTPN language: [doc
 | [docs/ptopner/](docs/ptopner/) | PToPNer export, scheduling semantics, metrics |
 | [docs/tdg2romeo/](docs/tdg2romeo/) | TDG → Romeo conversion rules |
 | [docs/romeo/](docs/romeo/) | Romeo engine semantics notes |
-| [CLAUDE.md](CLAUDE.md) | Developer / agent orientation |
 
 ## Third-Party Dependencies
 
