@@ -1,10 +1,10 @@
-#ifndef ANALYSIS_METRICS_H
-#define ANALYSIS_METRICS_H
+#ifndef ANALYSIS_METRICS_METRICS_H
+#define ANALYSIS_METRICS_METRICS_H
 
 #include <string>
 #include <vector>
 
-#include "analysis/ptpn_analysis.h"
+#include "analysis/reachability/ptpn_analysis.h"
 #include "model/petri.h"
 
 namespace state_class {
@@ -149,4 +149,4 @@ class MetricsAnalyzer {
 
 }  // namespace state_class
 
-#endif  // ANALYSIS_METRICS_H
+#endif  // ANALYSIS_METRICS_METRICS_H

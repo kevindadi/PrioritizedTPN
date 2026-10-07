@@ -52,7 +52,7 @@ state class.
 
 ## Implementation
 
-`src/analysis/scheduling.h` / `scheduling.cpp`:
+`src/analysis/reachability/scheduling.h` / `scheduling.cpp`:
 
 ```cpp
 // E_struct(M)
@@ -73,7 +73,7 @@ static std::set<size_t> filter_priority_per_core(
 
 ## When these sets are recomputed
 
-`StateClassReachabilityGraph::recompute_sets` (`src/analysis/ptpn_analysis.cpp`)
+`StateClassReachabilityGraph::recompute_sets` (`src/analysis/reachability/ptpn_analysis.cpp`)
 is called whenever the marking changes (in `compute_initial_class` and after each
 `fire`). It:
 1. Recomputes `struct_enabled` from the new marking (`Scheduling::structural_enabled`).
@@ -112,8 +112,8 @@ segments non-suspendable.
 
 ## Key files
 
-- `src/analysis/scheduling.cpp` — `structural_enabled`, `filter_priority_per_core`
-- `src/analysis/ptpn_analysis.cpp` — `recompute_sets`, `time_elapse`, `is_firable`, `fire`, `build`, `build_successor_zone`
+- `src/analysis/reachability/scheduling.cpp` — `structural_enabled`, `filter_priority_per_core`
+- `src/analysis/reachability/ptpn_analysis.cpp` — `recompute_sets`, `time_elapse`, `is_firable`, `fire`, `build`, `build_successor_zone`
 - `src/lower/tdg2pn/tdg2pn.cpp` — `is_resume_policy`, `add_resources_and_bindings_matrix`, `add_execution_chain`, `fixed_prior_with_restart`
 
 ## Contrast with Roméo

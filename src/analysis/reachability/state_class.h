@@ -1,5 +1,5 @@
-#ifndef ANALYSIS_STATE_CLASS_H
-#define ANALYSIS_STATE_CLASS_H
+#ifndef ANALYSIS_REACHABILITY_STATE_CLASS_H
+#define ANALYSIS_REACHABILITY_STATE_CLASS_H
 
 #include <algorithm>
 #include <cstddef>
@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "dbm.h"
+#include "analysis/dbm/dbm.h"
 
 namespace state_class {
 
@@ -130,4 +130,4 @@ size_t hash_state_class(const StateClass& state);
 
 }  // namespace state_class
 
-#endif  // ANALYSIS_STATE_CLASS_H
+#endif  // ANALYSIS_REACHABILITY_STATE_CLASS_H

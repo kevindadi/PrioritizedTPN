@@ -1,6 +1,6 @@
-#include "analysis/metrics.h"
+#include "analysis/metrics/metrics.h"
 
-#include "analysis/clock_state.h"
+#include "analysis/dbm/clock_state.h"
 
 namespace state_class {
 

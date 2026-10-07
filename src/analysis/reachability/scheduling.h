@@ -1,9 +1,9 @@
-#ifndef ANALYSIS_SCHEDULING_H
-#define ANALYSIS_SCHEDULING_H
+#ifndef ANALYSIS_REACHABILITY_SCHEDULING_H
+#define ANALYSIS_REACHABILITY_SCHEDULING_H
 
 #include <vector>
 
-#include "analysis/state_class.h"
+#include "analysis/reachability/state_class.h"
 #include "model/petri.h"
 
 namespace state_class {
@@ -29,4 +29,4 @@ class Scheduling {
 
 }  // namespace state_class
 
-#endif  // ANALYSIS_SCHEDULING_H
+#endif  // ANALYSIS_REACHABILITY_SCHEDULING_H

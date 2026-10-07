@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "analysis/ptpn_analysis.h"
-#include "analysis/state_class.h"
+#include "analysis/reachability/ptpn_analysis.h"
+#include "analysis/reachability/state_class.h"
 #include "model/petri.h"
 
 namespace scg_export {

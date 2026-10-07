@@ -1,5 +1,5 @@
-#ifndef ANALYSIS_PTPN_ANALYSIS_H
-#define ANALYSIS_PTPN_ANALYSIS_H
+#ifndef ANALYSIS_REACHABILITY_PTPN_ANALYSIS_H
+#define ANALYSIS_REACHABILITY_PTPN_ANALYSIS_H
 
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graph_traits.hpp>
@@ -9,8 +9,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "analysis/canonicalization.h"
-#include "analysis/state_class.h"
+#include "analysis/reachability/canonicalization.h"
+#include "analysis/reachability/state_class.h"
 #include "model/petri.h"
 
 namespace state_class {
@@ -125,4 +125,4 @@ class StateClassReachabilityGraph {
 
 }  // namespace state_class
 
-#endif  // ANALYSIS_PTPN_ANALYSIS_H
+#endif  // ANALYSIS_REACHABILITY_PTPN_ANALYSIS_H

@@ -3,9 +3,9 @@
 #include <set>
 #include <vector>
 
-#include "analysis/clock_state.h"
-#include "analysis/dbm.h"
-#include "analysis/ptpn_analysis.h"
+#include "analysis/dbm/clock_state.h"
+#include "analysis/dbm/dbm.h"
+#include "analysis/reachability/ptpn_analysis.h"
 #include "export/scg_dot.h"
 #include "model/petri.h"
 

@@ -1,5 +1,5 @@
-#ifndef ANALYSIS_CANONICALIZATION_H
-#define ANALYSIS_CANONICALIZATION_H
+#ifndef ANALYSIS_REACHABILITY_CANONICALIZATION_H
+#define ANALYSIS_REACHABILITY_CANONICALIZATION_H
 
 namespace state_class {
 
@@ -28,4 +28,4 @@ bool can_merge_into(const StateClass& candidate, const StateClass& existing,
 
 }  // namespace state_class
 
-#endif  // ANALYSIS_CANONICALIZATION_H
+#endif  // ANALYSIS_REACHABILITY_CANONICALIZATION_H

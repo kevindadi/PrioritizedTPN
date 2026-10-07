@@ -1,4 +1,4 @@
-#include "analysis/dbm.h"
+#include "analysis/dbm/dbm.h"
 
 #include <algorithm>
 #include <atomic>

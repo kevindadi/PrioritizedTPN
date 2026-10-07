@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "analysis/metrics.h"
-#include "analysis/ptpn_analysis.h"
+#include "analysis/metrics/metrics.h"
+#include "analysis/reachability/ptpn_analysis.h"
 #include "model/petri.h"
 
 namespace {

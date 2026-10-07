@@ -1,10 +1,10 @@
-#include "analysis/ptpn_analysis.h"
+#include "analysis/reachability/ptpn_analysis.h"
 
 #include <algorithm>
 #include <spdlog/spdlog.h>
 
-#include "analysis/clock_state.h"
-#include "analysis/scheduling.h"
+#include "analysis/dbm/clock_state.h"
+#include "analysis/reachability/scheduling.h"
 
 namespace state_class {
 

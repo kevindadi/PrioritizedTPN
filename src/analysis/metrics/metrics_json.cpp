@@ -1,7 +1,7 @@
 #include <fstream>
 #include <string>
 
-#include "analysis/metrics.h"
+#include "analysis/metrics/metrics.h"
 
 namespace state_class {
 

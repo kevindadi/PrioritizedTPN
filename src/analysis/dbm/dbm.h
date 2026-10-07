@@ -1,5 +1,5 @@
-#ifndef ANALYSIS_DBM_H
-#define ANALYSIS_DBM_H
+#ifndef ANALYSIS_DBM_DBM_H
+#define ANALYSIS_DBM_DBM_H
 
 #include <string>
 #include <vector>
@@ -99,4 +99,4 @@ class DBM {
 
 }  // namespace state_class
 
-#endif  // ANALYSIS_DBM_H
+#endif  // ANALYSIS_DBM_DBM_H

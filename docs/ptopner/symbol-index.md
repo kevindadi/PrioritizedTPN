@@ -36,11 +36,11 @@
 
 | Symbol | File | Notes |
 |---|---|---|
-| `SchedulingAlgorithms::select_active_per_core` | `src/analysis/scheduling.h:26` | per-core max-priority filter |
-| `SchedulingAlgorithms::select_one_transition` | `src/analysis/scheduling.h:35` | picks highest priority from schedulable set |
-| `SchedulingAlgorithms::compute_suspended` | `src/analysis/scheduling.h:49` | determines which enabled non-active transitions should suspend |
-| `SchedulingAlgorithms::should_suspend` | `src/analysis/scheduling.h:67` | per-transition suspend judgment |
-| `SchedulingAlgorithms::should_restore` | `src/analysis/scheduling.h:83` | per-transition resume judgment |
+| `SchedulingAlgorithms::select_active_per_core` | `src/analysis/reachability/scheduling.h:26` | per-core max-priority filter |
+| `SchedulingAlgorithms::select_one_transition` | `src/analysis/reachability/scheduling.h:35` | picks highest priority from schedulable set |
+| `SchedulingAlgorithms::compute_suspended` | `src/analysis/reachability/scheduling.h:49` | determines which enabled non-active transitions should suspend |
+| `SchedulingAlgorithms::should_suspend` | `src/analysis/reachability/scheduling.h:67` | per-transition suspend judgment |
+| `SchedulingAlgorithms::should_restore` | `src/analysis/reachability/scheduling.h:83` | per-transition resume judgment |
 
 ## PToPNer export
 

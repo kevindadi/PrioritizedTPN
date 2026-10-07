@@ -165,7 +165,7 @@ add_library(ptpn_export STATIC
 target_link_libraries(ptpn_export
     PUBLIC
     ptpn_petri
-    ptpn_analysis
+    ptpn_reachability
     PRIVATE
     Boost::filesystem
     spdlog::spdlog
@@ -227,25 +227,40 @@ target_link_libraries(ptpn_parser
     ptpn_petri
 )
 
-add_library(ptpn_analysis STATIC
-    src/analysis/dbm.cpp
-    src/analysis/state_class.cpp
-    src/analysis/ptpn_analysis.cpp
-    src/analysis/canonicalization.cpp
-    src/analysis/scheduling.cpp
-    src/analysis/metrics.cpp
-    src/analysis/metrics_structural.cpp
-    src/analysis/metrics_timing.cpp
-    src/analysis/metrics_locks.cpp
-    src/analysis/metrics_utilisation.cpp
-    src/analysis/metrics_json.cpp
+add_library(ptpn_dbm STATIC
+    src/analysis/dbm/dbm.cpp
 )
-target_link_libraries(ptpn_analysis
+target_link_libraries(ptpn_dbm
     PUBLIC
+    ptpn_types
+)
+
+add_library(ptpn_reachability STATIC
+    src/analysis/reachability/state_class.cpp
+    src/analysis/reachability/ptpn_analysis.cpp
+    src/analysis/reachability/canonicalization.cpp
+    src/analysis/reachability/scheduling.cpp
+)
+target_link_libraries(ptpn_reachability
+    PUBLIC
+    ptpn_dbm
     ptpn_petri
     Boost::graph
     PRIVATE
     spdlog::spdlog
+)
+
+add_library(ptpn_metrics STATIC
+    src/analysis/metrics/metrics.cpp
+    src/analysis/metrics/metrics_structural.cpp
+    src/analysis/metrics/metrics_timing.cpp
+    src/analysis/metrics/metrics_locks.cpp
+    src/analysis/metrics/metrics_utilisation.cpp
+    src/analysis/metrics/metrics_json.cpp
+)
+target_link_libraries(ptpn_metrics
+    PUBLIC
+    ptpn_reachability
 )
 
 # Aggregate facade kept for the executables and tests.
@@ -261,7 +276,9 @@ target_link_libraries(PTPN_core
     ptpn_romeo
     ptpn_ptopner
     ptpn_parser
-    ptpn_analysis
+    ptpn_dbm
+    ptpn_reachability
+    ptpn_metrics
     spdlog::spdlog
     fmt::fmt
 )

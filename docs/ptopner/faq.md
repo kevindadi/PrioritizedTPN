@@ -37,7 +37,7 @@
 
 ## 挂起和恢复的判定逻辑在哪？
 
-在 `src/analysis/scheduling.cpp`:
+在 `src/analysis/reachability/scheduling.cpp`:
 
 - `select_active_per_core` — 每核保留最高优先级(可并列)
 - `compute_suspended` — 计算哪些 enabled 但非 active 的变迁应被冻结

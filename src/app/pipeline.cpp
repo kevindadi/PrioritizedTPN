@@ -17,8 +17,8 @@
 #include <spdlog/spdlog.h>
 #include <variant>
 
-#include "analysis/metrics.h"
-#include "analysis/ptpn_analysis.h"
+#include "analysis/metrics/metrics.h"
+#include "analysis/reachability/ptpn_analysis.h"
 #include "app/pipeline.h"
 #include "export/export_dot.h"
 #include "export/export_ptpn.h"

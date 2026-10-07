@@ -1,7 +1,7 @@
-#ifndef ANALYSIS_METRICS_INTERNAL_H
-#define ANALYSIS_METRICS_INTERNAL_H
+#ifndef ANALYSIS_METRICS_METRICS_INTERNAL_H
+#define ANALYSIS_METRICS_METRICS_INTERNAL_H
 
-#include "analysis/clock_state.h"
+#include "analysis/dbm/clock_state.h"
 
 namespace state_class {
 
@@ -12,4 +12,4 @@ inline bool is_inf(int value) {
 
 }  // namespace state_class
 
-#endif  // ANALYSIS_METRICS_INTERNAL_H
+#endif  // ANALYSIS_METRICS_METRICS_INTERNAL_H

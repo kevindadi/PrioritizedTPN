@@ -1,9 +1,9 @@
 #include <algorithm>
 #include <functional>
 
-#include "analysis/clock_state.h"
-#include "analysis/metrics.h"
-#include "analysis/metrics_internal.h"
+#include "analysis/dbm/clock_state.h"
+#include "analysis/metrics/metrics.h"
+#include "analysis/metrics/metrics_internal.h"
 
 namespace state_class {
 

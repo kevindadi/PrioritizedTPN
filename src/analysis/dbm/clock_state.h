@@ -1,5 +1,5 @@
-#ifndef ANALYSIS_CLOCK_STATE_H
-#define ANALYSIS_CLOCK_STATE_H
+#ifndef ANALYSIS_DBM_CLOCK_STATE_H
+#define ANALYSIS_DBM_CLOCK_STATE_H
 
 #include <limits>
 
@@ -10,4 +10,4 @@ constexpr int INF_TIME = std::numeric_limits<int>::max();
 
 }  // namespace state_class
 
-#endif  // ANALYSIS_CLOCK_STATE_H
+#endif  // ANALYSIS_DBM_CLOCK_STATE_H

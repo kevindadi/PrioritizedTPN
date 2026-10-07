@@ -1,6 +1,6 @@
-#include "analysis/canonicalization.h"
+#include "analysis/reachability/canonicalization.h"
 
-#include "analysis/state_class.h"
+#include "analysis/reachability/state_class.h"
 
 namespace state_class {
 
