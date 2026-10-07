@@ -262,7 +262,10 @@ target_link_libraries(PTPN_core
 )
 
 # Main executable
-add_executable(ptpn src/app/main.cpp)
+add_executable(ptpn
+    src/app/main.cpp
+    src/app/pipeline.cpp
+)
 target_include_directories(ptpn PUBLIC src)
 target_link_libraries(ptpn PRIVATE PTPN_core CLI11::CLI11)
 
