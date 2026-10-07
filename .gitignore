@@ -1,17 +1,13 @@
 .cache
 .DS_Store
-.claude
-.cursor
 .clangd
 
 build
-.ptpn-build-dir
 tools.zip
 
 compile_commands.json
 *.json
 # Keep the project's Zed configuration tracked despite the `*.json` rule above
-!.zed/*.json
 paper
 unconfirmed
 
