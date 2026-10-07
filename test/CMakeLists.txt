@@ -19,6 +19,8 @@ add_executable(ptpn_test
   test_tdg2romeo.cpp
   test_tdg2pn_lowering.cpp
   test_pipeline_golden.cpp
+  test_invariants.cpp
+  test_parser_robustness.cpp
 )
 
 target_link_libraries(ptpn_test
