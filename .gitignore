@@ -18,3 +18,6 @@ scripts/__pycache__/
 **.ptpn
 **.pdf
 **.log
+
+# Golden fixtures are committed despite the generated-artifact patterns above.
+!test/golden/**
