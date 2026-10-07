@@ -171,6 +171,12 @@ target_link_libraries(ptpn_export
 
 add_library(ptpn_lowering STATIC
     src/lower/tdg2pn/tdg2pn.cpp
+    src/lower/tdg2pn/vertex_lowering.cpp
+    src/lower/tdg2pn/edge_lowering.cpp
+    src/lower/tdg2pn/binding_lowering.cpp
+    src/lower/tdg2pn/resource_lowering.cpp
+    src/lower/tdg2pn/task_metadata.cpp
+    src/lower/tdg2pn/preemption.cpp
 )
 target_link_libraries(ptpn_lowering
     PUBLIC
