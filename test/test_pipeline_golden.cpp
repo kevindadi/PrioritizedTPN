@@ -14,8 +14,11 @@
 #include "tdg2pn/tdg2pn.h"
 #include "tdg2ptopner/tdg2ptopner.h"
 #include "tdg2ptopner/validate.h"
+#include "tdg_test_helpers.h"
 
 namespace {
+
+using ptpn_test::load_tdg;
 
 // Golden outputs are generated with libstdc++ (the stdlib used by CI):
 //   ./build/ptpn tdg -f example/motivating-examples/hw.json \
@@ -25,17 +28,6 @@ namespace {
 //     --export-ptpn test/golden/a.ptpn.dot --export-metrics test/golden/a.metrics.json
 //   ./build/ptpn export ptopner -f example/p-bench/no-period.json \
 //     -o test/golden/no-period.ppn
-
-tdg::TDG load_tdg(const std::string& path) {
-  parse::Parser parser;
-  const auto result = parser.parse_file(path);
-  if (!result.success) {
-    throw std::runtime_error("failed to parse " + path + ": " + result.error_message);
-  }
-  tdg::TDG tdg(1, 1);
-  tdg.parse_json(path);
-  return tdg;
-}
 
 petri::PTPN lower_to_ptpn(const std::string& path) {
   tdg::TDG tdg = load_tdg(path);

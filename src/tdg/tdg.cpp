@@ -58,29 +58,28 @@ void register_node(TDG& tdg, const NodeType& node_type, bool log_node) {
   });
 }
 
-// Populates TDG fields from a successfully parsed JSON graph.
-void load_from_parser(TDG& tdg, const parse::Parser& parser, bool log_nodes) {
-  tdg.num_cpus = parser.get_num_cpus();
-  tdg.cores_per_cpu = parser.get_cores_per_cpu();
-  tdg.task_place_capacity = parser.get_task_place_capacity();
-  tdg.policy = parser.get_policy();
-  tdg.start_tasks = parser.get_start_tasks();
-  tdg.end_tasks = parser.get_end_tasks();
-  tdg.periodic_tasks = parser.get_periodic_tasks();
+}  // namespace
+
+void TDG::load_from_parser(const parse::Parser& parser, bool log_nodes) {
+  num_cpus = parser.get_num_cpus();
+  cores_per_cpu = parser.get_cores_per_cpu();
+  task_place_capacity = parser.get_task_place_capacity();
+  policy = parser.get_policy();
+  start_tasks = parser.get_start_tasks();
+  end_tasks = parser.get_end_tasks();
+  periodic_tasks = parser.get_periodic_tasks();
 
   for (const auto& json_node : parser.get_nodes()) {
-    register_node(tdg, json_node.to_node_type(), log_nodes);
+    register_node(*this, json_node.to_node_type(), log_nodes);
   }
 
-  tdg.tdg_edges.clear();
-  tdg.tdg_edges.reserve(parser.get_edges().size());
+  tdg_edges.clear();
+  tdg_edges.reserve(parser.get_edges().size());
   for (const auto& edge : parser.get_edges()) {
-    tdg.tdg_edges.push_back({edge.source, edge.target, edge.label, edge.style});
+    tdg_edges.push_back({edge.source, edge.target, edge.label, edge.style});
     spdlog::debug("[TDG] Edge: {} -> {} (style={})", edge.source, edge.target, edge.style);
   }
 }
-
-}  // namespace
 
 void TDG::parse_json(const std::string& json_file) {
   spdlog::info("[TDG] Starting JSON parsing: {}", json_file);
@@ -95,7 +94,7 @@ void TDG::parse_json(const std::string& json_file) {
   spdlog::info("[TDG] Configuration: {} CPUs, {} cores per CPU", parser.get_num_cpus(),
                parser.get_cores_per_cpu());
 
-  load_from_parser(*this, parser, /*log_nodes=*/true);
+  load_from_parser(parser, /*log_nodes=*/true);
 
   spdlog::info("[TDG] JSON parsing completed: {} nodes, {} edges", nodes_type.size(),
                tdg_edges.size());
@@ -108,7 +107,7 @@ void TDG::parse_json_string(const std::string& json_content) {
     throw std::runtime_error("JSON parsing failed: " + result.error_message);
   }
 
-  load_from_parser(*this, parser, /*log_nodes=*/false);
+  load_from_parser(parser, /*log_nodes=*/false);
 }
 
 std::string TDG::to_dot_string() const {

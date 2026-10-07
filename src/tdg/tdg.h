@@ -9,6 +9,10 @@
 
 #include "types/types.h"
 
+namespace parse {
+class Parser;
+}
+
 namespace tdg {
 
 class TDG {
@@ -36,6 +40,8 @@ class TDG {
 
   void parse_json(const std::string& json_file);
   void parse_json_string(const std::string& json_content);
+  // Populates the TDG from an already-parsed JSON graph, avoiding a second read.
+  void load_from_parser(const parse::Parser& parser, bool log_nodes = false);
   void export_to_dot(const std::string& output_path);
   std::string to_dot_string() const;
 };

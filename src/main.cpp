@@ -287,7 +287,7 @@ int load_tdg_from_json(const string& input_file, tdg::TDG& tdg, parse::Parser& p
   }
 
   tdg = tdg::TDG(parser.get_num_cpus(), parser.get_cores_per_cpu());
-  tdg.parse_json(input_file);
+  tdg.load_from_parser(parser, /*log_nodes=*/true);
   return 0;
 }
 

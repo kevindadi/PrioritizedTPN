@@ -9,7 +9,6 @@ namespace converter {
 namespace {
 
 constexpr int kControlTransitionPriority = 0;
-constexpr int kControlTransitionCore = -1;
 
 // Indices into the per-task place/transition chain stored in node_pn_map.
 struct TaskChainLayout {
@@ -119,8 +118,8 @@ petri::TimeInterval parse_edge_interval(const std::string& label, const std::str
 
 size_t add_control_transition(petri::PTPN& ptpn, const std::string& name,
                               const petri::TimeInterval& interval = petri::TimeInterval(0, 0)) {
-  return ptpn.add_transition(name, interval, kControlTransitionPriority, kControlTransitionCore,
-                             /*suspendable=*/false);
+  return ptpn.add_transition(name, interval, kControlTransitionPriority,
+                             petri::kControlTransitionCore, /*suspendable=*/false);
 }
 
 std::string format_core_priority_order(int core_id, const std::vector<std::string>& tasks,
