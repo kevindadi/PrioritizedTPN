@@ -21,6 +21,7 @@ add_executable(ptpn_test
   test_pipeline_golden.cpp
   test_invariants.cpp
   test_parser_robustness.cpp
+  test_conversion.cpp
 )
 
 target_link_libraries(ptpn_test

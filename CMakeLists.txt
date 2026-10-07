@@ -219,6 +219,21 @@ target_link_libraries(ptpn_ptopner
     spdlog::spdlog
 )
 
+# Unified lowering facade: TDG -> {PTPN, Romeo, PToPNer} with PTPN as the
+# canonical hub for composed conversions.
+add_library(ptpn_convert STATIC
+    src/lower/convert/registry.cpp
+    src/lower/convert/tdg_converters.cpp
+    src/lower/convert/ptpn_converters.cpp
+    src/lower/convert/defaults.cpp
+)
+target_link_libraries(ptpn_convert
+    PUBLIC
+    ptpn_lowering
+    ptpn_romeo
+    ptpn_ptopner
+)
+
 add_library(ptpn_parser STATIC
     src/parse/ptpn_parser.cpp
 )
@@ -279,6 +294,7 @@ target_link_libraries(PTPN_core
     ptpn_lowering
     ptpn_romeo
     ptpn_ptopner
+    ptpn_convert
     ptpn_parser
     ptpn_dbm
     ptpn_reachability
