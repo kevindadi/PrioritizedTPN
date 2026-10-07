@@ -1,0 +1,87 @@
+{
+  "exact": true,
+  "states": 17,
+  "transitions": 17,
+  "bounded": true,
+  "schedulable": true,
+  "has_steady_cycle": true,
+  "recurrent_scc_size": 7,
+  "hyperperiod": 20,
+  "deadlock_states": [],
+  "deadline_miss_witness": [],
+  "tasks": [
+    {
+      "name": "F",
+      "core": 0,
+      "priority": 96,
+      "wcet": 10,
+      "bcet": 2,
+      "period": 0,
+      "deadline": 0,
+      "observed": true,
+      "activations": 1,
+      "wcrt": 19,
+      "bcrt": 8,
+      "jitter": 11,
+      "worst_interference": 3,
+      "worst_blocking": 0,
+      "max_preemptions": 1,
+      "max_in_flight": 1,
+      "slack": null,
+      "deadline_missed": false,
+      "jobs_per_hyperperiod": 0
+    },
+    {
+      "name": "B",
+      "core": 0,
+      "priority": 98,
+      "wcet": 3,
+      "bcet": 2,
+      "period": 0,
+      "deadline": 0,
+      "observed": true,
+      "activations": 2,
+      "wcrt": 3,
+      "bcrt": 2,
+      "jitter": 1,
+      "worst_interference": 0,
+      "worst_blocking": 0,
+      "max_preemptions": 0,
+      "max_in_flight": 1,
+      "slack": null,
+      "deadline_missed": false,
+      "jobs_per_hyperperiod": 0
+    },
+    {
+      "name": "A",
+      "core": 0,
+      "priority": 97,
+      "wcet": 6,
+      "bcet": 4,
+      "period": 20,
+      "deadline": 20,
+      "observed": true,
+      "activations": 3,
+      "wcrt": 6,
+      "bcrt": 4,
+      "jitter": 2,
+      "worst_interference": 0,
+      "worst_blocking": 0,
+      "max_preemptions": 0,
+      "max_in_flight": 1,
+      "slack": 14,
+      "deadline_missed": false,
+      "jobs_per_hyperperiod": 1
+    }
+  ],
+  "locks": [
+  ],
+  "cores": [
+    {
+      "core": 0,
+      "util_min": 0.2,
+      "util_max": 0.3,
+      "graph_busy_fraction": 0.375
+    }
+  ]
+}

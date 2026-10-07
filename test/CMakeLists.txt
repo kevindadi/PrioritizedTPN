@@ -17,6 +17,7 @@ add_executable(ptpn_test
   test_metrics.cpp
   test_saturation.cpp
   test_tdg2romeo.cpp
+  test_pipeline_golden.cpp
 )
 
 target_link_libraries(ptpn_test
