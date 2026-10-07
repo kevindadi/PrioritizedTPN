@@ -160,10 +160,12 @@ target_link_libraries(ptpn_petri
 add_library(ptpn_export STATIC
     src/export/export_ptpn.cpp
     src/export/export_dot.cpp
+    src/export/scg_dot.cpp
 )
 target_link_libraries(ptpn_export
     PUBLIC
     ptpn_petri
+    ptpn_analysis
     PRIVATE
     Boost::filesystem
     spdlog::spdlog

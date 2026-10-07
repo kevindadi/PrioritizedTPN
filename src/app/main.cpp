@@ -23,6 +23,7 @@
 #include "analysis/ptpn_analysis.h"
 #include "export/export_dot.h"
 #include "export/export_ptpn.h"
+#include "export/scg_dot.h"
 #include "lower/tdg2pn/tdg2pn.h"
 #include "lower/tdg2ptopner/tdg2ptopner.h"
 #include "lower/tdg2ptopner/validate.h"
@@ -359,7 +360,8 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
 
     if (!opts.exports.scg_dot.empty()) {
       const auto scg_export_start = PipelineClock::now();
-      if (reachability_graph.save_to_dot(opts.exports.scg_dot)) {
+      const scg_export::ScgFormatter formatter(ptpn, reachability_graph.get_graph());
+      if (formatter.save_to_dot(opts.exports.scg_dot)) {
         log_step_timing("SCG DOT export", elapsed_ms(scg_export_start));
         spdlog::info("[OUTPUT] State class graph exported to: {}", opts.exports.scg_dot);
       } else {

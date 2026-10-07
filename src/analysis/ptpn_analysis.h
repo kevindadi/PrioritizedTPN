@@ -25,18 +25,10 @@ typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS,
 typedef boost::graph_traits<SCGraph>::vertex_descriptor SCVertex;
 typedef boost::graph_traits<SCGraph>::edge_descriptor SCEdge;
 
-#ifdef PTPN_ENABLE_TEST_ACCESS
-struct StateClassReachabilityGraphTestAccess;
-#endif
-
 // Builds the state-class reachability graph of a P-TPN following the symbolic
 // construction in unconfirmed/ptpn-formal-semantics.tex: time elapse on a joint
 // DBM, then a branch for every priority-enabled transition that can fire.
 class StateClassReachabilityGraph {
-#ifdef PTPN_ENABLE_TEST_ACCESS
-  friend struct StateClassReachabilityGraphTestAccess;
-#endif
-
  public:
   explicit StateClassReachabilityGraph(const petri::PTPN& net);
 
@@ -99,8 +91,6 @@ class StateClassReachabilityGraph {
     return stats_;
   }
 
-  bool save_to_dot(const std::string& file_path) const;
-
  private:
   const petri::PTPN& net_;
   SCGraph graph_;
@@ -131,19 +121,6 @@ class StateClassReachabilityGraph {
   // Returns the vertex matching `state` under the current mode, or npos.
   [[nodiscard]] bool find_match(const StateClass& state, SCVertex& match) const;
   SCVertex add_state(StateClass state);
-
-  static std::string format_marking(const petri::PTPN& net, const std::vector<int>& marking);
-  std::string format_transition_label(size_t transition_id) const;
-  std::string format_transitions(const TransitionSet& transitions) const;
-  std::string format_named_dbm(const StateClass& state) const;
-  std::string format_state_dump(const StateClass& state) const;
-  // Human-readable local clock zone as a conjunction of DBM constraints (per
-  // clock bounds plus non-trivial differences). No global timestamp: a state
-  // class is a symbolic set, so only the symbolic clock domain is shown.
-  std::vector<std::string> format_zone_constraints(const StateClass& state, bool html) const;
-  // Graphviz HTML-like node label: black identity (state id / marking / enabled
-  // sets) and the local clock zone with h-clocks and w-clocks colour-coded.
-  std::string format_state_label_html(const StateClass& state) const;
 };
 
 }  // namespace state_class

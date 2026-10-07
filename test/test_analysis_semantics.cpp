@@ -6,22 +6,8 @@
 #include "analysis/clock_state.h"
 #include "analysis/dbm.h"
 #include "analysis/ptpn_analysis.h"
+#include "export/scg_dot.h"
 #include "model/petri.h"
-
-namespace state_class {
-// Grants tests access to the private formatting helpers of the analyzer.
-struct StateClassReachabilityGraphTestAccess {
-  static std::string format_state_dump(const StateClassReachabilityGraph& graph,
-                                       const StateClass& state) {
-    return graph.format_state_dump(state);
-  }
-
-  static std::string format_named_dbm(const StateClassReachabilityGraph& graph,
-                                      const StateClass& state) {
-    return graph.format_named_dbm(state);
-  }
-};
-}  // namespace state_class
 
 namespace {
 
@@ -392,13 +378,12 @@ TEST(PtpnAnalysisTest, NamedDumpIncludesPlaceAndClockLabels) {
   const petri::PTPN ptpn = make_same_core_priority_net();
   StateClassReachabilityGraph graph(ptpn);
   const StateClass initial = graph.compute_initial_class();
+  const scg_export::ScgFormatter formatter(ptpn, graph.get_graph());
 
-  const std::string dump =
-      state_class::StateClassReachabilityGraphTestAccess::format_state_dump(graph, initial);
+  const std::string dump = formatter.format_state_dump(initial);
   EXPECT_NE(dump.find("input"), std::string::npos);
   EXPECT_NE(dump.find("E_pri"), std::string::npos);
 
-  const std::string zone =
-      state_class::StateClassReachabilityGraphTestAccess::format_named_dbm(graph, initial);
+  const std::string zone = formatter.format_named_dbm(initial);
   EXPECT_NE(zone.find("h(T1)"), std::string::npos);
 }

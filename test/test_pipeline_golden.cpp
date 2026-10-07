@@ -8,6 +8,7 @@
 #include "analysis/metrics.h"
 #include "analysis/ptpn_analysis.h"
 #include "export/export_dot.h"
+#include "export/scg_dot.h"
 #include "lower/tdg2pn/tdg2pn.h"
 #include "lower/tdg2ptopner/tdg2ptopner.h"
 #include "lower/tdg2ptopner/validate.h"
@@ -110,7 +111,8 @@ TEST(PipelineGolden, ScgDotMatchesGolden) {
   state_class::StateClassReachabilityGraph graph(ptpn);
   graph.build(5000);
   const std::string out = testing::TempDir() + "ptpn_test_scg.dot";
-  ASSERT_TRUE(graph.save_to_dot(out));
+  const scg_export::ScgFormatter formatter(ptpn, graph.get_graph());
+  ASSERT_TRUE(formatter.save_to_dot(out));
   expect_matches_golden(out, "test/golden/hw.scg.dot");
 }
 
