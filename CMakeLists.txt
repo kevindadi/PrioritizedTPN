@@ -234,6 +234,11 @@ add_library(ptpn_analysis STATIC
     src/analysis/canonicalization.cpp
     src/analysis/scheduling.cpp
     src/analysis/metrics.cpp
+    src/analysis/metrics_structural.cpp
+    src/analysis/metrics_timing.cpp
+    src/analysis/metrics_locks.cpp
+    src/analysis/metrics_utilisation.cpp
+    src/analysis/metrics_json.cpp
 )
 target_link_libraries(ptpn_analysis
     PUBLIC

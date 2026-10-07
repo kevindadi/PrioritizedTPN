@@ -79,7 +79,8 @@ Validation and export live in `src/lower/tdg2ptopner/validate.cpp` and `src/lowe
 | `src/analysis/ptpn_analysis.h/.cpp` | StateClassReachabilityGraph: build, time_elapse, fire, recompute_sets |
 | `src/analysis/state_class.h` | StateClass: marking, clocks, zone, enabled/active/suspended sets |
 | `src/analysis/scheduling.h/.cpp` | Scheduling: structural_enabled, filter_priority_per_core |
-| `src/analysis/metrics.h/.cpp` | MetricsAnalyzer: schedulability, task/lock/core metrics |
+| `src/analysis/metrics.h` | MetricsAnalyzer: schedulability, task/lock/core metrics |
+| `src/analysis/metrics*.cpp` | Metrics implementation split by concern (core, structural, timing, locks, utilisation, JSON) |
 | `src/lower/tdg2pn/tdg2pn.h/.cpp` | TDG → PTPN lowering |
 | `src/lower/tdg2ptopner/validate.cpp` | PToPNer validation: point intervals, no locks, fixed_prior_with_restart |
 | `src/lower/tdg2ptopner/tdg2ptopner.cpp` | PTPN → .ppn export |
