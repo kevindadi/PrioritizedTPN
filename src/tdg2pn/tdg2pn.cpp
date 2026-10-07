@@ -217,7 +217,8 @@ void TDG2PN::add_periodic_release_bindings(petri::PTPN& ptpn, const tdg::TDG& td
       continue;
     }
 
-    const size_t period_place = ptpn.add_place(periodic_task.task + "_period", 1, /*saturate=*/true);
+    const size_t period_place =
+        ptpn.add_place(periodic_task.task + "_period", 1, /*saturate=*/true);
     const size_t fire =
         add_control_transition(ptpn, periodic_task.task + "_fire",
                                petri::TimeInterval(periodic_task.period, periodic_task.period));
@@ -798,9 +799,8 @@ std::vector<size_t> TDG2PN::add_execution_chain(petri::PTPN& ptpn, const std::st
       const size_t lock_transition =
           ptpn.add_transition(lock_name, immediate_interval(), encoded_priority, core,
                               /*suspendable=*/false);
-      const size_t hold_place =
-          ptpn.add_place(task_name + "_hold_" + std::to_string(segment_index + 1), capacity,
-                         saturate);
+      const size_t hold_place = ptpn.add_place(
+          task_name + "_hold_" + std::to_string(segment_index + 1), capacity, saturate);
 
       ptpn.set_pre_arc(current_place, lock_transition, 1);
       ptpn.set_post_arc(lock_transition, hold_place, 1);

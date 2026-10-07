@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "../tdg/tdg.h"
+#include "tdg/tdg.h"
 
 namespace ptopner_export {
 

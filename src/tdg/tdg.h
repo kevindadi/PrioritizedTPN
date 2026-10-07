@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../types/types.h"
+#include "types/types.h"
 
 namespace tdg {
 

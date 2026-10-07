@@ -1,7 +1,6 @@
-#include <gtest/gtest.h>
-
 #include <cstddef>
 #include <fstream>
+#include <gtest/gtest.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>

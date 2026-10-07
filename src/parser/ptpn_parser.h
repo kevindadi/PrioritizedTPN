@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "../petri/petri.h"
+#include "petri/petri.h"
 
 namespace parser {
 

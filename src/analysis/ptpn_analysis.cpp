@@ -389,6 +389,7 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
         int low = 0;
         int high = 0;
       };
+
       std::vector<size_t> enabled;
       std::vector<EntryBounds> entry_bounds;
       StateClass elapsed;

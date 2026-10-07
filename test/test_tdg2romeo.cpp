@@ -1,6 +1,5 @@
-#include <gtest/gtest.h>
-
 #include <fstream>
+#include <gtest/gtest.h>
 #include <sstream>
 #include <string>
 
@@ -21,8 +20,7 @@ tdg::TDG load_tdg(const std::string& path) {
   return tdg;
 }
 
-std::string render(const tdg::TDG& tdg, romeo::RomeoFormat format,
-                   bool explicit_core_places) {
+std::string render(const tdg::TDG& tdg, romeo::RomeoFormat format, bool explicit_core_places) {
   romeo::RomeoExportOptions opts;
   opts.format = format;
   opts.explicit_core_places = explicit_core_places;

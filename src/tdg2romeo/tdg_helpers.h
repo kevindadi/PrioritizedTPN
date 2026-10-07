@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../tdg/tdg.h"
 #include "romeo_model.h"
+#include "tdg/tdg.h"
 
 namespace romeo {
 

@@ -16,11 +16,11 @@ using state_class::StateClassReachabilityGraph;
 petri::PTPN make_single_task_net(bool with_consume) {
   petri::PTPN ptpn;
   const size_t entry = ptpn.add_place("Tentry", 1);
-  const size_t get_core = ptpn.add_transition(
-      "Tget_core", petri::TimeInterval(0, 0), /*priority=*/1, /*core=*/0, false);
+  const size_t get_core = ptpn.add_transition("Tget_core", petri::TimeInterval(0, 0),
+                                              /*priority=*/1, /*core=*/0, false);
   const size_t ready = ptpn.add_place("Tready", 1);
-  const size_t exec = ptpn.add_transition(
-      "Texec", petri::TimeInterval(3, 5), /*priority=*/1, /*core=*/0, true);
+  const size_t exec =
+      ptpn.add_transition("Texec", petri::TimeInterval(3, 5), /*priority=*/1, /*core=*/0, true);
   const size_t exit = ptpn.add_place("Texit", 1);
 
   ptpn.set_initial_marking(entry, 1);
@@ -31,8 +31,7 @@ petri::PTPN make_single_task_net(bool with_consume) {
 
   if (with_consume) {
     const size_t done = ptpn.add_place("Tdone", 1);
-    const size_t consume = ptpn.add_transition(
-        "Tconsume", petri::TimeInterval(0, 0), 0, -1, false);
+    const size_t consume = ptpn.add_transition("Tconsume", petri::TimeInterval(0, 0), 0, -1, false);
     ptpn.set_pre_arc(exit, consume, 1);
     ptpn.set_post_arc(consume, done, 1);
   }
@@ -86,8 +85,7 @@ TEST(MetricsTest, StuckTaskIsReportedAsDeadlock) {
   // drained, so the terminal class still carries chain work and is flagged.
   petri::PTPN net;
   const size_t entry = net.add_place("Uentry", 1);
-  const size_t get_core = net.add_transition("Uget_core",
-                                             petri::TimeInterval(0, 0), 1, 0, false);
+  const size_t get_core = net.add_transition("Uget_core", petri::TimeInterval(0, 0), 1, 0, false);
   const size_t ready = net.add_place("Uready", 1);
   // A CPU resource that is never available: get_core can never fire.
   const size_t cpu = net.add_place("cpu", 1);

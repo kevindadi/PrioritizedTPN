@@ -1,10 +1,8 @@
-#include <gtest/gtest.h>
-
 #include <boost/graph/adjacency_list.hpp>
+#include <gtest/gtest.h>
 #include <set>
 #include <vector>
 
-#include "analysis/clock_state.h"
 #include "analysis/clock_state.h"
 #include "analysis/dbm.h"
 #include "analysis/ptpn_analysis.h"
@@ -13,10 +11,11 @@
 namespace state_class {
 // Grants tests access to the private formatting helpers of the analyzer.
 struct StateClassReachabilityGraphTestAccess {
-  static std::string format_state_dump(
-      const StateClassReachabilityGraph& graph, const StateClass& state) {
+  static std::string format_state_dump(const StateClassReachabilityGraph& graph,
+                                       const StateClass& state) {
     return graph.format_state_dump(state);
   }
+
   static std::string format_named_dbm(const StateClassReachabilityGraph& graph,
                                       const StateClass& state) {
     return graph.format_named_dbm(state);
@@ -30,8 +29,8 @@ using state_class::StateClass;
 using state_class::StateClassReachabilityGraph;
 
 // Collects the transition ids on the out-edges of a vertex.
-std::multiset<int> out_edge_transitions(
-    const state_class::SCGraph& graph, state_class::SCVertex vertex) {
+std::multiset<int> out_edge_transitions(const state_class::SCGraph& graph,
+                                        state_class::SCVertex vertex) {
   std::multiset<int> result;
   for (auto [it, end] = boost::out_edges(vertex, graph); it != end; ++it) {
     const auto& edge = boost::get(boost::edge_name, graph, *it);
@@ -51,10 +50,8 @@ petri::PTPN make_two_independent_transitions_net() {
   ptpn.set_initial_marking(left_in, 1);
   ptpn.set_initial_marking(right_in, 1);
 
-  const size_t left =
-      ptpn.add_transition("left", petri::TimeInterval(0, 2), petri::INF, -1);
-  const size_t right =
-      ptpn.add_transition("right", petri::TimeInterval(0, 2), petri::INF, -1);
+  const size_t left = ptpn.add_transition("left", petri::TimeInterval(0, 2), petri::INF, -1);
+  const size_t right = ptpn.add_transition("right", petri::TimeInterval(0, 2), petri::INF, -1);
   ptpn.set_pre_arc(left_in, left, 1);
   ptpn.set_post_arc(left, 2, 1);
   ptpn.set_pre_arc(right_in, right, 1);
@@ -89,8 +86,7 @@ petri::PTPN make_persistent_survivor_net() {
   ptpn.set_initial_marking(trigger_in, 1);
   ptpn.set_initial_marking(survivor_in, 1);
 
-  const size_t trigger =
-      ptpn.add_transition("trigger", petri::TimeInterval(2, 2), petri::INF, -1);
+  const size_t trigger = ptpn.add_transition("trigger", petri::TimeInterval(2, 2), petri::INF, -1);
   const size_t survivor =
       ptpn.add_transition("survivor", petri::TimeInterval(0, 5), petri::INF, -1);
   ptpn.set_pre_arc(trigger_in, trigger, 1);
@@ -129,12 +125,9 @@ petri::PTPN make_newly_enabled_siblings_net() {
   ptpn.add_place("right_done", 1);
   ptpn.set_initial_marking(input, 1);
 
-  const size_t trigger =
-      ptpn.add_transition("trigger", petri::TimeInterval(0, 0), petri::INF, -1);
-  const size_t left =
-      ptpn.add_transition("left", petri::TimeInterval(0, 4), petri::INF, -1);
-  const size_t right =
-      ptpn.add_transition("right", petri::TimeInterval(0, 6), petri::INF, -1);
+  const size_t trigger = ptpn.add_transition("trigger", petri::TimeInterval(0, 0), petri::INF, -1);
+  const size_t left = ptpn.add_transition("left", petri::TimeInterval(0, 4), petri::INF, -1);
+  const size_t right = ptpn.add_transition("right", petri::TimeInterval(0, 6), petri::INF, -1);
   ptpn.set_pre_arc(input, trigger, 1);
   ptpn.set_post_arc(trigger, shared, 2);
   ptpn.set_pre_arc(shared, left, 1);
@@ -220,8 +213,7 @@ TEST(PtpnAnalysisTest, BranchesOverEveryFirableTransition) {
   StateClassReachabilityGraph graph(ptpn);
   graph.build(64);
 
-  const auto transitions =
-      out_edge_transitions(graph.get_graph(), graph.get_initial_vertex());
+  const auto transitions = out_edge_transitions(graph.get_graph(), graph.get_initial_vertex());
   EXPECT_EQ(transitions.count(0), 1u);
   EXPECT_EQ(transitions.count(1), 1u);
 }
@@ -235,13 +227,11 @@ TEST(PtpnAnalysisTest, PriorityFilterFiresHighPriorityNotEarliest) {
   graph.build(64);
 
   const StateClass initial =
-      boost::get(boost::vertex_name, graph.get_graph(),
-                 graph.get_initial_vertex());
+      boost::get(boost::vertex_name, graph.get_graph(), graph.get_initial_vertex());
   EXPECT_EQ(initial.priority_enabled, (state_class::TransitionSet{1}));
   EXPECT_EQ(initial.suspended, (state_class::TransitionSet{0}));
 
-  const auto transitions =
-      out_edge_transitions(graph.get_graph(), graph.get_initial_vertex());
+  const auto transitions = out_edge_transitions(graph.get_graph(), graph.get_initial_vertex());
   EXPECT_EQ(transitions.count(1), 1u);
   EXPECT_EQ(transitions.count(0), 0u);
 }
@@ -404,13 +394,11 @@ TEST(PtpnAnalysisTest, NamedDumpIncludesPlaceAndClockLabels) {
   const StateClass initial = graph.compute_initial_class();
 
   const std::string dump =
-      state_class::StateClassReachabilityGraphTestAccess::format_state_dump(
-          graph, initial);
+      state_class::StateClassReachabilityGraphTestAccess::format_state_dump(graph, initial);
   EXPECT_NE(dump.find("input"), std::string::npos);
   EXPECT_NE(dump.find("E_pri"), std::string::npos);
 
   const std::string zone =
-      state_class::StateClassReachabilityGraphTestAccess::format_named_dbm(
-          graph, initial);
+      state_class::StateClassReachabilityGraphTestAccess::format_named_dbm(graph, initial);
   EXPECT_NE(zone.find("h(T1)"), std::string::npos);
 }

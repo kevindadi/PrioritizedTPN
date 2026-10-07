@@ -1,7 +1,7 @@
 #ifndef TDG2ROMEO_INHIBITOR_ARC_H
 #define TDG2ROMEO_INHIBITOR_ARC_H
 
-#include "../tdg/tdg.h"
+#include "tdg/tdg.h"
 #include "tdg2romeo.h"
 
 namespace romeo {

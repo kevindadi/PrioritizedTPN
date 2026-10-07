@@ -14,9 +14,13 @@ struct RomeoTimeInterval {
   bool left_open = false;
   bool right_open = false;
 
-  static RomeoTimeInterval immediate() { return {0, 0, false, false}; }
+  static RomeoTimeInterval immediate() {
+    return {0, 0, false, false};
+  }
 
-  static RomeoTimeInterval point(int value) { return {value, value, false, false}; }
+  static RomeoTimeInterval point(int value) {
+    return {value, value, false, false};
+  }
 
   static RomeoTimeInterval closed(int earliest_value, int latest_value) {
     return {earliest_value, latest_value, false, false};
@@ -53,7 +57,9 @@ class RomeoModelBuilder {
   std::string& place(const std::string& name, int initial = 0);
   void add_transition(RomeoTransition transition);
 
-  RomeoModel build() const { return {places_, transitions_}; }
+  RomeoModel build() const {
+    return {places_, transitions_};
+  }
 
  private:
   std::vector<RomeoPlace> places_;

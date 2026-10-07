@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-
 #include <string>
 
 #include "json/json.h"
@@ -114,7 +113,8 @@ petri::PTPN lower_periodic_net(int task_place_capacity) {
       "num_cpus": 1,
       "cores_per_cpu": 1,
       "policy": "fixed",
-      "task_place_capacity": )" + std::to_string(task_place_capacity) + R"(,
+      "task_place_capacity": )" +
+                           std::to_string(task_place_capacity) + R"(,
       "start": [{"task": "A", "tokens": 1}],
       "end": ["A"],
       "periodic": [{"task": "A", "period": 5}]

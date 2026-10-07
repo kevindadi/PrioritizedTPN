@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "parser/ptpn_parser.h"
 
 namespace parser {
@@ -103,8 +104,8 @@ TEST_F(PTPNParserTest, ParseTransitionsWithSuspendable) {
 TEST_F(PTPNParserTest, ParseArcs) {
   PTPNAST ast;
   std::string error;
-  bool result = PTPNParser::parse(
-      "places P0, P1\ntransitions T0 [0, 0]\nP0 -> T0\nT0 -> P1", ast, error);
+  bool result =
+      PTPNParser::parse("places P0, P1\ntransitions T0 [0, 0]\nP0 -> T0\nT0 -> P1", ast, error);
 
   EXPECT_TRUE(result);
   EXPECT_EQ(2, ast.arcs.size());
@@ -117,8 +118,7 @@ TEST_F(PTPNParserTest, ParseArcs) {
 TEST_F(PTPNParserTest, ParseArcsWithWeight) {
   PTPNAST ast;
   std::string error;
-  bool result = PTPNParser::parse(
-      "places P0\ntransitions T0 [0, 0]\nP0 -> T0:2", ast, error);
+  bool result = PTPNParser::parse("places P0\ntransitions T0 [0, 0]\nP0 -> T0:2", ast, error);
 
   EXPECT_TRUE(result);
   EXPECT_EQ(1, ast.arcs.size());
@@ -284,7 +284,8 @@ TEST_F(PTPNParserTest, RejectDuplicatePlace) {
 TEST_F(PTPNParserTest, RejectUnknownArcReference) {
   PTPNAST ast;
   std::string error;
-  bool result = PTPNParser::parse("places P0\ntransitions T0 [0,0]\nP0 -> T0\nT0 -> Missing", ast, error);
+  bool result =
+      PTPNParser::parse("places P0\ntransitions T0 [0,0]\nP0 -> T0\nT0 -> Missing", ast, error);
 
   EXPECT_FALSE(result);
   EXPECT_NE(std::string::npos, error.find("not found"));

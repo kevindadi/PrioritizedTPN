@@ -1,6 +1,5 @@
-#include <gtest/gtest.h>
-
 #include <boost/graph/adjacency_list.hpp>
+#include <gtest/gtest.h>
 #include <set>
 #include <vector>
 

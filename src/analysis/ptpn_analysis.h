@@ -48,6 +48,7 @@ class StateClassReachabilityGraph {
   // beyond k are relaxed, which merges behaviorally equivalent state classes
   // and keeps the zone space finite. Preserves the reachable marking set.
   void set_extrapolation(bool enabled);
+
   [[nodiscard]] bool get_extrapolation() const {
     return extrapolation_enabled_;
   }
