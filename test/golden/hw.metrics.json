@@ -8,7 +8,6 @@
   "recurrent_scc_size": 7,
   "hyperperiod": 20,
   "deadlock_states": [],
-  "deadline_miss_witness": [],
   "tasks": [
     {
       "name": "F",
@@ -28,7 +27,6 @@
       "max_preemptions": 1,
       "max_in_flight": 1,
       "slack": null,
-      "deadline_missed": false,
       "jobs_per_hyperperiod": 0
     },
     {
@@ -49,7 +47,6 @@
       "max_preemptions": 0,
       "max_in_flight": 1,
       "slack": null,
-      "deadline_missed": false,
       "jobs_per_hyperperiod": 0
     },
     {
@@ -70,7 +67,6 @@
       "max_preemptions": 0,
       "max_in_flight": 1,
       "slack": 14,
-      "deadline_missed": false,
       "jobs_per_hyperperiod": 1
     }
   ],

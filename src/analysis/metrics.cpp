@@ -4,7 +4,6 @@
 #include <fstream>
 #include <functional>
 #include <numeric>
-#include <queue>
 
 #include "analysis/clock_state.h"
 
@@ -128,12 +127,6 @@ void MetricsAnalyzer::build_topology() {
     }
   }
 
-  // Name -> place index, to locate the per-task timeout monitor place.
-  std::unordered_map<std::string, size_t> place_by_name;
-  for (size_t p = 0; p < net_.num_places(); ++p) {
-    place_by_name[net_.get_place(petri::PlaceId{p}).name] = p;
-  }
-
   for (const auto& [name, info] : net_.task_info) {
     const auto chain_it = net_.node_pn_map.find(name);
     if (chain_it == net_.node_pn_map.end() || chain_it->second.empty()) {
@@ -170,12 +163,6 @@ void MetricsAnalyzer::build_topology() {
     topo.entry_place = chain.front().as_place().index();
     topo.end_place = chain.back().as_place().index();
     topo.has_end = true;
-
-    const auto to_it = place_by_name.find(name + "timeout");
-    if (to_it != place_by_name.end()) {
-      topo.timeout_place = to_it->second;
-      topo.has_timeout = true;
-    }
 
     tasks_.push_back(std::move(topo));
   }
@@ -262,8 +249,7 @@ void MetricsAnalyzer::compute_structural(MetricsReport& report) {
     }
   }
 
-  // Illegitimate sinks: no successor while work remains (a chain place still
-  // holds a token, or a timeout has fired).
+  // Illegitimate sinks: no successor while a task chain still holds a token.
   for (size_t v = 0; v < num_vertices_; ++v) {
     if (!out_edges_[v].empty()) {
       continue;
@@ -271,10 +257,6 @@ void MetricsAnalyzer::compute_structural(MetricsReport& report) {
     bool work_remaining = false;
     for (const TaskTopology& task : tasks_) {
       if (task_in_flight(task, v)) {
-        work_remaining = true;
-        break;
-      }
-      if (task.has_timeout && state_of_[v]->marking[task.timeout_place] > 0) {
         work_remaining = true;
         break;
       }
@@ -286,51 +268,7 @@ void MetricsAnalyzer::compute_structural(MetricsReport& report) {
 }
 
 void MetricsAnalyzer::compute_schedulability(MetricsReport& report) {
-  // First reachable timeout state (for the witness path) via BFS from initial.
-  std::vector<long long> parent(num_vertices_, -1);
-  std::vector<char> seen(num_vertices_, 0);
-  std::queue<size_t> q;
-  q.push(initial_);
-  seen[initial_] = 1;
-  long long miss_state = -1;
-  auto is_miss = [&](size_t v) {
-    for (const TaskTopology& task : tasks_) {
-      if (task.has_timeout && state_of_[v]->marking[task.timeout_place] > 0) {
-        return true;
-      }
-    }
-    return false;
-  };
-  if (is_miss(initial_)) {
-    miss_state = static_cast<long long>(initial_);
-  }
-  while (!q.empty() && miss_state < 0) {
-    const size_t u = q.front();
-    q.pop();
-    for (const Edge& e : out_edges_[u]) {
-      if (seen[e.target]) {
-        continue;
-      }
-      seen[e.target] = 1;
-      parent[e.target] = static_cast<long long>(u);
-      if (is_miss(e.target)) {
-        miss_state = static_cast<long long>(e.target);
-        break;
-      }
-      q.push(e.target);
-    }
-  }
-
-  if (miss_state >= 0) {
-    std::vector<size_t> path;
-    for (long long v = miss_state; v >= 0; v = parent[v]) {
-      path.push_back(static_cast<size_t>(v));
-    }
-    std::reverse(path.begin(), path.end());
-    report.deadline_miss_witness = std::move(path);
-  }
-
-  report.schedulable = (miss_state < 0) && report.deadlock_states.empty();
+  report.schedulable = report.deadlock_states.empty();
 }
 
 void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
@@ -444,16 +382,6 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
         sum += state_of_[v]->marking[p];
       }
       tm.max_in_flight = std::max(tm.max_in_flight, sum);
-    }
-
-    // Deadline miss for this task.
-    if (task.has_timeout) {
-      for (size_t v = 0; v < num_vertices_; ++v) {
-        if (state_of_[v]->marking[task.timeout_place] > 0) {
-          tm.deadline_missed = true;
-          break;
-        }
-      }
     }
 
     if (tm.observed) {
@@ -753,14 +681,6 @@ bool MetricsAnalyzer::save_to_json(const MetricsReport& report, const std::strin
   }
   out << "],\n";
 
-  out << "  \"deadline_miss_witness\": [";
-  for (size_t i = 0; i < report.deadline_miss_witness.size(); ++i) {
-    if (i)
-      out << ", ";
-    out << report.deadline_miss_witness[i];
-  }
-  out << "],\n";
-
   out << "  \"tasks\": [\n";
   for (size_t i = 0; i < report.tasks.size(); ++i) {
     const TaskMetrics& t = report.tasks[i];
@@ -783,7 +703,6 @@ bool MetricsAnalyzer::save_to_json(const MetricsReport& report, const std::strin
     out << "      \"max_in_flight\": " << t.max_in_flight << ",\n";
     out << "      \"slack\": " << (t.has_deadline ? time_json(t.slack) : std::string("null"))
         << ",\n";
-    out << "      \"deadline_missed\": " << (t.deadline_missed ? "true" : "false") << ",\n";
     out << "      \"jobs_per_hyperperiod\": " << t.jobs_per_hyperperiod << "\n";
     out << "    }" << (i + 1 < report.tasks.size() ? "," : "") << "\n";
   }

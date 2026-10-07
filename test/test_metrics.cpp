@@ -76,7 +76,6 @@ TEST(MetricsTest, SingleTaskResponseTimeMatchesExecutionWindow) {
   EXPECT_EQ(t.jitter.value, 2);
   EXPECT_EQ(t.max_in_flight, 1);
   EXPECT_EQ(t.max_preemptions, 0);
-  EXPECT_FALSE(t.deadline_missed);
 
   EXPECT_TRUE(report.bounded);
   EXPECT_TRUE(report.schedulable);

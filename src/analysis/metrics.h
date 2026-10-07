@@ -41,7 +41,6 @@ struct TaskMetrics {
 
   bool has_deadline = false;
   TimeValue slack;               // deadline - wcrt (only when has_deadline)
-  bool deadline_missed = false;  // a `<task>timeout` place is reachable
   int jobs_per_hyperperiod = 0;  // hyperperiod / period (0 if aperiodic)
 };
 
@@ -72,9 +71,8 @@ struct MetricsReport {
   std::vector<int> max_tokens_per_place;     // index -> max tokens observed
   std::vector<std::string> overflow_places;  // places exceeding capacity
 
-  std::vector<size_t> deadlock_states;        // ids of illegitimate sinks
-  bool schedulable = true;                    // no deadline miss reachable
-  std::vector<size_t> deadline_miss_witness;  // path v0..first timeout state
+  std::vector<size_t> deadlock_states;  // ids of illegitimate sinks
+  bool schedulable = true;              // no illegitimate deadlock reachable
 
   std::vector<TaskMetrics> tasks;
   std::vector<LockMetrics> locks;
@@ -109,8 +107,6 @@ class MetricsAnalyzer {
     size_t entry_place = 0;
     size_t end_place = 0;
     bool has_end = false;
-    size_t timeout_place = 0;
-    bool has_timeout = false;
   };
 
   // Flattened, DP-friendly view of one edge. dwell_* use INF_TIME for infinity.
