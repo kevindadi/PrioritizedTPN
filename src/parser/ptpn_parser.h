@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "common/result.h"
 #include "petri/petri.h"
 
 namespace parser {
@@ -59,19 +60,8 @@ class PTPNParser {
 class PTPNBuilder {
  public:
   static petri::PTPN build(const PTPNAST& ast);
-  static petri::PTPN parse(const std::string& source);
-  static petri::PTPN parse_file(const std::string& filepath);
-
-  static std::string error_message() {
-    return error_msg_;
-  }
-
-  static bool has_error() {
-    return !error_msg_.empty();
-  }
-
- private:
-  static std::string error_msg_;
+  static ptpn::Result<petri::PTPN> parse(const std::string& source);
+  static ptpn::Result<petri::PTPN> parse_file(const std::string& filepath);
 };
 
 }  // namespace parser

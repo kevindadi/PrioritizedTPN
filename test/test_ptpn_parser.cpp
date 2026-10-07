@@ -208,10 +208,11 @@ T0 -> P1
 @init P0:1
 )";
 
-  petri::PTPN ptpn = PTPNBuilder::parse(content);
+  const auto result = PTPNBuilder::parse(content);
+  ASSERT_TRUE(result.ok()) << result.error();
 
-  EXPECT_EQ(2, ptpn.num_places());
-  EXPECT_EQ(1, ptpn.num_transitions());
+  EXPECT_EQ(2, result.value().num_places());
+  EXPECT_EQ(1, result.value().num_transitions());
 }
 
 TEST_F(PTPNParserTest, ParseEmptyInput) {
@@ -300,10 +301,10 @@ T0 -> Exit
 @init Entry:1
 )";
 
-  petri::PTPN ptpn = PTPNBuilder::parse(content);
-  EXPECT_FALSE(PTPNBuilder::has_error());
-  EXPECT_EQ(2, ptpn.num_places());
-  EXPECT_EQ(1, ptpn.num_transitions());
+  const auto result = PTPNBuilder::parse(content);
+  ASSERT_TRUE(result.ok()) << result.error();
+  EXPECT_EQ(2, result.value().num_places());
+  EXPECT_EQ(1, result.value().num_transitions());
 }
 
 TEST_F(PTPNParserTest, ParseTransitionsWithStrictLeftEndpoint) {
@@ -358,10 +359,10 @@ TEST_F(PTPNParserTest, StrictLeftEndpointInclusiveRightRegression) {
 }
 
 TEST_F(PTPNParserTest, BuilderPreservesStrictIntervalMetadata) {
-  const auto ptpn = PTPNBuilder::parse("transitions T0 (1, 5] ");
-  ASSERT_FALSE(PTPNBuilder::has_error());
-  ASSERT_EQ(1, ptpn.num_transitions());
-  const auto& transition = ptpn.get_transition(0);
+  const auto result = PTPNBuilder::parse("transitions T0 (1, 5] ");
+  ASSERT_TRUE(result.ok()) << result.error();
+  ASSERT_EQ(1, result.value().num_transitions());
+  const auto& transition = result.value().get_transition(0);
 
   EXPECT_TRUE(transition.time_interval.left_open);
   EXPECT_FALSE(transition.time_interval.right_open);

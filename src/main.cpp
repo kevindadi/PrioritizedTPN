@@ -480,11 +480,12 @@ int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts,
   const auto parse_start = PipelineClock::now();
   spdlog::info("[PTPN] Loading source: {}", input_file);
 
-  const petri::PTPN ptpn = parser::PTPNBuilder::parse_file(input_file);
-  if (parser::PTPNBuilder::has_error()) {
-    cerr << "ERROR: Failed to parse PTPN file: " << parser::PTPNBuilder::error_message() << endl;
+  const auto parse_result = parser::PTPNBuilder::parse_file(input_file);
+  if (!parse_result.ok()) {
+    cerr << "ERROR: Failed to parse PTPN file: " << parse_result.error() << endl;
     return 1;
   }
+  const petri::PTPN& ptpn = parse_result.value();
 
   log_step_timing("PTPN parsing", elapsed_ms(parse_start));
 
@@ -526,12 +527,12 @@ int run_export_ptopner(const ExportCommandOptions& opts) {
 
   if (format == InputFormat::PTPN) {
     spdlog::info("[EXPORT] PToPNer from PTPN source: {}", opts.input_file);
-    const petri::PTPN ptpn = parser::PTPNBuilder::parse_file(opts.input_file);
-    if (parser::PTPNBuilder::has_error()) {
-      cerr << "ERROR: Failed to parse PTPN file: " << parser::PTPNBuilder::error_message() << endl;
+    const auto ptpn_result = parser::PTPNBuilder::parse_file(opts.input_file);
+    if (!ptpn_result.ok()) {
+      cerr << "ERROR: Failed to parse PTPN file: " << ptpn_result.error() << endl;
       return 1;
     }
-    return export_ppn_from_ptpn(ptpn, opts.output_file);
+    return export_ppn_from_ptpn(ptpn_result.value(), opts.output_file);
   }
 
   spdlog::info("[EXPORT] PToPNer from TDG JSON: {}", opts.input_file);

@@ -492,8 +492,6 @@ bool PTPNParser::parse_file(const std::string& filepath, PTPNAST& ast, std::stri
   return parse(buffer.str(), ast, error);
 }
 
-std::string PTPNBuilder::error_msg_ = "";
-
 petri::PTPN PTPNBuilder::build(const PTPNAST& ast) {
   petri::PTPN ptpn;
 
@@ -540,34 +538,22 @@ petri::PTPN PTPNBuilder::build(const PTPNAST& ast) {
   return ptpn;
 }
 
-petri::PTPN PTPNBuilder::parse(const std::string& source) {
-  error_msg_.clear();
+ptpn::Result<petri::PTPN> PTPNBuilder::parse(const std::string& source) {
   PTPNAST ast;
   std::string error;
   if (!PTPNParser::parse(source, ast, error)) {
-    error_msg_ = error;
-    return petri::PTPN();
+    return ptpn::Result<petri::PTPN>::failure(std::move(error));
   }
-  return build(ast);
+  return ptpn::Result<petri::PTPN>::success(build(ast));
 }
 
-petri::PTPN PTPNBuilder::parse_file(const std::string& filepath) {
-  error_msg_.clear();
+ptpn::Result<petri::PTPN> PTPNBuilder::parse_file(const std::string& filepath) {
   PTPNAST ast;
   std::string error;
   if (!PTPNParser::parse_file(filepath, ast, error)) {
-    error_msg_ = error;
-    return petri::PTPN();
+    return ptpn::Result<petri::PTPN>::failure(std::move(error));
   }
-  return build(ast);
-}
-
-petri::PTPN parse_file(const std::string& filepath) {
-  return PTPNBuilder::parse_file(filepath);
-}
-
-petri::PTPN parse_string(const std::string& source) {
-  return PTPNBuilder::parse(source);
+  return ptpn::Result<petri::PTPN>::success(build(ast));
 }
 
 }  // namespace parser
