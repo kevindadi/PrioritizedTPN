@@ -495,22 +495,20 @@ bool PTPNParser::parse_file(const std::string& filepath, PTPNAST& ast, std::stri
 petri::PTPN PTPNBuilder::build(const PTPNAST& ast) {
   petri::PTPN ptpn;
 
-  std::unordered_map<std::string, size_t> place_index;
-  std::unordered_map<std::string, size_t> transition_index;
+  std::unordered_map<std::string, petri::PlaceId> place_index;
+  std::unordered_map<std::string, petri::TransitionId> transition_index;
 
   for (size_t i = 0; i < ast.places.size(); ++i) {
     const auto& p = ast.places[i];
-    place_index[p.id] = i;
     const std::string name = p.name.empty() ? p.id : p.name;
-    ptpn.add_place(name, p.capacity);
+    place_index[p.id] = ptpn.add_place(name, p.capacity);
   }
 
   for (size_t i = 0; i < ast.transitions.size(); ++i) {
     const auto& t = ast.transitions[i];
-    transition_index[t.id] = i;
     const std::string name = t.name.empty() ? t.id : t.name;
     const petri::TimeInterval interval(t.time_min, t.time_max, t.left_open, t.right_open);
-    ptpn.add_transition(name, interval, t.priority, t.core, t.suspendable);
+    transition_index[t.id] = ptpn.add_transition(name, interval, t.priority, t.core, t.suspendable);
   }
 
   for (const auto& arc : ast.arcs) {
@@ -530,7 +528,7 @@ petri::PTPN PTPNBuilder::build(const PTPNAST& ast) {
   for (const auto& init : ast.initial_marking) {
     const auto idx = place_index.find(init.place);
     if (idx != place_index.end()) {
-      marking[idx->second] = init.tokens;
+      marking[idx->second.index()] = init.tokens;
     }
   }
   ptpn.set_initial_marking(marking);

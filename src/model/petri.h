@@ -17,6 +17,98 @@ namespace petri {
 constexpr int INF = std::numeric_limits<int>::max();
 constexpr int kControlTransitionCore = -1;
 
+// Strongly-typed handles into PTPN::places / PTPN::transitions. They are
+// created by the net's add_* functions; `index()` exposes the underlying vector
+// offset for the index-oriented analysis layer (markings, clock arrays).
+struct PlaceId {
+  size_t value = 0;
+
+  [[nodiscard]] constexpr size_t index() const {
+    return value;
+  }
+};
+
+struct TransitionId {
+  size_t value = 0;
+
+  [[nodiscard]] constexpr size_t index() const {
+    return value;
+  }
+};
+
+inline bool operator==(PlaceId left, PlaceId right) {
+  return left.value == right.value;
+}
+
+inline bool operator!=(PlaceId left, PlaceId right) {
+  return !(left == right);
+}
+
+inline bool operator<(PlaceId left, PlaceId right) {
+  return left.value < right.value;
+}
+
+inline bool operator==(TransitionId left, TransitionId right) {
+  return left.value == right.value;
+}
+
+inline bool operator!=(TransitionId left, TransitionId right) {
+  return !(left == right);
+}
+
+inline bool operator<(TransitionId left, TransitionId right) {
+  return left.value < right.value;
+}
+
+// A tagged reference to either a place or a transition. The lowering layer
+// deliberately mixes both in node_start_end_map / node_pn_map; NodeRef replaces
+// the old "bare index plus size check" convention and turns a wrong-kind access
+// into a loud runtime error instead of a silent matrix mix-up.
+struct NodeRef {
+  enum class Kind { Place, Transition };
+
+  Kind kind = Kind::Place;
+  size_t index = 0;
+
+  static NodeRef of(PlaceId id) {
+    return NodeRef{Kind::Place, id.value};
+  }
+
+  static NodeRef of(TransitionId id) {
+    return NodeRef{Kind::Transition, id.value};
+  }
+
+  [[nodiscard]] bool is_place() const {
+    return kind == Kind::Place;
+  }
+
+  [[nodiscard]] bool is_transition() const {
+    return kind == Kind::Transition;
+  }
+
+  [[nodiscard]] PlaceId as_place() const {
+    if (!is_place()) {
+      throw std::runtime_error("NodeRef does not reference a place");
+    }
+    return PlaceId{index};
+  }
+
+  [[nodiscard]] TransitionId as_transition() const {
+    if (!is_transition()) {
+      throw std::runtime_error("NodeRef does not reference a transition");
+    }
+    return TransitionId{index};
+  }
+};
+
+inline bool operator==(const NodeRef& left, const NodeRef& right) {
+  return left.kind == right.kind && left.index == right.index;
+}
+
+inline bool operator!=(const NodeRef& left, const NodeRef& right) {
+  return !(left == right);
+}
+
 // Overflow recording: `fire` clamps every overflowing place to capacity, but a
 // NON-saturating place being clamped is an invalid behavior and is recorded so
 // the metrics layer can report it. Saturating places clamp silently (expected
@@ -132,18 +224,19 @@ class PTPN {
  public:
   PTPN() = default;
 
-  size_t add_place(const std::string& name, int capacity = 1, bool saturate = false) {
+  PlaceId add_place(const std::string& name, int capacity = 1, bool saturate = false) {
     places.emplace_back(std::to_string(places.size()), name, capacity, saturate);
     Pre.emplace_back(std::vector<int>(transitions.size(), 0));
     M0.push_back(0);
     for (auto& row : Post) {
       row.push_back(0);
     }
-    return places.size() - 1;
+    return PlaceId{places.size() - 1};
   }
 
-  size_t add_transition(const std::string& name, const TimeInterval& interval = TimeInterval(),
-                        int priority = INT_MAX, int core = -1, bool suspendable = false) {
+  TransitionId add_transition(const std::string& name,
+                              const TimeInterval& interval = TimeInterval(), int priority = INT_MAX,
+                              int core = -1, bool suspendable = false) {
     transitions.emplace_back(std::to_string(transitions.size()), name, interval, priority, core,
                              suspendable);
     for (auto& row : Pre) {
@@ -152,22 +245,22 @@ class PTPN {
     Post.emplace_back(std::vector<int>(places.size(), 0));
     pre_arcs.emplace_back();
     post_arcs.emplace_back();
-    return transitions.size() - 1;
+    return TransitionId{transitions.size() - 1};
   }
 
-  void set_pre_arc(size_t place_idx, size_t trans_idx, int weight = 1) {
-    if (place_idx >= Pre.size() || trans_idx >= transitions.size()) {
+  void set_pre_arc(PlaceId place, TransitionId transition, int weight = 1) {
+    if (place.index() >= Pre.size() || transition.index() >= transitions.size()) {
       throw std::out_of_range("Invalid place or transition index");
     }
-    Pre[place_idx][trans_idx] = weight;
+    Pre[place.index()][transition.index()] = weight;
     rebuild_sparse_arcs();
   }
 
-  void set_post_arc(size_t trans_idx, size_t place_idx, int weight = 1) {
-    if (trans_idx >= Post.size() || place_idx >= places.size()) {
+  void set_post_arc(TransitionId transition, PlaceId place, int weight = 1) {
+    if (transition.index() >= Post.size() || place.index() >= places.size()) {
       throw std::out_of_range("Invalid transition or place index");
     }
-    Post[trans_idx][place_idx] = weight;
+    Post[transition.index()][place.index()] = weight;
     rebuild_sparse_arcs();
   }
 
@@ -178,14 +271,14 @@ class PTPN {
     M0 = marking;
   }
 
-  void set_initial_marking(size_t place_idx, int tokens) {
-    if (place_idx >= places.size()) {
+  void set_initial_marking(PlaceId place, int tokens) {
+    if (place.index() >= places.size()) {
       throw std::out_of_range("Invalid place index");
     }
     if (tokens < 0) {
       throw std::invalid_argument("Token count cannot be negative");
     }
-    M0[place_idx] = tokens;
+    M0[place.index()] = tokens;
   }
 
   [[nodiscard]] size_t num_places() const {
@@ -196,18 +289,18 @@ class PTPN {
     return transitions.size();
   }
 
-  [[nodiscard]] const Place& get_place(size_t idx) const {
-    if (idx >= places.size()) {
+  [[nodiscard]] const Place& get_place(PlaceId place) const {
+    if (place.index() >= places.size()) {
       throw std::out_of_range("Invalid place index");
     }
-    return places[idx];
+    return places[place.index()];
   }
 
-  [[nodiscard]] const Transition& get_transition(size_t idx) const {
-    if (idx >= transitions.size()) {
+  [[nodiscard]] const Transition& get_transition(TransitionId transition) const {
+    if (transition.index() >= transitions.size()) {
       throw std::out_of_range("Invalid transition index");
     }
-    return transitions[idx];
+    return transitions[transition.index()];
   }
 
   [[nodiscard]] const Marking& get_marking() const {
@@ -222,15 +315,15 @@ class PTPN {
     return Post;
   }
 
-  static bool is_enabled(const Marking& M, const PTPN& net, size_t trans_idx) {
-    if (trans_idx >= net.transitions.size()) {
+  static bool is_enabled(const Marking& M, const PTPN& net, TransitionId transition) {
+    if (transition.index() >= net.transitions.size()) {
       throw std::out_of_range("Invalid transition index");
     }
     if (M.size() != net.places.size()) {
       throw std::invalid_argument("Marking size must match number of places");
     }
 
-    for (const auto& [place_idx, weight] : net.pre_arcs[trans_idx]) {
+    for (const auto& [place_idx, weight] : net.pre_arcs[transition.index()]) {
       if (M[place_idx] < weight) {
         return false;
       }
@@ -242,18 +335,18 @@ class PTPN {
     return true;
   }
 
-  static Marking fire(const Marking& M, const PTPN& net, size_t trans_idx) {
-    if (!is_enabled(M, net, trans_idx)) {
+  static Marking fire(const Marking& M, const PTPN& net, TransitionId transition) {
+    if (!is_enabled(M, net, transition)) {
       throw std::runtime_error("Transition is not enabled");
     }
 
     Marking new_marking = M;
 
-    for (const auto& [place_idx, weight] : net.pre_arcs[trans_idx]) {
+    for (const auto& [place_idx, weight] : net.pre_arcs[transition.index()]) {
       new_marking[place_idx] -= weight;
     }
 
-    for (const auto& [place_idx, weight] : net.post_arcs[trans_idx]) {
+    for (const auto& [place_idx, weight] : net.post_arcs[transition.index()]) {
       new_marking[place_idx] += weight;
       const auto& place = net.places[place_idx];
       if (place.capacity != INF && new_marking[place_idx] > place.capacity) {
@@ -351,10 +444,10 @@ class PTPN {
   std::vector<std::vector<std::pair<size_t, int>>> post_arcs;
   Marking M0;
 
-  std::map<std::string, std::pair<size_t, size_t>> node_start_end_map;
-  std::unordered_map<std::string, std::vector<size_t>> node_pn_map;
-  std::vector<size_t> cpus_place;
-  std::unordered_map<std::string, size_t> locks_place;
+  std::map<std::string, std::pair<NodeRef, NodeRef>> node_start_end_map;
+  std::unordered_map<std::string, std::vector<NodeRef>> node_pn_map;
+  std::vector<PlaceId> cpus_place;
+  std::unordered_map<std::string, PlaceId> locks_place;
   // Maximum number of transitions that may run simultaneously on a real core
   // (i.e. the CPU's cores_per_cpu). Used by the scheduler's per-core priority
   // filter to bound parallelism. An absent entry means "no bound" (the legacy

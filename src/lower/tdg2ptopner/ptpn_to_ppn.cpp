@@ -50,7 +50,7 @@ PpnModel ptpn_to_ppn_model(const petri::PTPN& ptpn) {
   model.places.reserve(ptpn.num_places());
   for (size_t p = 0; p < ptpn.num_places(); ++p) {
     PpnPlace place;
-    place.name = ptpn.get_place(p).name;
+    place.name = ptpn.get_place(petri::PlaceId{p}).name;
     place.token = p < marking.size() ? static_cast<short>(marking[p]) : 0;
     model.places.push_back(std::move(place));
   }
@@ -59,7 +59,7 @@ PpnModel ptpn_to_ppn_model(const petri::PTPN& ptpn) {
   const auto& post = ptpn.get_post_matrix();
   model.transitions.reserve(ptpn.num_transitions());
   for (size_t t = 0; t < ptpn.num_transitions(); ++t) {
-    const auto& transition = ptpn.get_transition(t);
+    const auto& transition = ptpn.get_transition(petri::TransitionId{t});
     PpnTransition ppn_transition;
     ppn_transition.name = transition.name;
     ppn_transition.time = transition.time_interval.earliest;

@@ -82,35 +82,31 @@ petri::TimeInterval parse_edge_interval(const std::string& label, const std::str
 }
 
 void add_monitor(petri::PTPN& ptpn, const std::string& task_name, int task_period_time,
-                 size_t start, size_t end) {
-  const size_t deadline = ptpn.add_place(task_name + "deadline", 1);
-  const size_t timeout = ptpn.add_place(task_name + "timeout", 1);
-  const size_t ok = ptpn.add_place(task_name + "ok", 1);
-  const size_t end_place = ptpn.add_place(task_name + "end", 1);
+                 petri::PlaceId start, petri::PlaceId end) {
+  const petri::PlaceId deadline = ptpn.add_place(task_name + "deadline", 1);
+  const petri::PlaceId timeout = ptpn.add_place(task_name + "timeout", 1);
+  const petri::PlaceId ok = ptpn.add_place(task_name + "ok", 1);
+  const petri::PlaceId end_place = ptpn.add_place(task_name + "end", 1);
 
-  const size_t timed = add_control_transition(
+  const petri::TransitionId timed = add_control_transition(
       ptpn, task_name + "timed", petri::TimeInterval(task_period_time, task_period_time));
-  const size_t ending = add_control_transition(ptpn, task_name + "ending");
-  const size_t complete = add_control_transition(ptpn, task_name + "complete");
-  const size_t timeout_transition = add_control_transition(ptpn, task_name + "out");
+  const petri::TransitionId ending = add_control_transition(ptpn, task_name + "ending");
+  const petri::TransitionId complete = add_control_transition(ptpn, task_name + "complete");
+  const petri::TransitionId timeout_transition = add_control_transition(ptpn, task_name + "out");
 
   ptpn.set_post_arc(ending, end_place, 1);
   ptpn.set_pre_arc(end_place, complete, 1);
   ptpn.set_post_arc(complete, ok, 1);
-  ptpn.set_pre_arc(deadline, ok, 1);
+  // Completion cancels the pending deadline: `complete` consumes the deadline
+  // token, so a task that finishes in time can never reach the timeout place.
+  ptpn.set_pre_arc(deadline, complete, 1);
   ptpn.set_pre_arc(deadline, timeout_transition, 1);
   ptpn.set_post_arc(timeout_transition, timeout, 1);
 
-  if (end < ptpn.places.size()) {
-    ptpn.set_pre_arc(end, ending, 1);
-  } else {
-    spdlog::warn("[TDG2PN] end node is transition, cannot add monitor edge");
-  }
+  ptpn.set_pre_arc(end, ending, 1);
 
-  if (start < ptpn.places.size()) {
-    ptpn.set_pre_arc(start, timed, 1);
-    ptpn.set_post_arc(timed, deadline, 1);
-  }
+  ptpn.set_pre_arc(start, timed, 1);
+  ptpn.set_post_arc(timed, deadline, 1);
 }
 
 void handle_self_loop(petri::PTPN& ptpn, const std::string& label, const std::string& source_name) {
@@ -120,8 +116,8 @@ void handle_self_loop(petri::PTPN& ptpn, const std::string& label, const std::st
     throw std::runtime_error("Start/end nodes not found for: " + source_name);
   }
 
-  add_monitor(ptpn, source_name, task_period_time, task_start_end->second.first,
-              task_start_end->second.second);
+  add_monitor(ptpn, source_name, task_period_time, task_start_end->second.first.as_place(),
+              task_start_end->second.second.as_place());
 }
 
 void handle_dashed(petri::PTPN& ptpn, const std::string& source_name,
@@ -152,31 +148,24 @@ void handle_normal(petri::PTPN& ptpn, const tdg::TDG& tdg, const std::string& so
   const bool source_is_control = is_fork_or_join(source_type_it->second);
   const bool target_is_control = is_fork_or_join(target_type_it->second);
 
-  const size_t source_exit = source_it->second.second;
-  const size_t target_entry = target_it->second.first;
+  const petri::NodeRef source_exit = source_it->second.second;
+  const petri::NodeRef target_entry = target_it->second.first;
 
   if (source_is_control && target_is_control) {
     throw std::runtime_error("Invalid TDG edge between transition nodes: " + source_name + " -> " +
                              target_name);
   }
 
+  // NodeRef::as_place()/as_transition() throw when the fragment kind does not
+  // match the edge direction, so an inconsistent lowering fails loudly instead
+  // of silently writing into the wrong matrix.
   if (source_is_control) {
-    if (source_exit < ptpn.transitions.size() && target_entry < ptpn.places.size()) {
-      ptpn.set_post_arc(source_exit, target_entry, 1);
-    } else {
-      throw std::runtime_error("Invalid fork/join to task edge mapping: " + source_name + " -> " +
-                               target_name);
-    }
+    ptpn.set_post_arc(source_exit.as_transition(), target_entry.as_place(), 1);
     return;
   }
 
   if (target_is_control) {
-    if (source_exit < ptpn.places.size() && target_entry < ptpn.transitions.size()) {
-      ptpn.set_pre_arc(source_exit, target_entry, 1);
-    } else {
-      throw std::runtime_error("Invalid task to fork/join edge mapping: " + source_name + " -> " +
-                               target_name);
-    }
+    ptpn.set_pre_arc(source_exit.as_place(), target_entry.as_transition(), 1);
     return;
   }
 
@@ -184,15 +173,11 @@ void handle_normal(petri::PTPN& ptpn, const tdg::TDG& tdg, const std::string& so
   // firing interval comes from the edge label (fork/join-adjacent edges wire
   // directly into the fork/join transition and ignore the label).
   const petri::TimeInterval interval = parse_edge_interval(label, source_name, target_name);
-  const size_t bridge_transition =
+  const petri::TransitionId bridge_transition =
       add_control_transition(ptpn, source_name + "_to_" + target_name, interval);
 
-  if (source_exit < ptpn.places.size() && target_entry < ptpn.places.size()) {
-    ptpn.set_pre_arc(source_exit, bridge_transition, 1);
-    ptpn.set_post_arc(bridge_transition, target_entry, 1);
-  } else {
-    spdlog::warn("[TDG2PN] Unexpected node types for edge: {} -> {}", source_name, target_name);
-  }
+  ptpn.set_pre_arc(source_exit.as_place(), bridge_transition, 1);
+  ptpn.set_post_arc(bridge_transition, target_entry.as_place(), 1);
 
   spdlog::debug("[TDG2PN] Added edge: {} -> {}", source_name, target_name);
 }

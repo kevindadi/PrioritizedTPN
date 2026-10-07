@@ -16,7 +16,7 @@ namespace {
 void add_cpu_resource(petri::PTPN& ptpn, int cpus, int cores_per_cpu) {
   for (int core = 0; core < cpus; ++core) {
     const std::string core_name = "core" + std::to_string(core);
-    const size_t core_place = ptpn.add_place(core_name, cores_per_cpu);
+    const petri::PlaceId core_place = ptpn.add_place(core_name, cores_per_cpu);
     ptpn.cpus_place.push_back(core_place);
     ptpn.set_initial_marking(core_place, cores_per_cpu);
   }
@@ -30,7 +30,7 @@ void add_lock_resource(petri::PTPN& ptpn, const std::set<std::string>& locks_nam
   }
 
   for (const auto& lock_name : locks_name) {
-    const size_t lock_place = ptpn.add_place(lock_name, 1);
+    const petri::PlaceId lock_place = ptpn.add_place(lock_name, 1);
     ptpn.locks_place.emplace(lock_name, lock_place);
     ptpn.set_initial_marking(lock_place, 1);
   }
@@ -54,14 +54,15 @@ void task_bind_cpu_resource(petri::PTPN& ptpn, const std::vector<NodeType>& all_
       continue;
     }
 
-    ptpn.set_pre_arc(ptpn.cpus_place[task->core], chain[TaskChainLayout::kGetCore], 1);
-    ptpn.set_post_arc(chain[chain.size() - 2], ptpn.cpus_place[task->core], 1);
+    ptpn.set_pre_arc(ptpn.cpus_place[task->core], chain[TaskChainLayout::kGetCore].as_transition(),
+                     1);
+    ptpn.set_post_arc(chain[chain.size() - 2].as_transition(), ptpn.cpus_place[task->core], 1);
   }
 }
 
 void bind_task_locks(petri::PTPN& ptpn, const std::string& task_name,
                      const std::vector<std::string>& lock_types,
-                     const std::vector<size_t>& task_pt_chain,
+                     const std::vector<petri::NodeRef>& task_pt_chain,
                      const std::map<std::string, std::vector<std::string>>& task_locks) {
   if (task_pt_chain.size() < TaskChainLayout::kMinLength) {
     spdlog::debug("[TDG2PN] Skip chain for {}: too short for locks", task_name);
@@ -87,20 +88,18 @@ void bind_task_locks(petri::PTPN& ptpn, const std::string& task_name,
       throw std::runtime_error("Task chain layout does not match lock structure for: " + task_name);
     }
 
-    const size_t acquire_transition = task_pt_chain[acquire_chain_index];
-    const size_t release_transition = task_pt_chain[release_chain_index];
+    const petri::TransitionId acquire_transition =
+        task_pt_chain[acquire_chain_index].as_transition();
+    const petri::TransitionId release_transition =
+        task_pt_chain[release_chain_index].as_transition();
 
     const auto lock_it = ptpn.locks_place.find(lock_type);
     if (lock_it == ptpn.locks_place.end()) {
       throw std::runtime_error("Lock place not found: " + lock_type);
     }
 
-    if (acquire_transition < ptpn.transitions.size()) {
-      ptpn.set_pre_arc(lock_it->second, acquire_transition, 1);
-    }
-    if (release_transition < ptpn.transitions.size()) {
-      ptpn.set_post_arc(release_transition, lock_it->second, 1);
-    }
+    ptpn.set_pre_arc(lock_it->second, acquire_transition, 1);
+    ptpn.set_post_arc(release_transition, lock_it->second, 1);
 
     spdlog::debug("[TDG2PN] Bound lock {} to task {}", lock_type, task_name);
   }

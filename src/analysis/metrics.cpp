@@ -123,15 +123,15 @@ void MetricsAnalyzer::build_topology() {
   transition_is_exec_.assign(net_.num_transitions(), false);
   place_lock_.assign(net_.num_places(), "");
   for (const auto& [lock_name, place_idx] : net_.locks_place) {
-    if (place_idx < place_lock_.size()) {
-      place_lock_[place_idx] = lock_name;
+    if (place_idx.index() < place_lock_.size()) {
+      place_lock_[place_idx.index()] = lock_name;
     }
   }
 
   // Name -> place index, to locate the per-task timeout monitor place.
   std::unordered_map<std::string, size_t> place_by_name;
   for (size_t p = 0; p < net_.num_places(); ++p) {
-    place_by_name[net_.get_place(p).name] = p;
+    place_by_name[net_.get_place(petri::PlaceId{p}).name] = p;
   }
 
   for (const auto& [name, info] : net_.task_info) {
@@ -139,36 +139,36 @@ void MetricsAnalyzer::build_topology() {
     if (chain_it == net_.node_pn_map.end() || chain_it->second.empty()) {
       continue;
     }
-    const std::vector<size_t>& chain = chain_it->second;
+    const std::vector<petri::NodeRef>& chain = chain_it->second;
 
     TaskTopology topo;
     topo.name = name;
     topo.core = info.core;
     topo.priority = info.priority;
 
-    // The chain strictly alternates place, transition, place, ...; even indices
-    // are places, odd indices are transitions.
+    // The chain strictly alternates place, transition, place, ...; NodeRef
+    // records the kind, so a mismatched fragment fails loudly here.
     const int task_index = static_cast<int>(tasks_.size());
-    for (size_t i = 0; i < chain.size(); ++i) {
-      if (i % 2 == 0) {
-        topo.chain_places.push_back(chain[i]);
-      } else {
-        const size_t t = chain[i];
-        topo.chain_transitions.push_back(t);
-        if (t < transition_task_.size()) {
-          transition_task_[t] = task_index;
-        }
-        if (t < net_.num_transitions() &&
-            net_.get_transition(t).name.find("exec") != std::string::npos) {
-          topo.exec_transitions.push_back(t);
-          if (t < transition_is_exec_.size()) {
-            transition_is_exec_[t] = true;
-          }
+    for (const petri::NodeRef& node : chain) {
+      if (node.is_place()) {
+        topo.chain_places.push_back(node.as_place().index());
+        continue;
+      }
+      const size_t t = node.as_transition().index();
+      topo.chain_transitions.push_back(t);
+      if (t < transition_task_.size()) {
+        transition_task_[t] = task_index;
+      }
+      if (t < net_.num_transitions() &&
+          net_.get_transition(petri::TransitionId{t}).name.find("exec") != std::string::npos) {
+        topo.exec_transitions.push_back(t);
+        if (t < transition_is_exec_.size()) {
+          transition_is_exec_[t] = true;
         }
       }
     }
-    topo.entry_place = chain.front();
-    topo.end_place = chain.back();
+    topo.entry_place = chain.front().as_place().index();
+    topo.end_place = chain.back().as_place().index();
     topo.has_end = true;
 
     const auto to_it = place_by_name.find(name + "timeout");
@@ -217,7 +217,7 @@ bool MetricsAnalyzer::core_busy(int core, size_t v) const {
   }
   for (size_t t : state_of_[v]->priority_enabled) {
     if (t < transition_is_exec_.size() && transition_is_exec_[t] &&
-        net_.get_transition(t).core == core) {
+        net_.get_transition(petri::TransitionId{t}).core == core) {
       return true;
     }
   }
@@ -236,10 +236,10 @@ bool MetricsAnalyzer::task_blocked_by_lower(const TaskTopology& task, size_t v) 
     if (t >= transition_is_exec_.size() || !transition_is_exec_[t]) {
       continue;
     }
-    if (net_.get_transition(t).core != task.core) {
+    if (net_.get_transition(petri::TransitionId{t}).core != task.core) {
       continue;
     }
-    if (net_.get_transition(t).priority < task.priority) {
+    if (net_.get_transition(petri::TransitionId{t}).priority < task.priority) {
       return true;
     }
   }
@@ -258,7 +258,7 @@ void MetricsAnalyzer::compute_structural(MetricsReport& report) {
   for (size_t p : petri::overflowed_places()) {
     if (p < net_.num_places()) {
       report.bounded = false;
-      report.overflow_places.push_back(net_.get_place(p).name);
+      report.overflow_places.push_back(net_.get_place(petri::PlaceId{p}).name);
     }
   }
 
@@ -509,10 +509,10 @@ void MetricsAnalyzer::compute_locks(MetricsReport& report) {
     bool wait_inf = false;
 
     for (size_t v = 0; v < num_vertices_; ++v) {
-      if (lock_place >= state_of_[v]->marking.size()) {
+      if (lock_place.index() >= state_of_[v]->marking.size()) {
         continue;
       }
-      const bool held = state_of_[v]->marking[lock_place] == 0;
+      const bool held = state_of_[v]->marking[lock_place.index()] == 0;
       if (!held) {
         continue;
       }

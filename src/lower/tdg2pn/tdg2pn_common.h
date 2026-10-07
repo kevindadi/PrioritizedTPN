@@ -42,9 +42,9 @@ inline bool is_resume_policy(SchedulePolicy policy) {
   return policy == SchedulePolicy::FIXED || policy == SchedulePolicy::FIXED_PRIOR_WITH_RESUME;
 }
 
-inline size_t add_control_transition(petri::PTPN& ptpn, const std::string& name,
-                                     const petri::TimeInterval& interval = petri::TimeInterval(0,
-                                                                                               0)) {
+inline petri::TransitionId add_control_transition(
+    petri::PTPN& ptpn, const std::string& name,
+    const petri::TimeInterval& interval = petri::TimeInterval(0, 0)) {
   return ptpn.add_transition(name, interval, kControlTransitionPriority,
                              petri::kControlTransitionCore, /*suspendable=*/false);
 }

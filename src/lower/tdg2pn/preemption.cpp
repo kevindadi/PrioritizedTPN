@@ -83,8 +83,8 @@ void add_restart_preemption(petri::PTPN& ptpn,
 
   auto handle_task_preemption = [&](const std::string& l_t_name, const std::string& h_t_name,
                                     const TaskConfig& l_tc, const TaskConfig& h_tc,
-                                    const std::vector<size_t>& l_t_pn,
-                                    const std::vector<size_t>& h_t_pn, int preempt_priority,
+                                    const std::vector<petri::NodeRef>& l_t_pn,
+                                    const std::vector<petri::NodeRef>& h_t_pn, int preempt_priority,
                                     bool /* is_interrupt */) {
     if (l_t_pn.size() < 5 || h_t_pn.size() < 5) {
       spdlog::warn(
@@ -94,20 +94,18 @@ void add_restart_preemption(petri::PTPN& ptpn,
       return;
     }
 
-    const size_t l_exec = l_t_pn[3];
-    if (l_exec < ptpn.transitions.size()) {
-      ptpn.transitions[l_exec].suspendable = true;
-    }
+    const petri::TransitionId l_exec = l_t_pn[3].as_transition();
+    ptpn.transitions[l_exec.index()].suspendable = true;
 
-    const size_t l_entry = l_t_pn[0];
-    const size_t l_preempt_place = l_t_pn[2];
-    const size_t h_entry = h_t_pn[0];
-    const size_t h_ready = h_t_pn[2];
+    const petri::PlaceId l_entry = l_t_pn[0].as_place();
+    const petri::PlaceId l_preempt_place = l_t_pn[2].as_place();
+    const petri::PlaceId h_entry = h_t_pn[0].as_place();
+    const petri::PlaceId h_ready = h_t_pn[2].as_place();
 
     const std::string preempt_name =
         h_t_name + "_restart_preempt_" + l_t_name + "_" + std::to_string(ptpn.node_index++);
     const petri::TimeInterval preempt_interval(0, 0);
-    const size_t preempt_trans =
+    const petri::TransitionId preempt_trans =
         ptpn.add_transition(preempt_name, preempt_interval, preempt_priority, h_tc.core, false);
 
     ptpn.set_pre_arc(h_entry, preempt_trans, 1);
@@ -128,15 +126,14 @@ void add_restart_preemption(petri::PTPN& ptpn,
         }
 
         const size_t idx = l_t_pn.size() - 2 - 2 * (i + 1);
-        if (idx < ptpn.transitions.size()) {
-          ptpn.transitions[idx].suspendable = true;
-        }
+        const petri::TransitionId lock_exec = l_t_pn[idx].as_transition();
+        ptpn.transitions[lock_exec.index()].suspendable = true;
 
-        const size_t lock_preempt_place = l_t_pn[idx - 1];
+        const petri::PlaceId lock_preempt_place = l_t_pn[idx - 1].as_place();
         const std::string lock_preempt_name = h_t_name + "_restart_lock_preempt_" + l_t_name + "_" +
                                               std::to_string(ptpn.node_index++);
         const petri::TimeInterval lock_preempt_interval(0, 0);
-        const size_t lock_preempt_trans = ptpn.add_transition(
+        const petri::TransitionId lock_preempt_trans = ptpn.add_transition(
             lock_preempt_name, lock_preempt_interval, preempt_priority, h_tc.core, false);
 
         ptpn.set_pre_arc(h_entry, lock_preempt_trans, 1);
@@ -183,7 +180,7 @@ void add_restart_preemption(petri::PTPN& ptpn,
           continue;
         }
 
-        const std::vector<size_t>& h_t_pn = h_t_pns_it->second;
+        const std::vector<petri::NodeRef>& h_t_pn = h_t_pns_it->second;
         bool is_interrupt = false;
         const auto node_type_it = nodes_type.find(h_t_name);
         if (node_type_it != nodes_type.end() &&

@@ -11,7 +11,7 @@ TransitionSet Scheduling::structural_enabled(const petri::PTPN& net,
   TransitionSet enabled;
   const size_t num_transitions = net.num_transitions();
   for (size_t t = 0; t < num_transitions; ++t) {
-    if (petri::PTPN::is_enabled(marking, net, t)) {
+    if (petri::PTPN::is_enabled(marking, net, petri::TransitionId{t})) {
       enabled.push_back(t);
     }
   }
@@ -26,7 +26,7 @@ TransitionSet Scheduling::filter_priority_per_core(const TransitionSet& struct_e
   // with a higher priority suppresses ordinary control steps for that instant).
   std::map<int, std::vector<size_t>> per_core;
   for (size_t t : struct_enabled) {
-    per_core[net.get_transition(t).core].push_back(t);
+    per_core[net.get_transition(petri::TransitionId{t}).core].push_back(t);
   }
 
   TransitionSet active;
@@ -36,12 +36,12 @@ TransitionSet Scheduling::filter_priority_per_core(const TransitionSet& struct_e
     if (capacity <= 0) {
       // Unbounded group (control core, or nets without a parallelism model):
       // keep every transition sharing the highest priority on this core.
-      int max_priority = net.get_transition(group.front()).priority;
+      int max_priority = net.get_transition(petri::TransitionId{group.front()}).priority;
       for (size_t t : group) {
-        max_priority = std::max(max_priority, net.get_transition(t).priority);
+        max_priority = std::max(max_priority, net.get_transition(petri::TransitionId{t}).priority);
       }
       for (size_t t : group) {
-        if (net.get_transition(t).priority == max_priority) {
+        if (net.get_transition(petri::TransitionId{t}).priority == max_priority) {
           active.push_back(t);
         }
       }
@@ -53,8 +53,8 @@ TransitionSet Scheduling::filter_priority_per_core(const TransitionSet& struct_e
     // deterministic selection that enforces mutual exclusion (capacity 1) or a
     // fixed degree of parallelism (capacity = cores_per_cpu).
     std::sort(group.begin(), group.end(), [&](size_t a, size_t b) {
-      const int pa = net.get_transition(a).priority;
-      const int pb = net.get_transition(b).priority;
+      const int pa = net.get_transition(petri::TransitionId{a}).priority;
+      const int pb = net.get_transition(petri::TransitionId{b}).priority;
       if (pa != pb) {
         return pa > pb;
       }

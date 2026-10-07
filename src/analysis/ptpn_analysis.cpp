@@ -37,11 +37,12 @@ CanonicalizationMode StateClassReachabilityGraph::get_canonicalization_mode() co
 }
 
 int StateClassReachabilityGraph::effective_earliest(size_t transition) const {
-  return net_.get_transition(transition).time_interval.effective_earliest();
+  return net_.get_transition(petri::TransitionId{transition}).time_interval.effective_earliest();
 }
 
 int StateClassReachabilityGraph::effective_latest(size_t transition) const {
-  const int latest = net_.get_transition(transition).time_interval.effective_latest();
+  const int latest =
+      net_.get_transition(petri::TransitionId{transition}).time_interval.effective_latest();
   return latest == petri::INF ? INF_TIME : latest;
 }
 
@@ -55,7 +56,7 @@ void StateClassReachabilityGraph::recompute_sets(StateClass& state) const {
     if (contains(state.priority_enabled, t)) {
       continue;
     }
-    if (net_.get_transition(t).suspendable) {
+    if (net_.get_transition(petri::TransitionId{t}).suspendable) {
       state.suspended.push_back(t);
     }
   }
@@ -242,7 +243,7 @@ bool StateClassReachabilityGraph::fire(const StateClass& elapsed, size_t t,
 
   // Step 2: discrete token shuffle.
   successor = StateClass();
-  successor.marking = petri::PTPN::fire(elapsed.marking, net_, t);
+  successor.marking = petri::PTPN::fire(elapsed.marking, net_, petri::TransitionId{t});
 
   // Steps 3 & 4: recompute the scheduler sets and the variable layout, then
   // rebuild the zone carrying surviving clocks over from `fired`.

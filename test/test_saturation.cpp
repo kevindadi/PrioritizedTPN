@@ -11,9 +11,9 @@ namespace {
 // producer: (src) -> [t] -> (dst). dst capacity 1.
 petri::PTPN make_producer_net(bool saturating_dst) {
   petri::PTPN ptpn;
-  const size_t src = ptpn.add_place("src", 2);
-  const size_t dst = ptpn.add_place("dst", 1, saturating_dst);
-  const size_t t = ptpn.add_transition("t", petri::TimeInterval(0, 0));
+  const petri::PlaceId src = ptpn.add_place("src", 2);
+  const petri::PlaceId dst = ptpn.add_place("dst", 1, saturating_dst);
+  const petri::TransitionId t = ptpn.add_transition("t", petri::TimeInterval(0, 0));
   ptpn.set_pre_arc(src, t, 1);
   ptpn.set_post_arc(t, dst, 1);
   ptpn.set_initial_marking(src, 2);
@@ -25,10 +25,10 @@ TEST(SaturationTest, NonSaturatingFullPlaceKeepsProducerEnabledAndClampsTokens) 
   // Enabling is input-driven: a full successor place never disables the
   // producer. Firing proceeds and the overflow is clamped to capacity.
   const petri::PTPN ptpn = make_producer_net(/*saturating_dst=*/false);
-  ASSERT_TRUE(petri::PTPN::is_enabled(ptpn.get_marking(), ptpn, 0));
+  ASSERT_TRUE(petri::PTPN::is_enabled(ptpn.get_marking(), ptpn, petri::TransitionId{0}));
 
   petri::reset_overflow_recording();
-  const petri::Marking after = petri::PTPN::fire(ptpn.get_marking(), ptpn, 0);
+  const petri::Marking after = petri::PTPN::fire(ptpn.get_marking(), ptpn, petri::TransitionId{0});
   EXPECT_EQ(after[0], 1);  // src consumed one token
   EXPECT_EQ(after[1], 1);  // dst clamped at capacity
   // The clamp on a non-saturating place is an invalid behavior and is recorded.
@@ -37,10 +37,10 @@ TEST(SaturationTest, NonSaturatingFullPlaceKeepsProducerEnabledAndClampsTokens) 
 
 TEST(SaturationTest, SaturatingFullPlaceKeepsProducerEnabledAndClampsTokens) {
   const petri::PTPN ptpn = make_producer_net(/*saturating_dst=*/true);
-  ASSERT_TRUE(petri::PTPN::is_enabled(ptpn.get_marking(), ptpn, 0));
+  ASSERT_TRUE(petri::PTPN::is_enabled(ptpn.get_marking(), ptpn, petri::TransitionId{0}));
 
   petri::reset_overflow_recording();
-  const petri::Marking after = petri::PTPN::fire(ptpn.get_marking(), ptpn, 0);
+  const petri::Marking after = petri::PTPN::fire(ptpn.get_marking(), ptpn, petri::TransitionId{0});
   EXPECT_EQ(after[0], 1);  // src consumed one token
   EXPECT_EQ(after[1], 1);  // dst clamped at capacity, overflow absorbed
   // Saturating places clamp silently; no invalid-behavior record.
@@ -49,19 +49,19 @@ TEST(SaturationTest, SaturatingFullPlaceKeepsProducerEnabledAndClampsTokens) {
 
 TEST(SaturationTest, SaturatingPlaceBelowCapacityAccumulatesNormally) {
   petri::PTPN ptpn;
-  const size_t src = ptpn.add_place("src", 2);
-  const size_t dst = ptpn.add_place("dst", 2, /*saturate=*/true);
-  const size_t t = ptpn.add_transition("t", petri::TimeInterval(0, 0));
+  const petri::PlaceId src = ptpn.add_place("src", 2);
+  const petri::PlaceId dst = ptpn.add_place("dst", 2, /*saturate=*/true);
+  const petri::TransitionId t = ptpn.add_transition("t", petri::TimeInterval(0, 0));
   ptpn.set_pre_arc(src, t, 1);
   ptpn.set_post_arc(t, dst, 1);
   ptpn.set_initial_marking(src, 2);
   ptpn.set_initial_marking(dst, 1);
 
-  petri::Marking m = petri::PTPN::fire(ptpn.get_marking(), ptpn, 0);
-  EXPECT_EQ(m[dst], 2);  // below capacity: normal accumulation
-  m = petri::PTPN::fire(m, ptpn, 0);
-  EXPECT_EQ(m[dst], 2);  // at capacity: saturated
-  EXPECT_EQ(m[src], 0);
+  petri::Marking m = petri::PTPN::fire(ptpn.get_marking(), ptpn, petri::TransitionId{0});
+  EXPECT_EQ(m[dst.index()], 2);  // below capacity: normal accumulation
+  m = petri::PTPN::fire(m, ptpn, petri::TransitionId{0});
+  EXPECT_EQ(m[dst.index()], 2);  // at capacity: saturated
+  EXPECT_EQ(m[src.index()], 0);
 }
 
 TEST(JsonTaskPlaceCapacityTest, ParsesConfiguredValueAndDefault) {
@@ -138,30 +138,31 @@ TEST(PeriodicSaturationTest, ReleaseStaysEnabledWhenEntryIsFull) {
   size_t entry = SIZE_MAX;
   size_t fire = SIZE_MAX;
   for (size_t p = 0; p < ptpn.num_places(); ++p) {
-    if (ptpn.get_place(p).name == "Aentry") {
+    if (ptpn.get_place(petri::PlaceId{p}).name == "Aentry") {
       entry = p;
     }
   }
   for (size_t t = 0; t < ptpn.num_transitions(); ++t) {
-    if (ptpn.get_transition(t).name == "A_fire") {
+    if (ptpn.get_transition(petri::TransitionId{t}).name == "A_fire") {
       fire = t;
     }
   }
   ASSERT_NE(entry, SIZE_MAX);
   ASSERT_NE(fire, SIZE_MAX);
 
-  const auto& entry_place = ptpn.get_place(entry);
+  const auto& entry_place = ptpn.get_place(petri::PlaceId{entry});
   EXPECT_TRUE(entry_place.saturate);
   EXPECT_EQ(entry_place.capacity, 1);
 
   // Entry starts with a token (start binding); the release must not be blocked.
   ASSERT_EQ(ptpn.get_marking()[entry], 1);
-  ASSERT_TRUE(petri::PTPN::is_enabled(ptpn.get_marking(), ptpn, fire));
+  ASSERT_TRUE(petri::PTPN::is_enabled(ptpn.get_marking(), ptpn, petri::TransitionId{fire}));
 
-  const petri::Marking after = petri::PTPN::fire(ptpn.get_marking(), ptpn, fire);
+  const petri::Marking after =
+      petri::PTPN::fire(ptpn.get_marking(), ptpn, petri::TransitionId{fire});
   EXPECT_EQ(after[entry], 1);  // release merged, marking stays at capacity
   // The release transition remains enabled for the next period.
-  EXPECT_TRUE(petri::PTPN::is_enabled(after, ptpn, fire));
+  EXPECT_TRUE(petri::PTPN::is_enabled(after, ptpn, petri::TransitionId{fire}));
 }
 
 TEST(PeriodicSaturationTest, CapacityTwoAllowsOnePendingRelease) {
@@ -170,24 +171,24 @@ TEST(PeriodicSaturationTest, CapacityTwoAllowsOnePendingRelease) {
   size_t entry = SIZE_MAX;
   size_t fire = SIZE_MAX;
   for (size_t p = 0; p < ptpn.num_places(); ++p) {
-    if (ptpn.get_place(p).name == "Aentry") {
+    if (ptpn.get_place(petri::PlaceId{p}).name == "Aentry") {
       entry = p;
     }
   }
   for (size_t t = 0; t < ptpn.num_transitions(); ++t) {
-    if (ptpn.get_transition(t).name == "A_fire") {
+    if (ptpn.get_transition(petri::TransitionId{t}).name == "A_fire") {
       fire = t;
     }
   }
   ASSERT_NE(entry, SIZE_MAX);
   ASSERT_NE(fire, SIZE_MAX);
-  EXPECT_EQ(ptpn.get_place(entry).capacity, 2);
+  EXPECT_EQ(ptpn.get_place(petri::PlaceId{entry}).capacity, 2);
 
   petri::Marking m = ptpn.get_marking();
   ASSERT_EQ(m[entry], 1);
-  m = petri::PTPN::fire(m, ptpn, fire);
+  m = petri::PTPN::fire(m, ptpn, petri::TransitionId{fire});
   EXPECT_EQ(m[entry], 2);  // one pending release queued
-  m = petri::PTPN::fire(m, ptpn, fire);
+  m = petri::PTPN::fire(m, ptpn, petri::TransitionId{fire});
   EXPECT_EQ(m[entry], 2);  // further releases merged at the bound
 }
 

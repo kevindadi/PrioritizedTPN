@@ -22,9 +22,10 @@ bool has_self_loop_release(const tdg::TDG& tdg, const std::string& task_name) {
   });
 }
 
-void add_consume_transition(petri::PTPN& ptpn, const std::string& task_name, size_t end_idx) {
-  const size_t consume_trans = add_control_transition(ptpn, task_name + "_consume");
-  ptpn.set_pre_arc(end_idx, consume_trans, 1);
+void add_consume_transition(petri::PTPN& ptpn, const std::string& task_name,
+                            petri::NodeRef end_ref) {
+  const petri::TransitionId consume_trans = add_control_transition(ptpn, task_name + "_consume");
+  ptpn.set_pre_arc(end_ref.as_place(), consume_trans, 1);
 }
 
 }  // namespace
@@ -39,7 +40,7 @@ void add_start_bindings(petri::PTPN& ptpn, const tdg::TDG& tdg) {
     if (start_binding.tokens <= 0) {
       continue;
     }
-    ptpn.set_initial_marking(node_it->second.first, start_binding.tokens);
+    ptpn.set_initial_marking(node_it->second.first.as_place(), start_binding.tokens);
   }
 }
 
@@ -82,16 +83,16 @@ void add_periodic_release_bindings(petri::PTPN& ptpn, const tdg::TDG& tdg) {
       continue;
     }
 
-    const size_t period_place =
+    const petri::PlaceId period_place =
         ptpn.add_place(periodic_task.task + "_period", 1, /*saturate=*/true);
-    const size_t fire =
+    const petri::TransitionId fire =
         add_control_transition(ptpn, periodic_task.task + "_fire",
                                petri::TimeInterval(periodic_task.period, periodic_task.period));
 
     ptpn.set_initial_marking(period_place, 1);
     ptpn.set_pre_arc(period_place, fire, 1);
     ptpn.set_post_arc(fire, period_place, 1);
-    ptpn.set_post_arc(fire, node_it->second.first, 1);
+    ptpn.set_post_arc(fire, node_it->second.first.as_place(), 1);
   }
 }
 

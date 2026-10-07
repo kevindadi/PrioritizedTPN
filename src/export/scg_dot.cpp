@@ -77,7 +77,7 @@ std::string ScgFormatter::format_marking(const petri::PTPN& net, const std::vect
       out += ", ";
     }
     first = false;
-    out += i < net.num_places() ? net.get_place(i).name : ("P" + std::to_string(i));
+    out += i < net.num_places() ? net.get_place(petri::PlaceId{i}).name : ("P" + std::to_string(i));
     if (marking[i] != 1) {
       out += "(" + std::to_string(marking[i]) + ")";
     }
@@ -93,7 +93,7 @@ std::string ScgFormatter::format_transition_label(size_t transition_id) const {
   if (transition_id >= net_.num_transitions()) {
     return "T" + std::to_string(transition_id);
   }
-  const auto& trans = net_.get_transition(transition_id);
+  const auto& trans = net_.get_transition(petri::TransitionId{transition_id});
   std::string out = "T" + std::to_string(transition_id) + "(" + trans.name;
   out += ", priority=" + std::to_string(trans.priority);
   out += ", core=" + std::to_string(trans.core);

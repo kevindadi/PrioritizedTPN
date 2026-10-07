@@ -30,14 +30,15 @@ std::set<std::vector<int>> reachable_markings(const state_class::SCGraph& graph)
 // finite.
 petri::PTPN make_unbounded_clock_net() {
   petri::PTPN ptpn;
-  const size_t tick_p = ptpn.add_place("tick_p", 1);
-  const size_t slow_p = ptpn.add_place("slow_p", 1);
-  const size_t slow_done = ptpn.add_place("slow_done", 1);
+  const petri::PlaceId tick_p = ptpn.add_place("tick_p", 1);
+  const petri::PlaceId slow_p = ptpn.add_place("slow_p", 1);
+  const petri::PlaceId slow_done = ptpn.add_place("slow_done", 1);
   ptpn.set_initial_marking(tick_p, 1);
   ptpn.set_initial_marking(slow_p, 1);
 
-  const size_t tick = ptpn.add_transition("tick", petri::TimeInterval(1, 1), petri::INF, -1);
-  const size_t slow =
+  const petri::TransitionId tick =
+      ptpn.add_transition("tick", petri::TimeInterval(1, 1), petri::INF, -1);
+  const petri::TransitionId slow =
       ptpn.add_transition("slow", petri::TimeInterval(5, petri::INF), petri::INF, -1);
   ptpn.set_pre_arc(tick_p, tick, 1);
   ptpn.set_post_arc(tick, tick_p, 1);
@@ -50,15 +51,16 @@ petri::PTPN make_unbounded_clock_net() {
 // suspended: exercises frozen execution clocks and suspension clocks.
 petri::PTPN make_preemption_net() {
   petri::PTPN ptpn;
-  const size_t low_in = ptpn.add_place("low_in", 1);
-  const size_t low_done = ptpn.add_place("low_done", 1);
-  const size_t high_in = ptpn.add_place("high_in", 1);
-  const size_t high_done = ptpn.add_place("high_done", 1);
+  const petri::PlaceId low_in = ptpn.add_place("low_in", 1);
+  const petri::PlaceId low_done = ptpn.add_place("low_done", 1);
+  const petri::PlaceId high_in = ptpn.add_place("high_in", 1);
+  const petri::PlaceId high_done = ptpn.add_place("high_done", 1);
   ptpn.set_initial_marking(low_in, 1);
   ptpn.set_initial_marking(high_in, 1);
 
-  const size_t low = ptpn.add_transition("low", petri::TimeInterval(4, 6), 1, 0, true);
-  const size_t high = ptpn.add_transition("high", petri::TimeInterval(2, 3), 9, 0, false);
+  const petri::TransitionId low = ptpn.add_transition("low", petri::TimeInterval(4, 6), 1, 0, true);
+  const petri::TransitionId high =
+      ptpn.add_transition("high", petri::TimeInterval(2, 3), 9, 0, false);
   ptpn.set_pre_arc(low_in, low, 1);
   ptpn.set_post_arc(low, low_done, 1);
   ptpn.set_pre_arc(high_in, high, 1);

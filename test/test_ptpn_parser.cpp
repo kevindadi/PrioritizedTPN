@@ -362,7 +362,7 @@ TEST_F(PTPNParserTest, BuilderPreservesStrictIntervalMetadata) {
   const auto result = PTPNBuilder::parse("transitions T0 (1, 5] ");
   ASSERT_TRUE(result.ok()) << result.error();
   ASSERT_EQ(1, result.value().num_transitions());
-  const auto& transition = result.value().get_transition(0);
+  const auto& transition = result.value().get_transition(petri::TransitionId{0});
 
   EXPECT_TRUE(transition.time_interval.left_open);
   EXPECT_FALSE(transition.time_interval.right_open);
