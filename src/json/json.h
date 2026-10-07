@@ -113,10 +113,6 @@ class Parser {
     return graph_.edges;
   }
 
-  const std::string& get_original_json() const {
-    return original_json_;
-  }
-
   ValidationResult validate() const;
   std::string to_dot_string() const;
 
@@ -131,7 +127,6 @@ class Parser {
   std::string original_json_;
 };
 
-std::string node_type_to_string(const NodeType& node);
 std::string node_to_dot_label(const NodeType& node);
 
 enum class LockType { MUTEX, SPIN, UNKNOWN };

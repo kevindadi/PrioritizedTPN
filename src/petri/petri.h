@@ -242,10 +242,6 @@ class PTPN {
     return true;
   }
 
-  [[nodiscard]] bool is_enabled(size_t trans_idx) const {
-    return is_enabled(M0, *this, trans_idx);
-  }
-
   static Marking fire(const Marking& M, const PTPN& net, size_t trans_idx) {
     if (!is_enabled(M, net, trans_idx)) {
       throw std::runtime_error("Transition is not enabled");
@@ -272,10 +268,6 @@ class PTPN {
     }
 
     return new_marking;
-  }
-
-  void fire_transition(size_t trans_idx) {
-    M0 = fire(M0, *this, trans_idx);
   }
 
   [[nodiscard]] std::string to_string() const {
@@ -317,99 +309,6 @@ class PTPN {
     return oss.str();
   }
 
-  [[nodiscard]] std::vector<size_t> get_enabled_transitions() const {
-    std::vector<size_t> enabled;
-    for (size_t t = 0; t < transitions.size(); ++t) {
-      if (is_enabled(t)) {
-        enabled.push_back(t);
-      }
-    }
-    return enabled;
-  }
-
-  [[nodiscard]] std::vector<size_t> filter_by_priority(
-      const std::vector<size_t>& enabled_transitions) const {
-    if (enabled_transitions.empty()) {
-      return {};
-    }
-
-    std::vector<size_t> scheduling_transitions;
-    for (size_t t : enabled_transitions) {
-      if (transitions[t].priority != INT_MAX) {
-        scheduling_transitions.push_back(t);
-      }
-    }
-
-    if (scheduling_transitions.empty()) {
-      return enabled_transitions;
-    }
-
-    int highest_priority = INT_MIN;
-    for (size_t t : scheduling_transitions) {
-      if (transitions[t].priority > highest_priority) {
-        highest_priority = transitions[t].priority;
-      }
-    }
-
-    std::vector<size_t> filtered;
-    for (size_t t : scheduling_transitions) {
-      if (transitions[t].priority == highest_priority) {
-        filtered.push_back(t);
-      }
-    }
-    return filtered;
-  }
-
-  [[nodiscard]] std::vector<size_t> filter_by_core_and_priority(
-      const std::vector<size_t>& enabled_transitions) const {
-    if (enabled_transitions.empty()) {
-      return {};
-    }
-
-    std::vector<size_t> non_scheduling_transitions;
-    std::map<int, std::vector<size_t>> transitions_by_core;
-    for (size_t t : enabled_transitions) {
-      if (transitions[t].core < 0) {
-        non_scheduling_transitions.push_back(t);
-        continue;
-      }
-      transitions_by_core[transitions[t].core].push_back(t);
-    }
-
-    if (transitions_by_core.empty()) {
-      return enabled_transitions;
-    }
-
-    std::vector<size_t> filtered = non_scheduling_transitions;
-
-    for (auto& [core_id, core_transitions] : transitions_by_core) {
-      int highest_priority = INT_MIN;
-      for (size_t t : core_transitions) {
-        if (transitions[t].priority > highest_priority) {
-          highest_priority = transitions[t].priority;
-        }
-      }
-
-      for (size_t t : core_transitions) {
-        if (transitions[t].priority == highest_priority) {
-          filtered.push_back(t);
-        }
-      }
-    }
-
-    return filtered;
-  }
-
-  [[nodiscard]] std::vector<size_t> get_transitions_by_core(int core_id) const {
-    std::vector<size_t> result;
-    for (size_t t = 0; t < transitions.size(); ++t) {
-      if (transitions[t].core == core_id) {
-        result.push_back(t);
-      }
-    }
-    return result;
-  }
-
   // How many transitions may run simultaneously on `core_id`. Returns 0 to mean
   // "no bound": the control core (-1) is never resource-limited, and cores
   // without a registered parallelism keep the legacy highest-priority behaviour.
@@ -419,16 +318,6 @@ class PTPN {
     }
     auto it = core_parallelism.find(core_id);
     return it == core_parallelism.end() ? 0 : it->second;
-  }
-
-  [[nodiscard]] std::vector<size_t> get_enabled_transitions_by_core(int core_id) const {
-    std::vector<size_t> result;
-    for (size_t t = 0; t < transitions.size(); ++t) {
-      if (transitions[t].core == core_id && is_enabled(t)) {
-        result.push_back(t);
-      }
-    }
-    return result;
   }
 
   void rebuild_sparse_arcs() {

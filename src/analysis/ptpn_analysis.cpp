@@ -35,34 +35,6 @@ std::string escape_dot(const std::string& value) {
   return out;
 }
 
-std::string escape_json(const std::string& value) {
-  std::string out;
-  out.reserve(value.size());
-  for (char ch : value) {
-    switch (ch) {
-      case '\\':
-        out += "\\\\";
-        break;
-      case '"':
-        out += "\\\"";
-        break;
-      case '\n':
-        out += "\\n";
-        break;
-      case '\r':
-        out += "\\r";
-        break;
-      case '\t':
-        out += "\\t";
-        break;
-      default:
-        out += ch;
-        break;
-    }
-  }
-  return out;
-}
-
 // Escapes the characters that are special inside Graphviz HTML-like labels.
 std::string html_escape(const std::string& value) {
   std::string out;
@@ -779,84 +751,6 @@ bool StateClassReachabilityGraph::save_to_dot(const std::string& file_path) cons
   }
 
   out << "}\n";
-  return true;
-}
-
-bool StateClassReachabilityGraph::save_to_json(const std::string& file_path) const {
-  std::ofstream out(file_path);
-  if (!out.is_open()) {
-    return false;
-  }
-
-  out << "{\n  \"states\": [\n";
-
-  typedef boost::graph_traits<SCGraph>::vertex_iterator VIt;
-  VIt vi, vi_end;
-  bool first_state = true;
-  for (std::tie(vi, vi_end) = boost::vertices(graph_); vi != vi_end; ++vi) {
-    const StateClass& state = boost::get(boost::vertex_name, graph_, *vi);
-    if (!first_state) {
-      out << ",\n";
-    }
-    first_state = false;
-
-    out << "    {\n";
-    out << "      \"id\": " << state.id << ",\n";
-    out << "      \"marking\": [";
-    for (size_t i = 0; i < state.marking.size(); ++i) {
-      if (i > 0) {
-        out << ", ";
-      }
-      out << state.marking[i];
-    }
-    out << "],\n";
-    out << "      \"active\": \"" << escape_json(format_transitions(state.priority_enabled))
-        << "\",\n";
-    out << "      \"suspended\": \"" << escape_json(format_transitions(state.suspended)) << "\",\n";
-    out << "      \"elapsed_time\": " << std::fixed << std::setprecision(2) << state.elapsed_time
-        << ",\n";
-    out << "      \"zone\": \"" << escape_json(format_named_dbm(state)) << "\"\n";
-    out << "    }";
-  }
-
-  out << "\n  ],\n  \"transitions\": [\n";
-
-  typedef boost::graph_traits<SCGraph>::edge_iterator EIt;
-  EIt ei, ei_end;
-  bool first_edge = true;
-  for (std::tie(ei, ei_end) = boost::edges(graph_); ei != ei_end; ++ei) {
-    const SCVertex src = boost::source(*ei, graph_);
-    const SCVertex tgt = boost::target(*ei, graph_);
-    const FiringEdge& edge = boost::get(boost::edge_name, graph_, *ei);
-    const StateClass& src_state = boost::get(boost::vertex_name, graph_, src);
-    const StateClass& tgt_state = boost::get(boost::vertex_name, graph_, tgt);
-
-    if (!first_edge) {
-      out << ",\n";
-    }
-    first_edge = false;
-
-    out << "    {\n";
-    out << "      \"source\": " << src_state.id << ",\n";
-    out << "      \"target\": " << tgt_state.id << ",\n";
-    out << "      \"transition_id\": " << edge.transition_id << ",\n";
-    out << "      \"transition_label\": \""
-        << escape_json(format_transition_label(static_cast<size_t>(edge.transition_id))) << "\",\n";
-    out << "      \"firing_min\": " << edge.firing_min << ",\n";
-    out << "      \"firing_max\": "
-        << (edge.firing_max == INF_TIME ? "null" : std::to_string(edge.firing_max)) << ",\n";
-    out << "      \"dwell_min\": " << edge.dwell_min << ",\n";
-    out << "      \"dwell_max\": "
-        << (edge.dwell_max == INF_TIME ? "null" : std::to_string(edge.dwell_max)) << "\n";
-    out << "    }";
-  }
-
-  out << "\n  ],\n  \"statistics\": {\n";
-  out << "    \"total_states\": " << stats_.total_states << ",\n";
-  out << "    \"total_transitions\": " << stats_.total_transitions << ",\n";
-  out << "    \"dedup_hits\": " << stats_.dedup_hits << ",\n";
-  out << "    \"truncated\": " << (stats_.truncated ? "true" : "false") << "\n  }\n}\n";
-
   return true;
 }
 

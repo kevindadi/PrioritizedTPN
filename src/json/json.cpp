@@ -539,22 +539,6 @@ NodeType JsonNode::to_node_type() const {
   return EmptyTask{id};
 }
 
-std::string node_type_to_string(const NodeType& node) {
-  return visit_node(node, [](const auto& typed_node) -> std::string {
-    using Node = std::decay_t<decltype(typed_node)>;
-    if constexpr (std::is_same_v<Node, TaskNode>) {
-      return kNodeTypeTask;
-    }
-    if constexpr (std::is_same_v<Node, ForkTask>) {
-      return kNodeTypeFork;
-    }
-    if constexpr (std::is_same_v<Node, JoinTask>) {
-      return kNodeTypeJoin;
-    }
-    return kNodeTypeEmpty;
-  });
-}
-
 std::string node_to_dot_label(const NodeType& node) {
   return visit_node(node, [](const auto& typed_node) -> std::string {
     using Node = std::decay_t<decltype(typed_node)>;

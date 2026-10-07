@@ -99,7 +99,6 @@ class StateClassReachabilityGraph {
   }
 
   bool save_to_dot(const std::string& file_path) const;
-  bool save_to_json(const std::string& file_path) const;
 
  private:
   const petri::PTPN& net_;

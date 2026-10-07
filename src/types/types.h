@@ -65,8 +65,6 @@ struct EmptyTask {
 
 using NodeType = std::variant<TaskNode, ForkTask, JoinTask, EmptyTask>;
 
-enum class TDGVertexType { TASK, FORK, JOIN, EMPTY };
-
 struct TaskConfig {
   int core;
   int priority;

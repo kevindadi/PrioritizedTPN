@@ -1,6 +1,5 @@
 #include "tdg/tdg.h"
 
-#include <algorithm>
 #include <fstream>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -12,29 +11,6 @@ namespace tdg {
 
 namespace {
 
-// Logs per-core task priority ordering for debugging and diagnostics.
-std::string format_core_priority_order(int core_id, const std::vector<std::string>& tasks,
-                                       const std::unordered_map<std::string, int>& tasks_priority,
-                                       const std::string& prefix) {
-  std::ostringstream oss;
-  oss << prefix << " Core " << core_id << " priority order: ";
-
-  bool first = true;
-  for (const auto& task : tasks) {
-    if (!first) {
-      oss << " > ";
-    }
-    first = false;
-    oss << task << "(" << tasks_priority.at(task) << ")";
-  }
-
-  if (first) {
-    oss << "(none)";
-  }
-
-  return oss.str();
-}
-
 // Registers a parsed node into the TDG lookup tables.
 void register_node(TDG& tdg, const NodeType& node_type, bool log_node) {
   visit_node(node_type, [&](const auto& node) {
@@ -44,8 +20,6 @@ void register_node(TDG& tdg, const NodeType& node_type, bool log_node) {
       tdg.all_task.emplace_back(node_type);
       tdg.tasks_priority.emplace(node.name, node.priority);
       tdg.nodes_type.emplace(node.name, node_type);
-      tdg.vertexes_type.emplace(node.name, TDGVertexType::TASK);
-      tdg.tasks_type.emplace(node.name, TaskType::NORMAL);
 
       for (const auto& lock : node.lock) {
         tdg.lock_set.insert(lock);
@@ -61,7 +35,6 @@ void register_node(TDG& tdg, const NodeType& node_type, bool log_node) {
 
     if constexpr (std::is_same_v<Node, ForkTask>) {
       tdg.nodes_type.emplace(node.name, node_type);
-      tdg.vertexes_type.emplace(node.name, TDGVertexType::FORK);
       if (log_node) {
         spdlog::info("[TDG] Node '{}' -> fork", node.name);
       }
@@ -70,7 +43,6 @@ void register_node(TDG& tdg, const NodeType& node_type, bool log_node) {
 
     if constexpr (std::is_same_v<Node, JoinTask>) {
       tdg.nodes_type.emplace(node.name, node_type);
-      tdg.vertexes_type.emplace(node.name, TDGVertexType::JOIN);
       if (log_node) {
         spdlog::info("[TDG] Node '{}' -> join", node.name);
       }
@@ -79,7 +51,6 @@ void register_node(TDG& tdg, const NodeType& node_type, bool log_node) {
 
     if constexpr (std::is_same_v<Node, EmptyTask>) {
       tdg.nodes_type.emplace(node.name, node_type);
-      tdg.vertexes_type.emplace(node.name, TDGVertexType::EMPTY);
       if (log_node) {
         spdlog::info("[TDG] Node '{}' -> empty", node.name);
       }
@@ -184,30 +155,6 @@ void TDG::export_to_dot(const std::string& output_path) {
 
   spdlog::info("[DOT] Exported {} nodes, {} edges to {}", nodes_type.size(), tdg_edges.size(),
                output_path);
-}
-
-std::unordered_map<int, std::vector<std::string>> TDG::classify_priority() {
-  std::unordered_map<int, std::vector<std::string>> core_task;
-
-  for (const auto& task : all_task) {
-    if (const auto* task_node = as_task_node(task)) {
-      tasks_config.emplace(task_node->name, TaskConfig{task_node->core, task_node->priority,
-                                                       task_node->time, task_node->lock});
-      core_task[task_node->core].push_back(task_node->name);
-    }
-  }
-
-  for (auto& [core_id, tasks] : core_task) {
-    std::sort(tasks.begin(), tasks.end(), [&](const std::string& left, const std::string& right) {
-      return tasks_priority.at(left) > tasks_priority.at(right);
-    });
-  }
-
-  for (const auto& [core_id, tasks] : core_task) {
-    spdlog::info("{}", format_core_priority_order(core_id, tasks, tasks_priority, "[TDG]"));
-  }
-
-  return core_task;
 }
 
 }  // namespace tdg

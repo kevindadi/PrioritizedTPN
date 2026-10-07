@@ -29,19 +29,15 @@ class TDG {
   std::vector<std::string> end_tasks;
   std::vector<PeriodicBinding> periodic_tasks;
   std::unordered_map<std::string, int> tasks_priority;
-  std::unordered_map<std::string, TDGVertexType> vertexes_type;
   std::unordered_map<std::string, NodeType> nodes_type;
-  std::unordered_map<std::string, TaskType> tasks_type;
   std::set<std::string> lock_set;
   std::map<std::string, std::vector<std::string>> task_locks_map;
-  std::unordered_map<std::string, TaskConfig> tasks_config;
   std::vector<TdgEdge> tdg_edges;
 
   void parse_json(const std::string& json_file);
   void parse_json_string(const std::string& json_content);
   void export_to_dot(const std::string& output_path);
   std::string to_dot_string() const;
-  std::unordered_map<int, std::vector<std::string>> classify_priority();
 };
 
 }  // namespace tdg
