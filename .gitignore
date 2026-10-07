@@ -1,6 +1,5 @@
 .cache
 .DS_Store
-.vscode/settings.local.json
 .claude
 .cursor
 .clangd
@@ -11,6 +10,8 @@ tools.zip
 
 compile_commands.json
 *.json
+# Keep the project's Zed configuration tracked despite the `*.json` rule above
+!.zed/*.json
 paper
 unconfirmed
 
@@ -21,4 +22,3 @@ scripts/__pycache__/
 **.ptpn
 **.pdf
 **.log
-

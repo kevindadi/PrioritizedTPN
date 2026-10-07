@@ -1,0 +1,35 @@
+// Debug configurations, migrated from `.vscode/launch.json`.
+// Both configs launch the `build/ptpn` binary and rebuild it first, matching
+// the VS Code `preLaunchTask: cmake: build`.
+//
+// CodeLLDB is Zed's bundled, cross-platform lldb adapter. On Linux you can
+// switch `"adapter": "CodeLLDB"` to `"adapter": "GDB"` (requires gdb >= 14.1) to
+// mirror the VS Code `MIMode: gdb` / `/usr/bin/gdb` Linux override.
+[
+  {
+    "label": "Debug ptpn (tdg)",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build/ptpn",
+    "args": ["tdg", "-f", "example/common/input.json"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "build": {
+      "command": "cmake",
+      "args": ["--build", "build"],
+      "cwd": "$ZED_WORKTREE_ROOT"
+    }
+  },
+  {
+    "label": "Debug ptpn (ptpn)",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build/ptpn",
+    "args": ["ptpn", "-f", "example/common/simple.ptpn"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "build": {
+      "command": "cmake",
+      "args": ["--build", "build"],
+      "cwd": "$ZED_WORKTREE_ROOT"
+    }
+  }
+]
