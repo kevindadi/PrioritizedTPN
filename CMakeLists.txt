@@ -229,6 +229,8 @@ target_link_libraries(ptpn_parser
 
 add_library(ptpn_dbm STATIC
     src/analysis/dbm/dbm.cpp
+    src/analysis/dbm/dbm_clocks.cpp
+    src/analysis/dbm/dbm_relations.cpp
 )
 target_link_libraries(ptpn_dbm
     PUBLIC
@@ -238,6 +240,8 @@ target_link_libraries(ptpn_dbm
 add_library(ptpn_reachability STATIC
     src/analysis/reachability/state_class.cpp
     src/analysis/reachability/ptpn_analysis.cpp
+    src/analysis/reachability/state_class_layout.cpp
+    src/analysis/reachability/state_class_firing.cpp
     src/analysis/reachability/canonicalization.cpp
     src/analysis/reachability/scheduling.cpp
 )
