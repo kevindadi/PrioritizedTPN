@@ -12,7 +12,7 @@ compile_commands.json
 *.json
 # Keep the project's Zed configuration tracked despite the `*.json` rule above
 !.zed/*.json
-paper
+paper/
 unconfirmed
 
 scripts/__pycache__/
