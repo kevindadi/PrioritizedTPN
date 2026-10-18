@@ -59,7 +59,7 @@ struct TransitionClock {
 
 The DBM implementation in `src/analysis/dbm/dbm.h` exposes the operations this semantics needs: `elapse_time`, `reset_clock`, `freeze_clock`, `unfreeze_clock`, `restrict_clock`, `restrict_for_firing`, `intersection`, and `is_empty`.
 
-The suspension clock `w` is maintained in the zone and in the state identity and is rendered by the SCG export, but it appears in no firing guard. The timing metrics are computed from the per-edge dwell intervals instead; `w` is therefore an observer of the suspension history rather than a constraint on firing. This is the semantic basis for the projection argued in the paper.
+The suspension clock `w` is defined by the semantics but appears in no firing guard. By default the analysis projects it out of the DBM (`--keep-suspension-clocks` restores it); the `suspended` set and the frozen execution clocks remain, so preemption/resume semantics are unchanged. The timing metrics are computed from per-edge dwell intervals, so the projection is exact for reachability, WCRT, WCET and deadlock. `--keep-suspension-clocks` is available for debugging and for byte-compatibility with the unprojected state graph.
 
 ## Where time advances
 

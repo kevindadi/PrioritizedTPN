@@ -50,7 +50,9 @@ particular priority branch, and marked `suspendable`. Suspended transitions
 freeze their execution clock (`h`) and advance a suspension clock (`w`). Control
 transitions are never suspendable, so a filtered-out control transition is
 simply blocked for that branch (neither active nor suspended) and becomes active
-again in the next state class.
+again in the next state class. The analysis projects `w` out of the DBM by
+default (`--keep-suspension-clocks` retains it); the suspended set and the
+frozen execution clocks are unchanged, so this is an exact optimization.
 
 ### Branch identity
 
