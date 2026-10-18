@@ -234,12 +234,12 @@ class NoPreemptionStrategy : public PreemptionStrategy {
 }  // namespace
 
 std::unique_ptr<PreemptionStrategy> make_preemption_strategy(SchedulePolicy policy) {
-  // RM/DM derive their static priorities during lowering and PIP derives its
-  // effective priorities from the marking, but their runtime preemption
-  // semantics are exactly the resume strategy used by `fixed`.
+  // RM/DM derive their static priorities during lowering and PIP/PCP derive
+  // their effective priorities or admission from the marking, but their runtime
+  // preemption semantics are exactly the resume strategy used by `fixed`.
   if (policy == SchedulePolicy::FIXED || policy == SchedulePolicy::FIXED_PRIOR_WITH_RESUME ||
       policy == SchedulePolicy::RM || policy == SchedulePolicy::DM ||
-      policy == SchedulePolicy::PIP) {
+      policy == SchedulePolicy::PIP || policy == SchedulePolicy::PCP) {
     return std::make_unique<ResumePreemptionStrategy>();
   }
   if (policy == SchedulePolicy::FIXED_PRIOR_WITH_RESTART) {
