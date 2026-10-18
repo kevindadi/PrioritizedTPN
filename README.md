@@ -350,14 +350,21 @@ JSON `configuration.policy` and `--policy` accept values such as:
 | `pip` | Priority Inheritance Protocol, derived from the marking; resume-style |
 | `pcp` | Priority Ceiling Protocol: static lock ceilings, ceiling-based admission and transitive inheritance; resume-style |
 | `srp` | Stack Resource Policy: static lock ceilings, global system-ceiling start gate, no inheritance; resume-style |
-| `edf`, `llf`, `fifo` | **Not implemented natively**: parsed/exported, but analysis falls back to static priorities and non-preemptive handling |
+| `edf` | Earliest Deadline First using per-job release clocks and deadline-order zone branches; restricted single-core class |
+| `fifo` | Non-preemptive FIFO using per-job release clocks and arrival-order branches; restricted single-core class |
+| `llf` | **Event-driven LLF** using laxity clocks; **not** classical continuous-time LLF; restricted deterministic single-core class |
 
-- **Native P-TPN analysis:** `fixed`, `fixed_prior_with_resume`, `rm`, `dm`,
-  `pip`, `pcp`, and `srp` use the firing-rule template in
+- **Native P-TPN analysis:** all policies above use the firing-rule template in
   [docs/ptopner/scheduling-semantics.md](docs/ptopner/scheduling-semantics.md).
   PIP/PCP/SRP are supported on TDG2PN-lowered nets with
   `task_place_capacity == 1` and one in-flight job per task; PCP/SRP use a
   global system ceiling (the classical protocols are uniprocessor).
+- **EDF/FIFO/LLF** currently support a deliberately restricted single-core
+  class (no locks, no dependency-driven releases, one in-flight job per task).
+  EDF and FIFO use release clocks; LLF requires deterministic execution
+  segments and is event-driven, not classical LLF. Unsupported models are
+  rejected explicitly. See the per-policy sections in
+  [docs/ptopner/scheduling-semantics.md](docs/ptopner/scheduling-semantics.md).
 - **Romeo `.cts` export:** uses `tdg2romeo` directly from TDG; scheduling policy in JSON does not affect Romeo encoding
 - **PToPNer `.ppn` export:** requires `fixed_prior_with_restart` (tdg2ptopner)
 
