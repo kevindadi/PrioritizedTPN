@@ -106,33 +106,6 @@ class StateClassReachabilityGraph {
     return horizon_;
   }
 
-  // Opt-in partial-order reduction (persistent sets). Disabled by default: the
-  // exhaustive active-set semantics and the full exploration path are retained
-  // when it is off. When enabled, each state class explores only a persistent
-  // set of its priority-enabled transitions; same-core transitions and every
-  // edge that carries positive dwell into a task's execution window stay in
-  // the set, so the reported WCET, WCRT interval and deadlocks are unchanged.
-  void set_por_enabled(bool enabled);
-  [[nodiscard]] bool get_por_enabled() const {
-    return por_enabled_;
-  }
-
-  // True when firing `a` and `b` interfere. The relation is symmetric and is
-  // precomputed once from the net: shared pre/post place (which covers shared
-  // lock places), same real core (core >= 0, including equal-priority ties),
-  // or schedule interference through a place consumed on the other
-  // transition's real core.
-  [[nodiscard]] bool transitions_dependent(size_t a, size_t b) const;
-
-  // Persistent set of `state`: the dependency closure of a deterministic seed
-  // over the priority-enabled transitions, extended with every urgent
-  // transition (minimum finite effective latest), closed again, and finally
-  // enlarged with every firable transition whose edge carries a positive dwell
-  // while a task is in flight. That last step keeps the per-task WCRT upper
-  // bounds of the timing analysis unchanged. Returns the full priority-enabled
-  // set when no reduction is possible.
-  [[nodiscard]] TransitionSet compute_persistent_set(const StateClass& state) const;
-
   // Explores the reachability graph, stopping once `max_states` classes exist.
   // Returns the number of state classes discovered.
   size_t build(size_t max_states = std::numeric_limits<size_t>::max());
@@ -188,11 +161,6 @@ class StateClassReachabilityGraph {
     // lower-bound dwell exceeded the horizon.
     size_t horizon_pruned_states = 0;
     bool horizon_truncated = false;
-    // Partial-order reduction counters (zero while POR is disabled).
-    size_t persistent_set_calls = 0;
-    size_t persistent_transitions_explored = 0;
-    size_t persistent_transitions_skipped = 0;
-    size_t max_persistent_set_size = 0;
   };
 
   [[nodiscard]] const Statistics& get_statistics() const {
@@ -208,7 +176,6 @@ class StateClassReachabilityGraph {
   ReductionMode reduction_mode_ = ReductionMode::NONE;
   bool extrapolation_enabled_ = false;
   bool suspension_clock_projection_ = true;
-  bool por_enabled_ = false;
   int extrapolation_k_ = -1;  // computed lazily from the net's static intervals
   bool horizon_enabled_ = false;
   int horizon_ = 0;
@@ -230,25 +197,6 @@ class StateClassReachabilityGraph {
   struct MarkingActiveHash {
     size_t operator()(const MarkingActiveKey& key) const;
   };
-
-  // Symmetric transition-dependency matrix, built once in the constructor.
-  // dependency_[a][b] != 0 means firing a and b are not timed-independent.
-  std::vector<std::vector<unsigned char>> dependency_;
-  void build_dependency_relation();
-
-  // Union of the task chain places. The timing analysis only charges an
-  // edge's dwell to a task when the source class holds a token of that task's
-  // chain, so dwell outside these places cannot influence any reported WCRT.
-  std::vector<size_t> task_chain_places_;
-  void build_task_chain_places();
-  [[nodiscard]] bool has_task_in_flight(const StateClass& state) const;
-
-  // Core of the persistent-set algorithm: `enabled` is sorted, `current` is
-  // the stored class and `elapsed` is its time-elapsed expansion. The result
-  // includes the metric-preservation additions described in the .cpp file.
-  [[nodiscard]] TransitionSet persistent_set_for(const StateClass& current,
-                                                 const StateClass& elapsed,
-                                                 const TransitionSet& enabled) const;
 
   std::unordered_map<std::vector<int>, std::vector<SCVertex>, MarkingHash> vertices_by_marking_;
   // Equality mode only: exact-identity hash -> candidate vertices. Collisions
