@@ -20,6 +20,7 @@ add_executable(ptpn_test
   test_saturation.cpp
   test_tdg2romeo.cpp
   test_tdg2pn_lowering.cpp
+  test_cone_projection.cpp
   test_pipeline_golden.cpp
   test_invariants.cpp
   test_parser_robustness.cpp

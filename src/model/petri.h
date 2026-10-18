@@ -60,6 +60,15 @@ inline bool operator<(TransitionId left, TransitionId right) {
   return left.value < right.value;
 }
 
+// One weighted arc used by bulk net assembly (e.g. analysis-side projections).
+// The direction is implied by the vector the spec is passed in: pre arcs are
+// place -> transition, post arcs are transition -> place.
+struct ArcSpec {
+  PlaceId place;
+  TransitionId transition;
+  int weight = 1;
+};
+
 // A tagged reference to either a place or a transition. The lowering layer
 // deliberately mixes both in node_start_end_map / node_pn_map; NodeRef replaces
 // the old "bare index plus size check" convention and turns a wrong-kind access
@@ -270,6 +279,13 @@ class PTPN {
     post_matrix_[transition.index()][place.index()] = weight;
     rebuild_sparse_arcs();
   }
+
+  // Writes a batch of weighted arcs and rebuilds the sparse adjacency once, at
+  // the end. This is the bulk-construction counterpart of set_pre_arc /
+  // set_post_arc for transformations that assemble a net from many fragments;
+  // per-arc rebuilding would make projection quadratic in the matrix size.
+  // Existing entries at the given coordinates are overwritten.
+  void set_arcs(const std::vector<ArcSpec>& pre_arcs, const std::vector<ArcSpec>& post_arcs);
 
   void set_initial_marking(const Marking& marking) {
     if (marking.size() != places_.size()) {

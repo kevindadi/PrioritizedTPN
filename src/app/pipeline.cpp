@@ -13,12 +13,15 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <numeric>
 #include <nlohmann/json.hpp>
+#include <set>
 #include <spdlog/spdlog.h>
 #include <variant>
 
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
+#include "analysis/reductions/cone_projection.h"
 #include "app/pipeline.h"
 #include "export/export_dot.h"
 #include "export/export_ptpn.h"
@@ -232,6 +235,161 @@ int build_ptpn_from_tdg(tdg::TDG& tdg, petri::PTPN& ptpn) {
   return 0;
 }
 
+struct ConeAnalysisResult {
+  state_class::MetricsReport report;
+  long long duration_ms = 0;
+  size_t tasks = 0;
+};
+
+long long lcm_ll(long long a, long long b) {
+  if (a == 0 || b == 0) {
+    return 0;
+  }
+  const long long divisor = std::gcd(a, b);
+  return a / divisor * b;
+}
+
+// Per-task cone decomposition: for every task, project the net onto its cone,
+// build the state-class graph of that sub-net and keep only the focus task's
+// TaskMetrics. The merged report answers the same per-task questions as the
+// full-graph analysis with a much smaller state space when tasks are loosely
+// coupled.
+//
+// Whole-net deadlock discovery and graph-wide lock statistics cannot be
+// reconstructed from independent cones. Cone mode leaves deadlock_states empty
+// and derives schedulability from the per-task verdicts; use full-graph mode
+// when whole-net deadlock detection is required.
+bool analyze_task_cones(const petri::PTPN& ptpn, const PipelineOptions& opts,
+                        state_class::CanonicalizationMode canonicalization,
+                        ConeAnalysisResult& result) {
+  if (ptpn.task_info().empty()) {
+    return false;
+  }
+
+  const auto cone_start = PipelineClock::now();
+  state_class::MetricsReport merged;
+  merged.exact = true;
+  merged.bounded = true;
+  merged.wcrt_lb_valid = true;
+  merged.deadlock_analysis_certified = true;
+
+  std::vector<std::string> task_names;
+  task_names.reserve(ptpn.task_info().size());
+  for (const auto& [name, info] : ptpn.task_info()) {
+    (void)info;
+    task_names.push_back(name);
+  }
+  std::sort(task_names.begin(), task_names.end());
+
+  std::vector<state_class::TaskMetrics> task_metrics;
+  task_metrics.reserve(task_names.size());
+
+  for (const std::string& task_name : task_names) {
+    petri::PTPN cone;
+    try {
+      cone = petri::project_cone(ptpn, task_name);
+    } catch (const std::exception& error) {
+      spdlog::warn("[CONE] Cannot project task '{}': {}", task_name, error.what());
+      return false;
+    }
+
+    state_class::StateClassReachabilityGraph graph(cone);
+    graph.set_canonicalization_mode(canonicalization);
+    if (opts.extrapolation) {
+      graph.set_extrapolation(true);
+    }
+    graph.build(opts.max_states);
+    const auto& stats = graph.get_statistics();
+    const bool cone_exact =
+        canonicalization == state_class::CanonicalizationMode::EQUALITY &&
+        !opts.extrapolation && !stats.truncated;
+    merged.exact = merged.exact && cone_exact;
+    merged.truncated = merged.truncated || stats.truncated;
+    merged.states += stats.total_states;
+    merged.transitions += stats.total_transitions;
+
+    state_class::MetricsAnalyzer analyzer(graph.get_graph(), cone,
+                                          graph.get_initial_vertex(), cone_exact,
+                                          /*wcrt_lb_valid=*/true);
+    state_class::MetricsReport cone_report = analyzer.analyze();
+    merged.bounded = merged.bounded && cone_report.bounded;
+    merged.overflow_places.insert(merged.overflow_places.end(),
+                                  cone_report.overflow_places.begin(),
+                                  cone_report.overflow_places.end());
+    merged.has_steady_cycle = merged.has_steady_cycle || cone_report.has_steady_cycle;
+    merged.recurrent_scc_size =
+        std::max(merged.recurrent_scc_size, cone_report.recurrent_scc_size);
+
+    const auto metric_it =
+        std::find_if(cone_report.tasks.begin(), cone_report.tasks.end(),
+                     [&](const state_class::TaskMetrics& metrics) {
+                       return metrics.name == task_name;
+                     });
+    if (metric_it == cone_report.tasks.end()) {
+      spdlog::warn("[CONE] Cone for task '{}' produced no task metrics", task_name);
+      return false;
+    }
+    task_metrics.push_back(*metric_it);
+
+    spdlog::debug("[CONE] {}: places={}, transitions={}, states={}, truncated={}", task_name,
+                  cone.num_places(), cone.num_transitions(), stats.total_states,
+                  stats.truncated ? "true" : "false");
+  }
+
+  merged.tasks = std::move(task_metrics);
+
+  long long hyperperiod = 0;
+  for (const auto& [name, info] : ptpn.task_info()) {
+    (void)name;
+    if (info.period > 0) {
+      hyperperiod = hyperperiod == 0 ? info.period : lcm_ll(hyperperiod, info.period);
+    }
+  }
+  merged.hyperperiod = hyperperiod;
+  for (auto& metrics : merged.tasks) {
+    metrics.jobs_per_hyperperiod =
+        (metrics.period > 0 && hyperperiod > 0)
+            ? static_cast<int>(hyperperiod / metrics.period)
+            : 0;
+  }
+
+  std::set<int> cores;
+  for (const auto& [name, info] : ptpn.task_info()) {
+    (void)name;
+    if (info.core >= 0) {
+      cores.insert(info.core);
+    }
+  }
+  for (int core : cores) {
+    state_class::CoreMetrics metrics;
+    metrics.core = core;
+    for (const auto& [name, info] : ptpn.task_info()) {
+      (void)name;
+      if (info.core != core || info.period <= 0) {
+        continue;
+      }
+      metrics.util_min += static_cast<double>(info.bcet) / info.period;
+      metrics.util_max += static_cast<double>(info.wcet) / info.period;
+    }
+    merged.cores.push_back(metrics);
+  }
+
+  // Whole-net deadlock discovery is intentionally not approximated from the
+  // cones; schedulability keeps the per-task part.
+  merged.deadlock_states.clear();
+  merged.schedulable = true;
+  for (const auto& metrics : merged.tasks) {
+    if ((metrics.has_deadline && metrics.deadline_missed) || metrics.local_deadlock) {
+      merged.schedulable = false;
+    }
+  }
+
+  result.report = std::move(merged);
+  result.duration_ms = elapsed_ms(cone_start);
+  result.tasks = task_names.size();
+  return true;
+}
+
 int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
                          const PipelineOptions& opts,
                          const chrono::time_point<chrono::high_resolution_clock>& pipeline_start,
@@ -259,6 +417,46 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
 
   if (!opts.exports.tina_file.empty()) {
     spdlog::info("[OUTPUT] Tina export not implemented");
+  }
+
+  if (opts.reduction_mode == "cone" && should_run_analysis(opts)) {
+    if (!opts.exports.scg_dot.empty()) {
+      spdlog::warn(
+          "[CONE] --export-scg requires a single state-class graph; falling back "
+          "to full-graph analysis");
+    } else {
+      if (opts.time_horizon.has_value()) {
+        spdlog::warn("[CONE] --horizon is ignored in cone mode");
+      }
+      const auto canonicalization = parse_canonicalization(opts.canonicalization_mode);
+      ConeAnalysisResult cone_result;
+      if (analyze_task_cones(ptpn, opts, canonicalization, cone_result)) {
+        const state_class::MetricsReport& report = cone_result.report;
+        log_step_timing("Cone analysis", cone_result.duration_ms,
+                        "tasks=" + to_string(cone_result.tasks) +
+                            ", states=" + to_string(report.states) +
+                            ", edges=" + to_string(report.transitions));
+        if (!opts.exports.metrics_json.empty()) {
+          if (!state_class::MetricsAnalyzer::save_to_json(report,
+                                                          opts.exports.metrics_json)) {
+            spdlog::warn("[OUTPUT] Failed to export metrics");
+            return 1;
+          }
+          spdlog::info("[OUTPUT] Metrics exported to: {}", opts.exports.metrics_json);
+          spdlog::info("[METRICS] schedulable={}, bounded={}, deadlocks={}",
+                       report.schedulable ? "true" : "false",
+                       report.bounded ? "true" : "false", report.deadlock_states.size());
+        }
+        const auto end_time = PipelineClock::now();
+        const auto total_duration =
+            chrono::duration_cast<chrono::milliseconds>(end_time - pipeline_start);
+        const size_t total_memory = get_memory_usage() - initial_memory;
+        log_step_timing(input_label + " pipeline (total)", total_duration.count(),
+                        to_string(total_memory) + " KB");
+        return 0;
+      }
+      spdlog::warn("[CONE] Cone analysis unavailable; falling back to full-graph analysis");
+    }
   }
 
   if (should_run_analysis(opts)) {

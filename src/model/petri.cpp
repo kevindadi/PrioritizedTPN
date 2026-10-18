@@ -20,6 +20,29 @@ const std::vector<size_t>& overflowed_places() {
   return g_overflow_places;
 }
 
+void PTPN::set_arcs(const std::vector<ArcSpec>& pre_arcs,
+                    const std::vector<ArcSpec>& post_arcs) {
+  for (const ArcSpec& arc : pre_arcs) {
+    if (arc.place.index() >= places_.size() || arc.transition.index() >= transitions_.size()) {
+      throw std::out_of_range("Invalid place or transition index");
+    }
+    if (arc.weight <= 0) {
+      throw std::invalid_argument("Arc weight must be positive");
+    }
+    pre_matrix_[arc.place.index()][arc.transition.index()] = arc.weight;
+  }
+  for (const ArcSpec& arc : post_arcs) {
+    if (arc.transition.index() >= post_matrix_.size() || arc.place.index() >= places_.size()) {
+      throw std::out_of_range("Invalid transition or place index");
+    }
+    if (arc.weight <= 0) {
+      throw std::invalid_argument("Arc weight must be positive");
+    }
+    post_matrix_[arc.transition.index()][arc.place.index()] = arc.weight;
+  }
+  rebuild_sparse_arcs();
+}
+
 bool PTPN::verify_structure() const {
   bool is_valid = true;
 

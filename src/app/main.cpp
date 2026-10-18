@@ -42,13 +42,15 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
                   "(default: equality)")
       ->check(CLI::IsMember({"equality", "max-lower", "intersection"}));
   cmd->add_option("--reduction", opts.reduction_mode,
-                  "State-class reduction: none, upper-bound, or por. "
+                  "State-class reduction: none, upper-bound, por, or cone. "
                   "upper-bound merges a candidate class into an existing class "
                   "with the same marking and active set when its zone is included "
                   "in the existing zone (WCRT is a sound upper bound and wcrt_lb "
                   "is unavailable); por enables metric-preserving persistent sets "
-                  "(exact) (default: none)")
-      ->check(CLI::IsMember({"none", "upper-bound", "por"}));
+                  "(exact); cone analyzes each task on its dependency/contention "
+                  "cone and merges per-task metrics (needs TDG lowering metadata; "
+                  "whole-net deadlock detection unavailable) (default: none)")
+      ->check(CLI::IsMember({"none", "upper-bound", "por", "cone"}));
   cmd->add_flag("--extrapolation", opts.extrapolation,
                 "Enable k-extrapolation of clock zones: merges behaviorally "
                 "equivalent state classes, preserving the reachable marking "

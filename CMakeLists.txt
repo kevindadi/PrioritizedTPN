@@ -303,6 +303,15 @@ target_link_libraries(ptpn_metrics
     ptpn_reachability
 )
 
+# Analysis-side structural reductions (per-task cone projection).
+add_library(ptpn_reductions STATIC
+    src/analysis/reductions/cone_projection.cpp
+)
+target_link_libraries(ptpn_reductions
+    PUBLIC
+    ptpn_petri
+)
+
 # Aggregate facade kept for the executables and tests.
 add_library(PTPN_core INTERFACE)
 target_link_libraries(PTPN_core
@@ -320,6 +329,7 @@ target_link_libraries(PTPN_core
     ptpn_dbm
     ptpn_reachability
     ptpn_metrics
+    ptpn_reductions
     spdlog::spdlog
     fmt::fmt
 )
