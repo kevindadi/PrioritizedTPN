@@ -63,6 +63,9 @@ struct ClockVar {
 // task ordinal used by ClockVar::task and StateClass::release_clock_of_task.
 struct TaskChain {
   std::string name;
+  // Real core the task is statically bound to (TaskInfo::core). All chain
+  // transitions of the task run on this core; control transitions use -1.
+  int core = -1;
   int deadline = 0;
   int period = 0;
   // Worst-case execution time from TaskInfo: the sum of the execution-segment

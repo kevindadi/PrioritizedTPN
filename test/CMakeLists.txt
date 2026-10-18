@@ -28,6 +28,7 @@ add_executable(ptpn_test
   test_time_horizon.cpp
   test_scheduling_policy.cpp
   test_edf.cpp
+  test_edf_multicore.cpp
   test_fifo.cpp
   test_llf.cpp
   test_allocation.cpp

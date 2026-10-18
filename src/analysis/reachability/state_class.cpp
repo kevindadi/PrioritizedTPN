@@ -40,6 +40,7 @@ std::vector<TaskChain> build_task_chains(const petri::PTPN& net) {
     }
     TaskChain task;
     task.name = name;
+    task.core = info_it->second.core;
     task.chain = chain_it->second;
     task.period = info_it->second.period;
     task.deadline = info_it->second.deadline;

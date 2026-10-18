@@ -65,6 +65,29 @@ struct PolicyBranch {
   }
 };
 
+// One scheduling decision on a single real core, used by
+// combine_core_choices(): the chain transitions selected on that core plus the
+// job-clock constraints that select this candidate. The helper does not
+// interpret the core id; callers group choices by TaskChain::core.
+struct CoreChoice {
+  TransitionSet active;
+  std::vector<BranchConstraint> constraints;
+};
+
+// Cartesian product of the global control transitions and the per-core
+// choices. Every resulting branch contains the control transitions once, the
+// sorted union of the selected per-core active sets, and the concatenation of
+// the per-core constraint lists in ascending core order.
+//
+// A core absent from `by_core` is idle and contributes no choice. A core
+// present with an empty choice list is a caller error (the caller must have
+// already established that at least one candidate on that core is feasible);
+// this helper throws std::invalid_argument. Duplicate branches (same active set
+// and same constraint list) are removed while preserving enumeration order.
+std::vector<PolicyBranch> combine_core_choices(
+    const TransitionSet& control,
+    const std::map<int, std::vector<CoreChoice>>& by_core);
+
 // A scheduling policy expressed as a priority + admissibility function over
 // the transitions of a PTPN. Higher `effective_priority` means higher
 // scheduling priority. Implementations must be deterministic.
@@ -261,11 +284,13 @@ class StaticPriorityRule : public FiringRule {
 // Earliest Deadline First under the release-clock state extension.
 //
 // Supported class (enforced by lowering and re-checked when the rule indexes a
-// net): TDG2PN-lowered nets with `num_cpus == 1`, all tasks on core 0,
-// `task_place_capacity == 1`, no locks, no fork/join, no task-to-task
-// dependency edges, at most one start token per task, and every task either
-// periodic with a positive period/deadline or started once at time 0 with a
-// positive deadline. Each task chain carries at most one in-flight job.
+// net): TDG2PN-lowered nets with `num_cpus >= 1`, `cores_per_cpu == 1`,
+// statically partitioned tasks on cores `0 .. num_cpus-1`, every task chain
+// transition on the task's own core, `task_place_capacity == 1`, no locks, no
+// fork/join, no task-to-task dependency edges, at most one start token per
+// task, and every task either periodic with a positive period/deadline or
+// started once at time 0 with a positive deadline. Each task chain carries at
+// most one in-flight job. Tasks never migrate between cores.
 //
 // A task is in flight from the release that places a token in its entry place
 // until its final execution segment places a token in its exit place. The
@@ -273,18 +298,25 @@ class StaticPriorityRule : public FiringRule {
 // reset to zero at release, rate 1 while the job is in flight, removed at
 // completion). The remaining deadline of job i is D_i - r_i.
 //
-// `branches()` selects the earliest-deadline task at a state. For every task i
-// that can be earliest in some valuation of the current zone it emits one
-// branch containing the control transitions plus i's structurally enabled
-// chain transitions, constrained by
+// `branches()` selects a deadline-earliest task independently on every real
+// core: for each core it considers only the in-flight tasks statically bound to
+// that core. For every task i that can be earliest on its core in some
+// valuation of the current zone it emits one per-core choice containing i's
+// structurally enabled chain transitions, constrained by
 //
-//   D_i - r_i <= D_j - r_j  for every other in-flight task j
+//   D_i - r_i <= D_j - r_j  for every other in-flight task j on the same core
 //   <=>  r_j - r_i <= D_j - D_i      (BranchConstraint{i, j, D_j - D_i})
 //
-// The constraints are part of the successor zone before hashing, so orderings
-// are never fixed inside a shared DBM zone. Equal remaining deadlines make
-// both i and j feasible; both tie resolutions are emitted. At capacity one no
-// additional cutoff subset exists, so these are exactly the EDF choices.
+// Release clocks of different cores are never compared. The per-core choices
+// are then Cartesian-producted with the global control transitions by
+// combine_core_choices(): one branch per combination, with the control
+// transitions included once. The constraints are part of the successor zone
+// before hashing, so orderings are never fixed inside a shared DBM zone.
+// Equal remaining deadlines make both i and j feasible on that core; both tie
+// resolutions are emitted and independent ties on different cores produce the
+// full Cartesian product. If an in-flight core has no feasible candidate the
+// rule raises an error rather than emitting a partial schedule. At capacity one
+// no additional cutoff subset exists, so these are exactly the EDF choices.
 //
 // Periodic release (`_fire`) handling in the supported single-job class:
 //   - A release that fires while the task has no job starts a new job; its

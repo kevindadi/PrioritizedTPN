@@ -177,19 +177,24 @@ Analysis coverage in this phase:
   guarantee is claimed for them. The ceiling is global on multi-core nets (a
   conservative variant of classical uniprocessor SRP). See
   `docs/ptopner/scheduling-semantics.md`.
-- `edf` implements Earliest Deadline First for a deliberately restricted class,
-  **not** as a static deadline priority. Lowering accepts only: `num_cpus == 1`
-  (all tasks on core `0`), no locks, no fork/join, no task-to-task dependency
-  edges, `task_place_capacity == 1`, at most one start token per task, and
-  every task either periodic with a positive period released by `_fire` or a
-  one-shot task started at time 0; every task needs a positive absolute
-  deadline. The state class adds a release clock per in-flight job and an
-  absolute-deadline order constraint to the DBM zone, enumerating every feasible
-  earliest-deadline task (ties included). A periodic release that fires while
-  the previous job is mid-chain is rejected with `std::invalid_argument` (no
-  queued jobs); a release while the job waits at the entry is a conservative
-  merge that does not reset its deadline. `k-extrapolation` and symmetry
-  reduction are rejected for EDF states. See
+- `edf` implements Earliest Deadline First for a deliberately restricted,
+  statically partitioned class, **not** as a static deadline priority.
+  Multi-core EDF schedules each real core independently: a branch selects the
+  earliest in-flight job on every non-idle core, and release clocks are never
+  compared across cores. There is no migration. Lowering accepts only:
+  `num_cpus >= 1`, `cores_per_cpu == 1`, every task bound to a core in
+  `[0, num_cpus)` via `nodes[].core`, no locks, no fork/join, no task-to-task
+  dependency edges, `task_place_capacity == 1`, at most one start token per
+  task, and every task either periodic with a positive period released by
+  `_fire` or a one-shot task started at time 0; every task needs a positive
+  absolute deadline. The state class adds a release clock per in-flight job and
+  per-core absolute-deadline order constraints to the DBM zone, enumerating
+  every feasible earliest-deadline task on each core (ties included) and taking
+  the Cartesian product across cores. A periodic release that fires while the
+  previous job is mid-chain is rejected with `std::invalid_argument` (no queued
+  jobs); a release while the job waits at the entry is a conservative merge
+  that does not reset its deadline. `k-extrapolation` and symmetry reduction
+  are rejected for EDF states. FIFO and LLF remain single-core. See
   `docs/ptopner/scheduling-semantics.md` for the full supported class and
   semantics.
 - `fifo` implements First In First Out for a deliberately restricted class,

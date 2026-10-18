@@ -476,16 +476,18 @@ TEST(EdfTest, BothOrdersFeasibleEmitBothConstraintSets) {
 // ---------------------------------------------------------------------------
 
 TEST(EdfTest, RejectsUnsupportedLoweredModels) {
-  // Multi-core.
+  // A statically partitioned task outside the declared core range. (Multi-core
+  // EDF itself is supported; the per-core behavior is covered by
+  // test_edf_multicore.cpp.)
   expect_rejected(R"({
-    "graph": {"name": "EdfMultiCpu"},
+    "graph": {"name": "EdfCoreOutOfRange"},
     "configuration": {"num_cpus": 2, "cores_per_cpu": 1, "policy": "edf",
                       "start": [{"task": "A", "tokens": 1}]},
-    "nodes": [{"id": "A", "type": "task", "priority": 0, "core": 0,
+    "nodes": [{"id": "A", "type": "task", "priority": 0, "core": 3,
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "one CPU");
+                 "outside [0, 2)");
 
   // Capacity above one (queued jobs are outside the supported class).
   expect_rejected(R"({

@@ -19,15 +19,20 @@ namespace converter {
 
 namespace {
 
-// EDF is only analyzed for a deliberately restricted, single-core,
+// EDF is only analyzed for a deliberately restricted, statically partitioned,
 // independent-periodic-task class. Reject everything else here (with a
-// lowering-time message) instead of letting the state-class rule approximate
-// an unsupported model.
+// lowering-time message) instead of letting the state-class rule approximate an
+// unsupported model.
 void validate_edf_supported_class(const tdg::TDG& tdg) {
   const std::string name = schedule_policy_to_string(SchedulePolicy::EDF);
-  if (tdg.num_cpus != 1) {
-    throw std::invalid_argument(name + " supports exactly one CPU; configuration has num_cpus = " +
+  if (tdg.num_cpus < 1) {
+    throw std::invalid_argument(name + " requires num_cpus >= 1; configuration has num_cpus = " +
                                 std::to_string(tdg.num_cpus));
+  }
+  if (tdg.cores_per_cpu != 1) {
+    throw std::invalid_argument(
+        name + " requires cores_per_cpu == 1 (one running job per real core), got " +
+        std::to_string(tdg.cores_per_cpu));
   }
   if (tdg.task_place_capacity != 1) {
     throw std::invalid_argument(
@@ -58,10 +63,10 @@ void validate_edf_supported_class(const tdg::TDG& tdg) {
   }
 
   const auto check_task = [&](const std::string& task_name, const TaskNode& task) {
-    if (task.core != 0) {
-      throw std::invalid_argument(name + " supported class is single-core: task '" + task_name +
-                                  "' is bound to core " + std::to_string(task.core) +
-                                  " (expected core 0)");
+    if (task.core < 0 || task.core >= tdg.num_cpus) {
+      throw std::invalid_argument(name + " task '" + task_name + "' is bound to core " +
+                                  std::to_string(task.core) + " outside [0, " +
+                                  std::to_string(tdg.num_cpus) + ")");
     }
     if (!task.lock.empty()) {
       throw std::invalid_argument(name + " supported class does not include locks; task '" +

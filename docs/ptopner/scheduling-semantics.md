@@ -78,7 +78,7 @@ Current coverage:
 | `pip` | base `priority` + dynamic inheritance from the marking, see below | `RESUME` | analyzed |
 | `pcp` | base `priority` + static lock ceilings + dynamic admission/inheritance, see below | `RESUME` | analyzed |
 | `srp` | base `priority` as preemption level + dynamic global system-ceiling start gate, see below | `RESUME` | analyzed |
-| `edf` | absolute deadlines from per-task release clocks, see below | `RESUME` | analyzed for the restricted single-core class |
+| `edf` | absolute deadlines from per-task release clocks, see below | `RESUME` | analyzed for the restricted statically partitioned multi-core class |
 | `fifo` | arrival order from per-task release clocks (no scalar priority), see below | `NON_PREEMPTIVE` | analyzed for the restricted single-core class |
 | `llf` | event-driven urgency `chi = age + remaining budget - deadline` from per-task laxity clocks, see below | `RESUME` | analyzed for the restricted single-core deterministic class (Event-driven LLF, not classical LLF) |
 
@@ -418,6 +418,12 @@ their absolute deadlines `r_i + D_i`, which depend on when each job was
 released. The analysis therefore represents a per-job release clock in the
 state and splits each symbolic zone by deadline order.
 
+Multi-core EDF is statically partitioned: every task is bound to one real core
+and EDF is applied independently on each core. A branch selects one earliest
+job per non-idle core, and release clocks of different cores are never
+compared. There is no migration. FIFO and LLF remain single-core; their
+multi-core scheduling is a separate follow-up.
+
 ### Supported class
 
 The supported class is deliberately narrow. TDG lowering
@@ -425,9 +431,13 @@ The supported class is deliberately narrow. TDG lowering
 whole model when any of these does not hold, and `EdfFiringRule::ensure_index`
 re-checks the lowered net:
 
-- `num_cpus == 1`, every task bound to core `0`.
+- `num_cpus >= 1` and `cores_per_cpu == 1` (one running job per real core).
+  Every task is statically bound to a core in `[0, num_cpus)`; an out-of-range
+  `TaskInfo.core` is rejected. Tasks never migrate.
 - No locks (`shared_locks` / task `locks` must be empty), no fork/join
   (every real-core transition belongs to exactly one task chain).
+- Every chain transition of a task runs on that task's `TaskInfo.core`;
+  all other real-core transitions must belong to a task chain.
 - `task_place_capacity == 1`; all task places saturate.
 - At most one start token per task (`configuration.start[].tokens <= 1`).
 - Every task has a positive absolute deadline (`deadline`, or an implicit
@@ -471,28 +481,39 @@ can silently use a scalar priority for EDF.
 ### Deadline-order branches
 
 At each state, `EdfFiringRule::branches` collects the structurally enabled
-chain transitions per in-flight task. A task `i` can be the earliest only if
-the current zone admits
+chain transitions per in-flight task and groups the candidates by
+`TaskChain::core`. On each core independently, a task `i` can be the earliest
+only if the current zone admits
 
 ```
-D_i - r_i <= D_j - r_j  for every other in-flight task j
+D_i - r_i <= D_j - r_j  for every other in-flight task j on the same core
 <=>  r_j - r_i <= D_j - D_i
 ```
 
-For each feasible candidate it emits one `PolicyBranch` whose active set is
-all control (`core < 0`) transitions plus that task's chain transitions, and
-whose `BranchConstraint{candidate, j, D_j - D_candidate}` list records the
-order. Equal remaining deadlines make multiple candidates feasible; every tie
-resolution is emitted. At capacity one there is no additional cutoff subset,
-so these are exactly the EDF choices.
+For each feasible candidate on a core it emits one `CoreChoice` whose active
+set is that task's chain transitions and whose
+`BranchConstraint{candidate, j, D_j - D_candidate}` list records the local
+order. Equal remaining deadlines on a core make multiple candidates feasible;
+every local tie resolution is emitted. A core with no in-flight job is absent
+and contributes nothing. At capacity one there is no additional cutoff subset,
+so these are exactly the per-core EDF choices.
+
+`combine_core_choices` then takes the Cartesian product of the per-core
+choices and the global control (`core < 0`) transitions. Every resulting
+`PolicyBranch` contains each control transition once, the sorted union of the
+selected chain transitions, and the concatenation of the per-core constraint
+lists in ascending core order. Independent ties on different cores therefore
+produce the full product instead of one global tie-break. If a core has
+in-flight jobs but no feasible candidate, the rule raises an error rather than
+emitting a partial schedule.
 
 The engine intersects the constraints with the successor zone (using
 `DBM::tighten`) **before** hashing/deduplication. This is the key difference
 from a static deadline rank: one symbolic state may still contain several
 possible deadline orders, and the graph splits it instead of fixing an order
 inside a shared DBM. A branch whose ordering is impossible in the successor
-zone is dropped. If no candidate is feasible, the analysis raises an error
-rather than emitting a partial schedule.
+zone is dropped. Constraints only ever relate release clocks of jobs on the
+same core; a cross-core deadline comparison is never emitted.
 
 Because EDF has no scalar priority, the preemption filter is expressed by the
 branch's active set: the selected job's chain transitions run, the other
@@ -525,14 +546,18 @@ behavior is:
 - `k-extrapolation` is rejected for release-clock states
   (`set_extrapolation(true)` / enabling extrapolation before installing EDF
   both throw). Relaxing deadline bounds would be unsound.
-- Task-symmetry reduction is not implemented for release-clock states. For the
-  single-core EDF class it would be trivial (no distinct cores to permute).
+- Task-symmetry reduction is not implemented for release-clock states.
+  Statically partitioned EDF does not model migration, so cores are never
+  permuted as part of scheduling.
 - The SCG DOT export labels release clocks `r(K<ordinal>)`; execution clocks
   remain `h(T<id>)`.
 - Tests: `test/test_edf.cpp` covers known EDF response times, a case where EDF
   differs from RM/DM because of absolute deadlines, tie enumeration,
   zone-dependent branch constraints, layout invariants, and the rejection
-  paths.
+  paths. `test/test_edf_multicore.cpp` covers per-core selection and parallel
+  progress, per-core tie Cartesian products, an idle core combined with a busy
+  core's choice, independent deadline orders across cores, cross-core
+  constraint exclusion, and the multi-core rejection paths.
 
 ## FIFO (restricted supported class)
 

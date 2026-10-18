@@ -351,6 +351,53 @@ std::vector<PolicyBranch> FiringRule::branches(const TransitionSet& struct_enabl
   return branches;
 }
 
+std::vector<PolicyBranch> combine_core_choices(
+    const TransitionSet& control,
+    const std::map<int, std::vector<CoreChoice>>& by_core) {
+  // Each prefix holds the choices made so far; control transitions are added
+  // to every branch once at the end.
+  std::vector<PolicyBranch> combined(1);
+  for (const auto& [core, choices] : by_core) {
+    if (choices.empty()) {
+      throw std::invalid_argument(
+          "combine_core_choices: core " + std::to_string(core) +
+          " has no feasible scheduling choice");
+    }
+    std::vector<PolicyBranch> next;
+    next.reserve(combined.size() * choices.size());
+    for (const PolicyBranch& prefix : combined) {
+      for (const CoreChoice& choice : choices) {
+        PolicyBranch branch;
+        branch.active = prefix.active;
+        branch.active.insert(branch.active.end(), choice.active.begin(),
+                             choice.active.end());
+        branch.constraints = prefix.constraints;
+        branch.constraints.insert(branch.constraints.end(),
+                                  choice.constraints.begin(),
+                                  choice.constraints.end());
+        next.push_back(std::move(branch));
+      }
+    }
+    combined = std::move(next);
+  }
+
+  for (PolicyBranch& branch : combined) {
+    branch.active.insert(branch.active.end(), control.begin(), control.end());
+    std::sort(branch.active.begin(), branch.active.end());
+  }
+
+  // Small branch counts: an order-preserving pairwise deduplication keeps the
+  // enumeration deterministic without requiring an ordering on PolicyBranch.
+  std::vector<PolicyBranch> unique;
+  unique.reserve(combined.size());
+  for (PolicyBranch& branch : combined) {
+    if (std::find(unique.begin(), unique.end(), branch) == unique.end()) {
+      unique.push_back(std::move(branch));
+    }
+  }
+  return unique;
+}
+
 int StaticPriorityRule::effective_priority(const PolicyContext& context,
                                            size_t transition) const {
   return context.net.get_transition(petri::TransitionId{transition}).priority;
@@ -372,16 +419,22 @@ std::string task_name_or_ordinal(const std::vector<TaskChain>& tasks, size_t ord
 }
 
 // Task-chain index shared by the per-job-clock policies (EDF, FIFO and
-// LLF-ED). They require the same one-job, single-core, no-lock lowering.
+// LLF-ED). They require the same one-job, no-lock lowering with statically
+// partitioned tasks: each task chain carries at most one in-flight job and all
+// of its transitions run on the task's declared real core.
+//
 // `options` selects the policy-specific extra requirements: EDF/LLF need a
-// positive deadline, FIFO needs a structural single-core CPU place (when the
-// net has any CPU place at all), and LLF additionally needs deterministic
-// execution segments plus a TaskInfo::wcet equal to their sum.
+// positive deadline, LLF additionally needs deterministic execution segments
+// plus a TaskInfo::wcet equal to their sum, and FIFO derives the supported core
+// range from its structural CPU places (falling back to the TaskInfo cores for
+// nets without a CPU place). FIFO and LLF remain single-core until the
+// multi-core follow-up, enforced by `require_single_core`.
 struct ReleaseClassOptions {
   const char* label = "EDF";
   bool require_deadline = true;
-  bool require_single_cpu_place = false;
+  bool use_cpu_places = false;
   bool require_deterministic_segments = false;
+  bool require_single_core = false;
 };
 
 struct ReleaseTaskIndex {
@@ -409,21 +462,34 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
                "shared lock resources");
   }
 
-  if (options.require_single_cpu_place) {
-    const std::vector<petri::PlaceId>& cpu_places = net.cpu_places();
-    if (cpu_places.size() > 1) {
-      throw std::invalid_argument(
-          name + " supported class is single-core, but the net declares " +
-          std::to_string(cpu_places.size()) + " CPU resources");
-    }
-    for (const petri::PlaceId cpu : cpu_places) {
+  // Supported core range. Resume policies (EDF/LLF) derive it from the
+  // statically partitioned TaskInfo cores: max(TaskInfo.core) + 1. FIFO has a
+  // structural CPU place per real core, so its range is the number of those
+  // places; a hand-built FIFO net without CPU places takes the marking-based
+  // path and uses the TaskInfo cores instead.
+  size_t num_cores = 0;
+  if (options.use_cpu_places && !net.cpu_places().empty()) {
+    num_cores = net.cpu_places().size();
+    for (const petri::PlaceId cpu : net.cpu_places()) {
       const petri::Place& place = net.get_place(cpu);
       if (place.capacity != 1) {
         throw std::invalid_argument(
-            name + " requires cores_per_cpu == 1 for the single real core, but '" +
+            name + " requires cores_per_cpu == 1 (one running job per real core), "
+                   "but '" +
             place.name + "' has capacity " + std::to_string(place.capacity));
       }
     }
+  } else {
+    int max_core = -1;
+    for (const auto& entry : net.task_info()) {
+      max_core = std::max(max_core, entry.second.core);
+    }
+    num_cores = max_core >= 0 ? static_cast<size_t>(max_core) + 1 : 0;
+  }
+
+  if (options.require_single_core && num_cores > 1) {
+    throw std::invalid_argument(name + " supported class is single-core, but the net has " +
+                                std::to_string(num_cores) + " real cores");
   }
 
   const std::vector<int>& initial = net.get_marking();
@@ -433,6 +499,12 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
     if (info_it == net.task_info().end()) {
       throw std::invalid_argument(name + " task '" + task.name +
                                   "' has no TaskInfo metadata");
+    }
+    const int task_core = info_it->second.core;
+    if (task_core < 0 || static_cast<size_t>(task_core) >= num_cores) {
+      throw std::invalid_argument(name + " task '" + task.name + "' is bound to core " +
+                                  std::to_string(task_core) + " outside [0, " +
+                                  std::to_string(num_cores) + ")");
     }
     if (!info_it->second.locks.empty()) {
       throw std::invalid_argument(name + " supported class does not include locks; task '" +
@@ -536,11 +608,12 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
                                     "' references an out-of-range transition");
       }
       const auto& lowered = net.get_transition(petri::TransitionId{transition});
-      if (lowered.core != 0) {
+      if (lowered.core != task_core) {
         throw std::invalid_argument(
-            name + " supported class is single-core: task '" + task.name +
-            "' has a chain transition on core " + std::to_string(lowered.core) +
-            " (expected core 0)");
+            name + " task '" + task.name + "' has a chain transition T" +
+            std::to_string(transition) + " on core " +
+            std::to_string(lowered.core) + " (TaskInfo binds the task to core " +
+            std::to_string(task_core) + ")");
       }
       if (index.task_of_transition[transition] >= 0) {
         throw std::invalid_argument(
@@ -661,7 +734,8 @@ void EdfFiringRule::ensure_index(const petri::PTPN& net) const {
   ReleaseClassOptions options;
   options.label = "EDF";
   options.require_deadline = true;
-  options.require_single_cpu_place = false;
+  // Multi-core EDF is statically partitioned: the supported core range comes
+  // from the TaskInfo cores and each core is scheduled independently below.
   ReleaseTaskIndex index = build_release_task_index(net, options);
   tasks_ = std::move(index.tasks);
   task_of_transition_ = std::move(index.task_of_transition);
@@ -734,7 +808,11 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
   // (no blocking exists in the supported class). A task without an in-flight
   // job must not expose a chain transition; the only chain token it can hold is
   // a completed exit token consumed by a control transition.
-  std::vector<size_t> candidates;
+  //
+  // Tasks are statically partitioned: EDF orders jobs only against the other
+  // in-flight jobs on their own core. Release clocks of different cores are
+  // never compared.
+  std::map<int, std::vector<size_t>> candidates_by_core;
   for (size_t ordinal = 0; ordinal < tasks_.size(); ++ordinal) {
     const size_t chain_tokens = task_chain_token_count(tasks_[ordinal], state.marking);
     if (chain_tokens > 1) {
@@ -757,74 +835,84 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
           "' has an enabled chain transition but no in-flight job/release clock");
     }
     if (in_flight) {
-      candidates.push_back(ordinal);
+      candidates_by_core[tasks_[ordinal].core].push_back(ordinal);
     }
   }
 
-  std::vector<PolicyBranch> result;
-  if (candidates.empty()) {
+  if (candidates_by_core.empty()) {
     // Only control (environment) transitions can fire.
     std::sort(control.begin(), control.end());
+    std::vector<PolicyBranch> result;
     result.push_back(PolicyBranch{std::move(control), {}});
     return result;
   }
 
-  for (size_t candidate : candidates) {
-    const int candidate_clock = state.release_index(candidate);
-    if (candidate_clock <= 0) {
-      throw std::invalid_argument(
-          "EDF state is missing the release clock of in-flight task '" +
-          task_name_or_ordinal(tasks_, candidate) + "'");
-    }
-
-    // A candidate is feasible when the zone admits a valuation in which its
-    // absolute deadline is no later than every other in-flight job's:
-    //   D_i - r_i <= D_j - r_j  <=>  r_j - r_i <= D_j - D_i.
-    DBM trial = state.zone;
-    std::vector<BranchConstraint> constraints;
-    bool feasible = true;
-    for (size_t other : candidates) {
-      if (other == candidate) {
-        continue;
-      }
-      const int other_clock = state.release_index(other);
-      if (other_clock <= 0) {
+  std::map<int, std::vector<CoreChoice>> choices_by_core;
+  for (const auto& [core, candidates] : candidates_by_core) {
+    std::vector<CoreChoice> choices;
+    choices.reserve(candidates.size());
+    for (size_t candidate : candidates) {
+      const int candidate_clock = state.release_index(candidate);
+      if (candidate_clock <= 0) {
         throw std::invalid_argument(
             "EDF state is missing the release clock of in-flight task '" +
-            task_name_or_ordinal(tasks_, other) + "'");
+            task_name_or_ordinal(tasks_, candidate) + "'");
       }
-      const long long bound = static_cast<long long>(tasks_[other].deadline) -
-                              static_cast<long long>(tasks_[candidate].deadline);
-      if (bound < std::numeric_limits<int>::min() ||
-          bound > std::numeric_limits<int>::max()) {
-        throw std::invalid_argument("EDF deadline difference does not fit in an int");
+
+      // A candidate is feasible when the zone admits a valuation in which its
+      // absolute deadline is no later than every other in-flight job's *on the
+      // same core*:
+      //   D_i - r_i <= D_j - r_j  <=>  r_j - r_i <= D_j - D_i.
+      DBM trial = state.zone;
+      std::vector<BranchConstraint> constraints;
+      bool feasible = true;
+      for (size_t other : candidates) {
+        if (other == candidate) {
+          continue;
+        }
+        const int other_clock = state.release_index(other);
+        if (other_clock <= 0) {
+          throw std::invalid_argument(
+              "EDF state is missing the release clock of in-flight task '" +
+              task_name_or_ordinal(tasks_, other) + "'");
+        }
+        const long long bound = static_cast<long long>(tasks_[other].deadline) -
+                                static_cast<long long>(tasks_[candidate].deadline);
+        if (bound < std::numeric_limits<int>::min() ||
+            bound > std::numeric_limits<int>::max()) {
+          throw std::invalid_argument("EDF deadline difference does not fit in an int");
+        }
+        if (!trial.tighten(static_cast<size_t>(other_clock),
+                           static_cast<size_t>(candidate_clock),
+                           static_cast<int>(bound))) {
+          feasible = false;
+          break;
+        }
+        constraints.push_back(
+            BranchConstraint{candidate, other, static_cast<int>(bound)});
       }
-      if (!trial.tighten(static_cast<size_t>(other_clock),
-                         static_cast<size_t>(candidate_clock),
-                         static_cast<int>(bound))) {
-        feasible = false;
-        break;
+      if (!feasible) {
+        continue;
       }
-      constraints.push_back(BranchConstraint{
-          candidate, other, static_cast<int>(bound)});
-    }
-    if (!feasible) {
-      continue;
+
+      CoreChoice choice;
+      choice.active = enabled_per_task[candidate];
+      std::sort(choice.active.begin(), choice.active.end());
+      choice.constraints = std::move(constraints);
+      choices.push_back(std::move(choice));
     }
 
-    TransitionSet active = control;
-    active.insert(active.end(), enabled_per_task[candidate].begin(),
-                  enabled_per_task[candidate].end());
-    std::sort(active.begin(), active.end());
-    result.push_back(PolicyBranch{std::move(active), std::move(constraints)});
+    if (choices.empty()) {
+      throw std::runtime_error(
+          "EDF deadline ordering is inconsistent with the state zone on core " +
+          std::to_string(core) + ": no candidate can be earliest");
+    }
+    choices_by_core.emplace(core, std::move(choices));
   }
 
-  if (result.empty()) {
-    throw std::runtime_error(
-        "EDF deadline ordering is inconsistent with the state zone: no candidate "
-        "can be earliest");
-  }
-  return result;
+  // One branch per Cartesian combination of the independent per-core choices,
+  // carrying the global control transitions once.
+  return combine_core_choices(control, choices_by_core);
 }
 
 // ---------------------------------------------------------------------------
@@ -843,7 +931,11 @@ void LlfFiringRule::ensure_index(const petri::PTPN& net) const {
   ReleaseClassOptions options;
   options.label = "LLF";
   options.require_deadline = true;
-  options.require_single_cpu_place = true;
+  // LLF stays single-core until the per-core multi-core follow-up. Structural
+  // CPU places, when present, define the core range; otherwise the TaskInfo
+  // cores do.
+  options.use_cpu_places = true;
+  options.require_single_core = true;
   options.require_deterministic_segments = true;
   ReleaseTaskIndex index = build_release_task_index(net, options);
   tasks_ = std::move(index.tasks);
@@ -1018,11 +1110,13 @@ void FifoFiringRule::ensure_index(const petri::PTPN& net) const {
   options.label = "FIFO";
   options.require_deadline = false;
   // FIFO is not a resume policy, so the lowerer must install the structural
-  // core place (capacity `cores_per_cpu`) and non-suspendable execution
-  // segments. A hand-built net without a CPU place is still accepted: the
-  // rule derives the single running job from the marking and never admits a
-  // second one.
-  options.require_single_cpu_place = true;
+  // core places (capacity `cores_per_cpu`) and non-suspendable execution
+  // segments. The number of CPU places defines the supported core range. A
+  // hand-built net without a CPU place is still accepted: the rule derives the
+  // single running job from the marking and never admits a second one. FIFO
+  // stays single-core until the per-core multi-core follow-up.
+  options.use_cpu_places = true;
+  options.require_single_core = true;
   ReleaseTaskIndex index = build_release_task_index(net, options);
   tasks_ = std::move(index.tasks);
   task_of_transition_ = std::move(index.task_of_transition);
