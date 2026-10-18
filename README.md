@@ -340,14 +340,24 @@ bound. Heterogeneous tasks are never merged.
 
 JSON `configuration.policy` and `--policy` accept values such as:
 
-| Policy | Typical use |
-|--------|-------------|
+| Policy | Native analysis status |
+|--------|------------------------|
 | `fixed` | Default fixed-priority lowering (resume-style native analysis) |
 | `fixed_prior_with_resume` | Engine-native preemption (recommended for analysis) |
 | `fixed_prior_with_restart` | Structural restart preemption (required for PToPNer export) |
-| `fifo`, `rm`, `dm`, `edf`, `llf`, `pip`, `pcp`, `srp` | Other policies (see [docs/json_format.md](docs/json_format.md)) |
+| `rm` | Rate-monotonic priorities computed at lowering; resume-style |
+| `dm` | Deadline-monotonic priorities computed at lowering; resume-style |
+| `pip` | Priority Inheritance Protocol, derived from the marking; resume-style |
+| `pcp` | Priority Ceiling Protocol: static lock ceilings, ceiling-based admission and transitive inheritance; resume-style |
+| `srp` | Stack Resource Policy: static lock ceilings, global system-ceiling start gate, no inheritance; resume-style |
+| `edf`, `llf`, `fifo` | **Not implemented natively**: parsed/exported, but analysis falls back to static priorities and non-preemptive handling |
 
-- **Native P-TPN analysis:** prefer `fixed` or `fixed_prior_with_resume` (tdg2pn lowering)
+- **Native P-TPN analysis:** `fixed`, `fixed_prior_with_resume`, `rm`, `dm`,
+  `pip`, `pcp`, and `srp` use the firing-rule template in
+  [docs/ptopner/scheduling-semantics.md](docs/ptopner/scheduling-semantics.md).
+  PIP/PCP/SRP are supported on TDG2PN-lowered nets with
+  `task_place_capacity == 1` and one in-flight job per task; PCP/SRP use a
+  global system ceiling (the classical protocols are uniprocessor).
 - **Romeo `.cts` export:** uses `tdg2romeo` directly from TDG; scheduling policy in JSON does not affect Romeo encoding
 - **PToPNer `.ppn` export:** requires `fixed_prior_with_restart` (tdg2ptopner)
 

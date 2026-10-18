@@ -71,6 +71,10 @@ lock-hold, and exit places) use **saturating** capacity semantics:
 - With the default value `1`, at most one pending instance is tracked per
   place; a value of `2` additionally tracks one queued release.
 - The value must be `>= 1`.
+- `pip`, `pcp`, and `srp` support only the default value `1`: lowering rejects
+  these policies with `task_place_capacity != 1` (and with start bindings
+  requesting more than one token for a task), because queued job tokens would
+  make the chain-position ownership inference ambiguous.
 
 Resource places are **not** saturating: core places (capacity =
 `cores_per_cpu`), lock places (capacity 1), and the periodic control place
@@ -83,9 +87,11 @@ capacity value.
 
 ### Scheduling policies
 
-Supported values:
+Accepted values:
 
-- `fixed`
+- `fixed` (alias of resume-style fixed priority)
+- `fixed_prior_with_resume`
+- `fixed_prior_with_restart`
 - `rm`
 - `dm`
 - `edf`
@@ -94,6 +100,77 @@ Supported values:
 - `pip`
 - `pcp`
 - `srp`
+
+Analysis coverage in this phase:
+
+- `fixed`, `fixed_prior_with_resume`, and `fixed_prior_with_restart` use the
+  explicit `priority` values from the input.
+- `rm` and `dm` compute static priorities at lowering time (RM: shortest period
+  wins; DM: shortest explicit deadline, falling back to the period). For these
+  two policies the JSON `priority` field is **ignored**. They use the same
+  resume-style preemption and resource lowering as `fixed`; see
+  `docs/ptopner/scheduling-semantics.md`.
+- `pip` implements the Priority Inheritance Protocol. Each task starts from its
+  input `priority`, and the analysis engine dynamically raises a lock holder's
+  effective priority to that of its highest-priority waiter (transitively,
+  through nested locks) while the waiter is blocked. Ownership is derived from
+  the chain position of the task's single job token: lock `i` is held while the
+  token lies between the acquire position `5 + 4*i` and the release transition
+  position `chain.size() - 4 - 2*i`, and a task waits when its token is on the
+  acquire pre-place and the acquire is disabled. Preemption is resume-style and
+  lowering matches the other resume policies (no structural `coreN` place,
+  suspendable execution segments). `pip` requires `task_place_capacity == 1`;
+  lowering rejects larger values. States with zero or multiple tokens in a task
+  chain, or inconsistent lock ownership, are outside the supported class and
+  fall back defensively (no inheritance for the affected task/lock). See
+  `docs/ptopner/scheduling-semantics.md`.
+- `pcp` implements the Priority Ceiling Protocol using the input `priority`
+  values unchanged (it does **not** combine with the RM/DM priority
+  computation in this phase). `ceiling(L)` is the maximum base priority among
+  the tasks whose `locks` contain `L`; a lock no task uses has no ceiling.
+  Held locks use the same chain-position rule as `pip`. The system ceiling of
+  task `J` is the maximum ceiling of locks held by tasks other than `J` (own
+  locks excluded; empty means admission is always allowed, with no `0`
+  sentinel). `J` may acquire a free lock `L` only when
+  `base_priority(J) > system_ceiling(J)`; a lock held by another task is a
+  direct block (already structurally disabled) rather than an admission
+  decision. Direct requests and conditioned free requests create wait edges
+  `J -> holder`; when several held locks attain the system ceiling, the
+  lexicographically smallest lock name and its unique holder are selected
+  deterministically. Effective priorities are the least fixpoint of
+  `eff[holder] = max(eff[holder], eff[waiter])`. Nested locks are permitted.
+  Preemption is resume-style and lowering matches the other resume policies
+  (no structural `coreN` place, suspendable execution segments). `pcp`
+  requires `task_place_capacity == 1` and at most one start token per task;
+  lowering rejects larger values. Unsupported or inconsistent markings (zero
+  or multiple tokens in a chain, multiple claimants for one lock) fall back
+  defensively without inheritance; no WCRT upper-bound guarantee is claimed
+  for those states. See `docs/ptopner/scheduling-semantics.md`.
+- `srp` implements the Stack Resource Policy using the input `priority` values
+  unchanged (no combination with the RM/DM priority computation): the
+  preemption level and scheduling priority are both the input `priority`.
+  `ceiling(L)` is the maximum base priority among the tasks whose `locks`
+  contain `L`; a lock no task uses has no ceiling. The system ceiling at a
+  marking is the maximum ceiling over **all** currently held locks (globally
+  across the net, including the candidate's own locks); it is empty when no
+  lock is held, with no `0` sentinel. Only the task-chain `get_core`
+  transition is admission-gated: it is admissible only while the job token is
+  at the chain entry and either no lock is held or
+  `base_priority(task) > system_ceiling` (strict). A task that has started is
+  never blocked again, and lock acquisitions are not admission-tested. There
+  is no priority inheritance: effective priorities stay static. Preemption is
+  resume-style and lowering matches the other resume policies (no structural
+  `coreN` place, suspendable execution segments). `srp` requires
+  `task_place_capacity == 1` and at most one start token per task; lowering
+  rejects larger values. Unsupported or ambiguous markings skip the start
+  gate defensively and are not certified SRP-exact; no WCRT upper-bound
+  guarantee is claimed for them. The ceiling is global on multi-core nets (a
+  conservative variant of classical uniprocessor SRP). See
+  `docs/ptopner/scheduling-semantics.md`.
+- `edf`, `llf`, and `fifo` are accepted by the parser but are **not
+  implemented** as scheduling semantics. They fall back to the static
+  transition priorities with non-preemptive handling and must not be treated as
+  analyzed.
 
 ## `nodes`
 
@@ -112,9 +189,9 @@ Supported node types:
 | --------------- | ---------------- | -------- | --------------------------------------------------------------------------- |
 | `id`            | string           | yes      | Unique node identifier                                                      |
 | `type`          | string           | yes      | Node type                                                                   |
-| `priority`      | integer          | no       | Task priority, default `100`                                                |
+| `priority`      | integer          | no       | Task priority, default `100`; ignored by `rm`/`dm`, which compute priorities |
 | `core`          | integer          | no       | Assigned core id, starting from `0`; default `0`                            |
-| `deadline`      | integer          | no       | Absolute deadline in the `time` unit; `0`/absent means implicit (= period)  |
+| `deadline`      | integer          | no       | Absolute deadline in the `time` unit; `0`/absent means implicit (= period). DM uses it as its priority key when `> 0`. |
 | `allowed_cores` | array of integers | no       | Core-allocation domain; see below. Absent means the task is fixed to `core` |
 | `wcet_kind`     | string           | no       | WCET provenance class, default `model`; see below                           |
 | `wcet_method`   | string           | no       | Free-form provenance, e.g. `OTAWA`, `MBPTA`, `llm-estimate`                 |
