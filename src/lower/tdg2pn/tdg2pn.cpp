@@ -24,11 +24,13 @@ void TDG2PN::transform(const tdg::TDG& tdg, petri::PTPN& ptpn) {
     tdg::TDG configured = tdg;
     detail::apply_policy_priorities(configured);
 
-    // PIP and PCP infer lock ownership from the position of the single job
-    // token in a task chain. A chain capacity above one admits queued jobs and
-    // makes that position ambiguous, so the supported class is enforced here.
+    // PIP, PCP and SRP infer lock ownership from the position of the single
+    // job token in a task chain. A chain capacity above one admits queued jobs
+    // and makes that position ambiguous, so the supported class is enforced
+    // here for the dynamic lock protocols.
     if (configured.policy == SchedulePolicy::PIP ||
-        configured.policy == SchedulePolicy::PCP) {
+        configured.policy == SchedulePolicy::PCP ||
+        configured.policy == SchedulePolicy::SRP) {
       const std::string name = schedule_policy_to_string(configured.policy);
       if (configured.task_place_capacity != 1) {
         throw std::invalid_argument(

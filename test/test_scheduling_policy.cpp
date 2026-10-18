@@ -545,6 +545,161 @@ std::string pcp_deadlock_json(const std::string& policy) {
   })";
 }
 
+// ---------------------------------------------------------------------------
+// SRP fixtures
+// ---------------------------------------------------------------------------
+
+// H (priority 3) and L (priority 1) share mutex1: ceiling(mutex1) = 3.
+// Used by the no-inheritance and resume/factory tests.
+const char* kSrpDirectJson = R"({
+  "graph": {"name": "SrpDirect"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "srp",
+    "shared_locks": ["mutex1"]
+  },
+  "nodes": [
+    {"id": "H", "type": "task", "priority": 3, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]},
+    {"id": "L", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]}
+  ],
+  "edges": []
+})";
+
+// Start-gate fixture. H(3) and L(1) use mutexA, so ceiling(mutexA) = 3.
+// M(2), K(4) and Z(0) have no locks. One token per chain is placed explicitly
+// by the tests, so the fixture only fixes priorities and lock usage.
+const char* kSrpStartGateJson = R"({
+  "graph": {"name": "SrpStartGate"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "srp",
+    "shared_locks": ["mutexA"]
+  },
+  "nodes": [
+    {"id": "H", "type": "task", "priority": 3, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutexA"]},
+    {"id": "L", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutexA"]},
+    {"id": "M", "type": "task", "priority": 2, "core": 0,
+     "time": [[1, 1], [1, 1]], "locks": []},
+    {"id": "K", "type": "task", "priority": 4, "core": 0,
+     "time": [[1, 1]], "locks": []},
+    {"id": "Z", "type": "task", "priority": 0, "core": 0,
+     "time": [[1, 1]], "locks": []}
+  ],
+  "edges": []
+})";
+
+// Ceiling computation fixture (mirrors the PCP one): mutexA has three users
+// (1, 2, 4); H (priority 5) is a higher-priority non-user; mutexH has one user
+// (5); mutexUnused has none.
+const char* kSrpCeilingsJson = R"({
+  "graph": {"name": "SrpCeilings"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "srp",
+    "shared_locks": ["mutexA", "mutexH", "mutexUnused"]
+  },
+  "nodes": [
+    {"id": "H", "type": "task", "priority": 5, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutexH"]},
+    {"id": "A", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutexA"]},
+    {"id": "B", "type": "task", "priority": 2, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutexA"]},
+    {"id": "D", "type": "task", "priority": 4, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutexA"]}
+  ],
+  "edges": []
+})";
+
+// Nested-lock fixture (mirrors the PCP one): J(2) uses [mutexR1, mutexR2] and
+// can hold R1 while requesting R2; K(1) and H(5) use mutexR3, so
+// ceiling(mutexR3) = 5; K2(1) uses mutexR4, so ceiling(mutexR4) = 1.
+const char* kSrpNestedJson = R"({
+  "graph": {"name": "SrpNested"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "srp",
+    "shared_locks": ["mutexR1", "mutexR2", "mutexR3", "mutexR4"]
+  },
+  "nodes": [
+    {"id": "H", "type": "task", "priority": 5, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutexR3"]},
+    {"id": "J", "type": "task", "priority": 2, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]],
+     "locks": ["mutexR1", "mutexR2"]},
+    {"id": "K", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutexR3"]},
+    {"id": "K2", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutexR4"]}
+  ],
+  "edges": []
+})";
+
+// Two equal-priority tasks (5) with no locks, both released at t=0.
+const char* kSrpTieJson = R"({
+  "graph": {"name": "SrpTie"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "srp",
+    "start": [{"task": "A", "tokens": 1}, {"task": "B", "tokens": 1}]
+  },
+  "nodes": [
+    {"id": "A", "type": "task", "priority": 5, "core": 0,
+     "time": [[1, 1], [1, 1]], "locks": []},
+    {"id": "B", "type": "task", "priority": 5, "core": 0,
+     "time": [[1, 1], [1, 1]], "locks": []}
+  ],
+  "edges": []
+})";
+
+// Opposite-order two-lock acquisition on ONE core.
+//
+//   A starts at t=0, acquires mutex1 at t=1 and holds it while executing a
+//   long second segment.
+//   B is one-shot released at t=2 by a zero-time high-priority trigger D, so
+//   the reachable state space stays finite (a periodic B would grow without
+//   bound and truncate the SCG). B would acquire mutex2 at t=3, then request
+//   mutex1 at t=4. A requests mutex2 at t=11 while still holding mutex1.
+//
+//   fixed: B may start at t=2 (it ties A's segment on the single core),
+//          producing hold-and-wait and a reachable deadlock.
+//   srp:   A already holds mutex1 (ceiling 1) when B is released, so B's
+//          get_core is inadmissible (priority 1 <= system ceiling 1) until A
+//          finishes; B starts only after every lock is released. A acquires
+//          the still-free mutex2 and completes, so no deadlock state exists.
+std::string srp_deadlock_json(const std::string& policy) {
+  return R"({
+    "graph": {"name": "SrpDeadlock"},
+    "configuration": {
+      "num_cpus": 1,
+      "cores_per_cpu": 1,
+      "policy": ")" + policy + R"(",
+      "shared_locks": ["mutex1", "mutex2"],
+      "start": [{"task": "A", "tokens": 1}, {"task": "D", "tokens": 1}]
+    },
+    "nodes": [
+      {"id": "A", "type": "task", "priority": 1, "core": 0,
+       "time": [[1, 1], [10, 10], [1, 1], [1, 1], [1, 1]],
+       "locks": ["mutex1", "mutex2"]},
+      {"id": "B", "type": "task", "priority": 1, "core": 0,
+       "time": [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]],
+       "locks": ["mutex2", "mutex1"]},
+      {"id": "D", "type": "task", "priority": 5, "core": 0,
+       "time": [[0, 0]]}
+    ],
+    "edges": [{"source": "D", "target": "B", "label": "2"}]
+  })";
+}
+
 // Test double: drops one transition and overrides one transition's priority.
 class TestFiringRule : public FiringRule {
  public:
@@ -792,7 +947,7 @@ TEST(SchedulingPolicyTest, PolicyPreemptionModesMatchCurrentCoverage) {
                 ->preemption_mode(),
             PreemptionMode::RESTART);
 
-  // PIP and PCP are analyzed dynamically and use resume-style preemption.
+  // PIP is analyzed dynamically and uses resume-style preemption.
   auto pip_rule = state_class::make_firing_rule(SchedulePolicy::PIP);
   ASSERT_NE(pip_rule, nullptr);
   EXPECT_NE(dynamic_cast<state_class::PipFiringRule*>(pip_rule.get()), nullptr);
@@ -800,6 +955,8 @@ TEST(SchedulingPolicyTest, PolicyPreemptionModesMatchCurrentCoverage) {
   EXPECT_TRUE(pip_rule->admissible(context, 0));
   EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::PIP));
 
+  // PCP is analyzed dynamically (static lock ceilings + marking-based
+  // inheritance) and also uses resume-style preemption.
   auto pcp_rule = state_class::make_firing_rule(SchedulePolicy::PCP);
   ASSERT_NE(pcp_rule, nullptr);
   EXPECT_NE(dynamic_cast<state_class::PcpFiringRule*>(pcp_rule.get()), nullptr);
@@ -807,11 +964,19 @@ TEST(SchedulingPolicyTest, PolicyPreemptionModesMatchCurrentCoverage) {
   EXPECT_TRUE(pcp_rule->admissible(context, 0));
   EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::PCP));
 
-  // SRP and the remaining policies fall back to the static rule and
-  // non-preemptive handling in this phase.
-  for (const SchedulePolicy policy :
-       {SchedulePolicy::SRP, SchedulePolicy::EDF, SchedulePolicy::LLF,
-        SchedulePolicy::FIFO}) {
+  // SRP is analyzed dynamically (ceiling-gated start) and also uses
+  // resume-style preemption.
+  auto srp_rule = state_class::make_firing_rule(SchedulePolicy::SRP);
+  ASSERT_NE(srp_rule, nullptr);
+  EXPECT_NE(dynamic_cast<state_class::SrpFiringRule*>(srp_rule.get()), nullptr);
+  EXPECT_EQ(srp_rule->preemption_mode(), PreemptionMode::RESUME);
+  EXPECT_TRUE(srp_rule->admissible(context, 0));
+  EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::SRP));
+
+  // Unimplemented policies (EDF/LLF/FIFO) fall back to the static rule and
+  // are explicitly non-preemptive; they are not otherwise analyzed.
+  for (const SchedulePolicy policy : {SchedulePolicy::EDF, SchedulePolicy::LLF,
+                                      SchedulePolicy::FIFO}) {
     auto rule = state_class::make_firing_rule(policy);
     EXPECT_EQ(rule->preemption_mode(), PreemptionMode::NON_PREEMPTIVE);
     EXPECT_TRUE(rule->admissible(context, 0));
@@ -1736,4 +1901,449 @@ TEST(PcpPolicyTest, AmbiguousChainsFallBackToBasePriority) {
             3);
 }
 
+// ---------------------------------------------------------------------------
+// 9. SRP: ceiling start gate, no inheritance, deadlock avoidance
+// ---------------------------------------------------------------------------
 
+namespace {
+constexpr size_t kSrpAcquire =
+    state_class::detail::TaskLockTopology::kLockAcquireBase;
+}  // namespace
+
+TEST(SrpPolicyTest, StartGateRejectsTasksAtOrBelowSystemCeiling) {
+  const petri::PTPN net = lower(parse_tdg(kSrpStartGateJson));
+  ASSERT_EQ(net.schedule_policy(), SchedulePolicy::SRP);
+  const state_class::SrpFiringRule rule(net);
+
+  const size_t l_hold = chain_place(net, "L", kSrpAcquire + 1);
+  const size_t h_entry = chain_place(net, "H", 0);
+  const size_t m_entry = chain_place(net, "M", 0);
+  const size_t k_entry = chain_place(net, "K", 0);
+  const size_t z_entry = chain_place(net, "Z", 0);
+  const size_t h_get = chain_transition(net, "H", 1);
+  const size_t m_get = chain_transition(net, "M", 1);
+  const size_t k_get = chain_transition(net, "K", 1);
+  const size_t z_get = chain_transition(net, "Z", 1);
+  ASSERT_NE(l_hold, SIZE_MAX);
+  ASSERT_NE(h_entry, SIZE_MAX);
+  ASSERT_NE(m_entry, SIZE_MAX);
+  ASSERT_NE(k_entry, SIZE_MAX);
+  ASSERT_NE(z_entry, SIZE_MAX);
+  ASSERT_NE(h_get, SIZE_MAX);
+  ASSERT_NE(m_get, SIZE_MAX);
+  ASSERT_NE(k_get, SIZE_MAX);
+  ASSERT_NE(z_get, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[l_hold] = 1;  // L holds mutexA; the lock place stays empty
+  state.marking[h_entry] = 1;
+  state.marking[m_entry] = 1;
+  state.marking[k_entry] = 1;
+  state.marking[z_entry] = 1;
+  const PolicyContext context{net, &state};
+
+  // ceiling(mutexA) = 3 (H and L use it).
+  const auto mutex_a = rule.lock_ceiling("mutexA");
+  ASSERT_TRUE(mutex_a.has_value());
+  EXPECT_EQ(*mutex_a, 3);
+
+  // Strict comparison: 3 <= 3 is rejected, 4 > 3 is admitted. A priority-0
+  // task is rejected too.
+  EXPECT_FALSE(rule.admissible(context, h_get));
+  EXPECT_FALSE(rule.admissible(context, m_get));
+  EXPECT_TRUE(rule.admissible(context, k_get));
+  EXPECT_FALSE(rule.admissible(context, z_get));
+
+  // Every non-get_core transition stays admissible.
+  EXPECT_TRUE(rule.admissible(context, chain_transition(net, "M", 3)));
+  EXPECT_TRUE(rule.admissible(context, chain_transition(net, "L", kSrpAcquire + 2)));
+
+  // Empty system ceiling: no lock held -> even priority 0 is admitted.
+  state.marking[l_hold] = 0;
+  state.marking[chain_place(net, "L", 0)] = 1;
+  EXPECT_TRUE(rule.admissible(context, z_get));
+  EXPECT_TRUE(rule.admissible(context, h_get));
+  EXPECT_TRUE(rule.admissible(context, m_get));
+}
+
+TEST(SrpPolicyTest, StartedTasksAreNeverBlockedByLaterCeilingRise) {
+  const petri::PTPN net = lower(parse_tdg(kSrpStartGateJson));
+  const state_class::SrpFiringRule rule(net);
+
+  const size_t l_hold = chain_place(net, "L", kSrpAcquire + 1);
+  const size_t m_ready = chain_place(net, "M", 2);
+  const size_t m_seg1 = chain_place(net, "M", 4);
+  const size_t m_get = chain_transition(net, "M", 1);
+  const size_t m_exec1 = chain_transition(net, "M", 3);
+  const size_t m_exec2 = chain_transition(net, "M", 5);
+  ASSERT_NE(l_hold, SIZE_MAX);
+  ASSERT_NE(m_ready, SIZE_MAX);
+  ASSERT_NE(m_seg1, SIZE_MAX);
+  ASSERT_NE(m_get, SIZE_MAX);
+  ASSERT_NE(m_exec1, SIZE_MAX);
+  ASSERT_NE(m_exec2, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[l_hold] = 1;  // system ceiling 3
+  state.marking[m_ready] = 1;  // M (2) already started and is at ready
+  const PolicyContext context{net, &state};
+
+  // M's token is past position 0: SRP never blocks it again, even though
+  // 2 <= 3 and a fresh M job would be gated at entry.
+  EXPECT_TRUE(rule.admissible(context, m_get));
+  EXPECT_TRUE(rule.admissible(context, m_exec1));
+
+  // Same after the first segment completed (token on the segment-done place).
+  state.marking[m_ready] = 0;
+  state.marking[m_seg1] = 1;
+  EXPECT_TRUE(rule.admissible(context, m_exec2));
+}
+
+TEST(SrpPolicyTest, NoPriorityInheritanceFromWaiters) {
+  const petri::PTPN net = lower(parse_tdg(kSrpDirectJson));
+  const state_class::SrpFiringRule srp(net);
+  const state_class::PipFiringRule pip(net);
+  const state_class::PcpFiringRule pcp(net);
+
+  const size_t l_hold = chain_place(net, "L", kSrpAcquire + 1);
+  const size_t h_pre = chain_place(net, "H", kSrpAcquire - 1);
+  const size_t l_crit = chain_transition(net, "L", kSrpAcquire + 2);
+  const size_t h_acquire = chain_transition(net, "H", kSrpAcquire);
+  const size_t l_consume = find_transition(net, "L_consume");
+  ASSERT_NE(l_hold, SIZE_MAX);
+  ASSERT_NE(h_pre, SIZE_MAX);
+  ASSERT_NE(l_crit, SIZE_MAX);
+  ASSERT_NE(h_acquire, SIZE_MAX);
+  ASSERT_NE(l_consume, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[l_hold] = 1;  // L holds mutex1
+  state.marking[h_pre] = 1;   // H waits for it
+  const PolicyContext context{net, &state};
+
+  // SRP: the holder keeps its base priority; H keeps its own.
+  EXPECT_EQ(srp.effective_priority(context, l_crit), 1);
+  EXPECT_EQ(srp.effective_priority(context, h_acquire), 3);
+  // Control transitions keep their static priority.
+  EXPECT_EQ(srp.effective_priority(context, l_consume), 0);
+
+  // Contrast: PIP/PCP boost the holder to the waiter's priority.
+  EXPECT_EQ(pip.effective_priority(context, l_crit), 3);
+  EXPECT_EQ(pcp.effective_priority(context, l_crit), 3);
+
+  // Scheduling consequence. The enabled set here is synthetic (H's acquire
+  // is structurally disabled by the held lock); it isolates the priority
+  // comparison. SRP ranks H (3) strictly above L (1); PIP/PCP tie them at 3
+  // and enumerate both resolutions.
+  const auto srp_branches =
+      Scheduling::priority_branches({l_crit, h_acquire}, net, srp, context);
+  ASSERT_EQ(srp_branches.size(), 1u);
+  EXPECT_EQ(srp_branches[0], (state_class::TransitionSet{h_acquire}));
+  const auto pip_branches =
+      Scheduling::priority_branches({l_crit, h_acquire}, net, pip, context);
+  EXPECT_EQ(pip_branches.size(), 2u);
+}
+
+TEST(SrpPolicyTest, LockCeilingsUseMaximumUserBasePriority) {
+  const petri::PTPN net = lower(parse_tdg(kSrpCeilingsJson));
+  const state_class::SrpFiringRule rule(net);
+
+  // Users A(1), B(2), D(4); the higher-priority non-user H(5) does not count.
+  const auto mutex_a = rule.lock_ceiling("mutexA");
+  ASSERT_TRUE(mutex_a.has_value());
+  EXPECT_EQ(*mutex_a, 4);
+
+  const auto mutex_h = rule.lock_ceiling("mutexH");
+  ASSERT_TRUE(mutex_h.has_value());
+  EXPECT_EQ(*mutex_h, 5);
+
+  // A lock no task uses has no holder and no ceiling.
+  EXPECT_FALSE(rule.lock_ceiling("mutexUnused").has_value());
+  EXPECT_FALSE(rule.lock_ceiling("missingLock").has_value());
+}
+
+TEST(SrpPolicyTest, SystemCeilingIsMaximumOverAllHeldLocks) {
+  const petri::PTPN net = lower(parse_tdg(kSrpNestedJson));
+  const state_class::SrpFiringRule rule(net);
+  const auto& locks = net.lock_places();
+
+  const size_t h_entry = chain_place(net, "H", 0);
+  const size_t h_get = chain_transition(net, "H", 1);
+  const size_t j_holds_r1 = chain_place(net, "J", 8);
+  const size_t k_holds_r3 = chain_place(net, "K", kSrpAcquire + 1);
+  const size_t k_after_release = chain_place(net, "K", kSrpAcquire + 3);
+  ASSERT_NE(h_entry, SIZE_MAX);
+  ASSERT_NE(h_get, SIZE_MAX);
+  ASSERT_NE(j_holds_r1, SIZE_MAX);
+  ASSERT_NE(k_holds_r3, SIZE_MAX);
+  ASSERT_NE(k_after_release, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  for (const auto& [name, place] : locks) {
+    state.marking[place.index()] = 1;
+  }
+  state.marking[h_entry] = 1;
+  // J holds mutexR1 (ceiling 2); K holds mutexR3 (ceiling 5).
+  state.marking[j_holds_r1] = 1;
+  state.marking[locks.at("mutexR1").index()] = 0;
+  state.marking[k_holds_r3] = 1;
+  state.marking[locks.at("mutexR3").index()] = 0;
+  const PolicyContext context{net, &state};
+
+  // The system ceiling is max(2, 5) = 5. H (priority 5) is rejected because
+  // the gate comparison is strict.
+  EXPECT_FALSE(rule.admissible(context, h_get));
+
+  // Releasing mutexR3 (K moves past its release transition) leaves only R1:
+  // system ceiling 2, so H (5 > 2) is admitted.
+  state.marking[k_holds_r3] = 0;
+  state.marking[k_after_release] = 1;
+  state.marking[locks.at("mutexR3").index()] = 1;
+  EXPECT_TRUE(rule.admissible(context, h_get));
+}
+
+TEST(SrpPolicyTest, StartGateBlocksMediumPreemptionEndToEnd) {
+  const auto fixed_report = analyze(lower(parse_tdg(pip_inversion_json("fixed"))));
+  const auto pip_report = analyze(lower(parse_tdg(pip_inversion_json("pip"))));
+  const auto pcp_report = analyze(lower(parse_tdg(pip_inversion_json("pcp"))));
+  const auto srp_report = analyze(lower(parse_tdg(pip_inversion_json("srp"))));
+
+  const auto& fixed_h = task_metrics(fixed_report, "H");
+  const auto& pip_h = task_metrics(pip_report, "H");
+  const auto& pcp_h = task_metrics(pcp_report, "H");
+  const auto& srp_h = task_metrics(srp_report, "H");
+  ASSERT_TRUE(fixed_h.observed);
+  ASSERT_TRUE(pip_h.observed);
+  ASSERT_TRUE(pcp_h.observed);
+  ASSERT_TRUE(srp_h.observed);
+  ASSERT_FALSE(fixed_h.wcrt.infinite);
+  ASSERT_FALSE(pip_h.wcrt.infinite);
+  ASSERT_FALSE(pcp_h.wcrt.infinite);
+  ASSERT_FALSE(srp_h.wcrt.infinite);
+
+  // L holds mutex1 (ceiling 3) across M's release, and M (2) is at entry.
+  // Under fixed, M preempts L and delays H. Under PIP/PCP the medium task may
+  // start, but inheritance/ceiling blocking keeps L running; under SRP the
+  // start gate rejects M outright until L releases. SRP therefore matches the
+  // no-inheritance ideal here.
+  EXPECT_GT(fixed_h.wcrt.value, srp_h.wcrt.value);
+  EXPECT_EQ(fixed_h.wcrt.value, 10);
+  EXPECT_EQ(pip_h.wcrt.value, 8);
+  EXPECT_EQ(pcp_h.wcrt.value, 8);
+  EXPECT_EQ(srp_h.wcrt.value, 8);
+
+  // M still executes under SRP, just later.
+  EXPECT_TRUE(task_metrics(srp_report, "M").observed);
+
+  // Direct contrast on the same marking: L holds mutex1, M is at entry. PIP
+  // and PCP leave the start transition admissible; SRP's gate rejects it.
+  const petri::PTPN net = lower(parse_tdg(pip_inversion_json("srp")));
+  const state_class::SrpFiringRule srp(net);
+  const state_class::PipFiringRule pip(net);
+  const state_class::PcpFiringRule pcp(net);
+  const size_t l_hold = chain_place(net, "L", kSrpAcquire + 1);
+  const size_t m_entry = chain_place(net, "M", 0);
+  const size_t m_get = chain_transition(net, "M", 1);
+  ASSERT_NE(l_hold, SIZE_MAX);
+  ASSERT_NE(m_entry, SIZE_MAX);
+  ASSERT_NE(m_get, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[l_hold] = 1;
+  state.marking[m_entry] = 1;
+  const PolicyContext context{net, &state};
+  EXPECT_FALSE(srp.admissible(context, m_get));
+  EXPECT_TRUE(pip.admissible(context, m_get));
+  EXPECT_TRUE(pcp.admissible(context, m_get));
+}
+
+TEST(SrpPolicyTest, StartGatePreventsHoldAndWaitDeadlock) {
+  const auto fixed_report = analyze(lower(parse_tdg(srp_deadlock_json("fixed"))));
+  const auto srp_report = analyze(lower(parse_tdg(srp_deadlock_json("srp"))));
+
+  // Without ceilings, B starts while A holds mutex1; opposite acquisition
+  // orders then form a hold-and-wait cycle.
+  EXPECT_FALSE(fixed_report.deadlock_states.empty());
+  EXPECT_FALSE(fixed_report.schedulable);
+
+  // Under SRP, A holds mutex1 (ceiling 1) when B is released, so B's get_core
+  // is inadmissible (1 <= 1) until A releases. A acquires the still-free
+  // mutex2 and completes; the cycle is unreachable.
+  EXPECT_TRUE(srp_report.deadlock_states.empty());
+  EXPECT_TRUE(srp_report.schedulable);
+}
+
+TEST(SrpPolicyTest, UsesResumeLoweringAndRejectsAmbiguousJobs) {
+  EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::SRP));
+
+  const petri::PTPN net = lower(parse_tdg(kSrpDirectJson));
+  ASSERT_EQ(net.schedule_policy(), SchedulePolicy::SRP);
+
+  // Resume-style lowering: no structural core place, suspendable execution
+  // segments.
+  EXPECT_EQ(find_place(net, "core0"), SIZE_MAX);
+  const size_t h_exec = find_transition(net, "H_exec_2");
+  ASSERT_NE(h_exec, SIZE_MAX);
+  EXPECT_TRUE(net.get_transition(petri::TransitionId{h_exec}).suspendable);
+
+  // Capacity > 1 is rejected for SRP like PIP/PCP, with the policy name in
+  // the message.
+  const std::string capacity_json = R"({
+    "graph": {"name": "SrpCapacityTwo"},
+    "configuration": {
+      "num_cpus": 1,
+      "cores_per_cpu": 1,
+      "policy": "srp",
+      "task_place_capacity": 2,
+      "shared_locks": ["mutex1"]
+    },
+    "nodes": [
+      {"id": "H", "type": "task", "priority": 3, "core": 0,
+       "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]},
+      {"id": "L", "type": "task", "priority": 1, "core": 0,
+       "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]}
+    ],
+    "edges": []
+  })";
+  try {
+    lower(parse_tdg(capacity_json));
+    FAIL() << "expected lowering to reject task_place_capacity > 1 for srp";
+  } catch (const std::invalid_argument& error) {
+    const std::string message = error.what();
+    EXPECT_NE(message.find(schedule_policy_to_string(SchedulePolicy::SRP)),
+              std::string::npos);
+    EXPECT_NE(message.find("task_place_capacity"), std::string::npos);
+  }
+
+  // More than one initial job per task is rejected for SRP as well.
+  const std::string start_json = R"({
+    "graph": {"name": "SrpStartTokens"},
+    "configuration": {
+      "num_cpus": 1,
+      "cores_per_cpu": 1,
+      "policy": "srp",
+      "start": [{"task": "H", "tokens": 2}],
+      "shared_locks": ["mutex1"]
+    },
+    "nodes": [
+      {"id": "H", "type": "task", "priority": 3, "core": 0,
+       "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]}
+    ],
+    "edges": []
+  })";
+  try {
+    lower(parse_tdg(start_json));
+    FAIL() << "expected lowering to reject multiple initial SRP jobs";
+  } catch (const std::invalid_argument& error) {
+    const std::string message = error.what();
+    EXPECT_NE(message.find(schedule_policy_to_string(SchedulePolicy::SRP)),
+              std::string::npos);
+    EXPECT_NE(message.find("one initial job"), std::string::npos);
+  }
+
+  // The default single-job capacity remains accepted.
+  EXPECT_NO_THROW(lower(parse_tdg(kSrpDirectJson)));
+}
+
+TEST(SrpPolicyTest, FactoryReturnsDynamicRuleWithSharedBehavior) {
+  const petri::PTPN net = lower(parse_tdg(kSrpStartGateJson));
+
+  auto net_rule = state_class::make_firing_rule(SchedulePolicy::SRP, net);
+  auto lazy_rule = state_class::make_firing_rule(SchedulePolicy::SRP);
+  ASSERT_NE(dynamic_cast<state_class::SrpFiringRule*>(net_rule.get()), nullptr);
+  ASSERT_NE(dynamic_cast<state_class::SrpFiringRule*>(lazy_rule.get()), nullptr);
+  EXPECT_EQ(net_rule->preemption_mode(), PreemptionMode::RESUME);
+  EXPECT_EQ(lazy_rule->preemption_mode(), PreemptionMode::RESUME);
+
+  const size_t l_hold = chain_place(net, "L", kSrpAcquire + 1);
+  const size_t m_entry = chain_place(net, "M", 0);
+  const size_t k_entry = chain_place(net, "K", 0);
+  const size_t m_get = chain_transition(net, "M", 1);
+  const size_t k_get = chain_transition(net, "K", 1);
+  ASSERT_NE(l_hold, SIZE_MAX);
+  ASSERT_NE(m_entry, SIZE_MAX);
+  ASSERT_NE(k_entry, SIZE_MAX);
+  ASSERT_NE(m_get, SIZE_MAX);
+  ASSERT_NE(k_get, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[l_hold] = 1;
+  state.marking[m_entry] = 1;
+  state.marking[k_entry] = 1;
+  const PolicyContext context{net, &state};
+
+  EXPECT_FALSE(net_rule->admissible(context, m_get));
+  EXPECT_FALSE(lazy_rule->admissible(context, m_get));
+  EXPECT_TRUE(net_rule->admissible(context, k_get));
+  EXPECT_TRUE(lazy_rule->admissible(context, k_get));
+  EXPECT_EQ(net_rule->effective_priority(context, m_get),
+            lazy_rule->effective_priority(context, m_get));
+}
+
+TEST(SrpPolicyTest, EqualPriorityTransitionsEnumerateBothBranches) {
+  const petri::PTPN net = lower(parse_tdg(kSrpTieJson));
+  const state_class::SrpFiringRule rule(net);
+
+  const size_t a_entry = chain_place(net, "A", 0);
+  const size_t b_entry = chain_place(net, "B", 0);
+  const size_t a_get = chain_transition(net, "A", 1);
+  const size_t b_get = chain_transition(net, "B", 1);
+  ASSERT_NE(a_entry, SIZE_MAX);
+  ASSERT_NE(b_entry, SIZE_MAX);
+  ASSERT_NE(a_get, SIZE_MAX);
+  ASSERT_NE(b_get, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[a_entry] = 1;
+  state.marking[b_entry] = 1;
+  const PolicyContext context{net, &state};
+
+  // Both tasks start with the same static priority; no inheritance exists to
+  // break the tie.
+  EXPECT_EQ(rule.effective_priority(context, a_get), 5);
+  EXPECT_EQ(rule.effective_priority(context, b_get), 5);
+  EXPECT_TRUE(rule.admissible(context, a_get));
+  EXPECT_TRUE(rule.admissible(context, b_get));
+
+  const auto branches =
+      Scheduling::priority_branches({a_get, b_get}, net, rule, context);
+  ASSERT_EQ(branches.size(), 2u);
+  EXPECT_EQ(branches[0], (state_class::TransitionSet{std::min(a_get, b_get)}));
+  EXPECT_EQ(branches[1], (state_class::TransitionSet{std::max(a_get, b_get)}));
+}
+
+TEST(SrpPolicyTest, UnsupportedMarkingsSkipTheGateDefensively) {
+  const petri::PTPN net = lower(parse_tdg(kSrpStartGateJson));
+  const state_class::SrpFiringRule rule(net);
+
+  const size_t l_hold = chain_place(net, "L", kSrpAcquire + 1);
+  const size_t m_entry = chain_place(net, "M", 0);
+  const size_t m_ready = chain_place(net, "M", 2);
+  const size_t m_get = chain_transition(net, "M", 1);
+  ASSERT_NE(l_hold, SIZE_MAX);
+  ASSERT_NE(m_entry, SIZE_MAX);
+  ASSERT_NE(m_ready, SIZE_MAX);
+  ASSERT_NE(m_get, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[l_hold] = 1;  // the ceiling is high (3)
+  state.marking[m_entry] = 1;
+  state.marking[m_ready] = 1;  // two tokens: M's chain position is ambiguous
+  const PolicyContext context{net, &state};
+
+  // Defensive fallback: the admission check is skipped for unsupported
+  // states, so this is not certified SRP-exact.
+  EXPECT_TRUE(rule.admissible(context, m_get));
+
+  // A marking of the wrong size is also not reasoned about.
+  state.marking.pop_back();
+  EXPECT_TRUE(rule.admissible(context, m_get));
+}
