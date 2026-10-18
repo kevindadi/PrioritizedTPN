@@ -200,6 +200,30 @@ ctest --test-dir build --output-on-failure
 
 > **Note:** Exports are **opt-in**. Running `ptpn tdg -f input.json` alone performs analysis but writes **no** output files unless you pass one or more export flags.
 
+### Reduction Defaults and Measured Effect
+
+The default is `--reduction none`: exhaustive state-class exploration with
+**suspension-clock projection** (on by default), which is exact and does not
+change the state count. All other reductions are opt-in because each trades
+exactness or scope for speed:
+
+| Mode | Effect on bundled models | Metrics status |
+|------|--------------------------|----------------|
+| `none` + w-projection | exact baseline; L-Bench 40t: 2718 states, 0.04 s | exact |
+| `symmetry` | 4 symmetric tasks: 96 → 19 states; 6 tasks: 792 → 34 states | `exact=false`; per-task WCRT/WCRT_LB preserved, secondary timing conservative |
+| `upper-bound` | L-Bench 40t: 2718 → 2713; 100t: 545708 → 545705 (slower: 58.5 s vs 53.1 s) | WCRT upper bound; `wcrt_lb` unavailable |
+| `cone` | L-Bench 40t: 40 cones × 2718 = 108720 summed states, 1.66 s vs 0.04 s | per-task timing exact; no whole-net deadlock |
+| `horizon H` | L-Bench 40t at H=50: 2718 → 2335 states with unchanged WCRT values | WCRT sound only for H ≥ response time; `wcrt_lb`, deadlock and SCC uncertified |
+
+Symmetry gives the largest reduction but only applies to verified isomorphic
+tasks on distinct cores, so it cannot be the default for general models.
+Upper-bound merging and horizon pruning are sound but provide little benefit on
+the bundled connected DAGs. Cone decomposition is exact per task but multiplies
+work when every cone equals the full net. A partial-order/persistent-set mode
+was prototyped and **withdrawn**: on L-Bench 100t it reduced the graph from
+545708 to 87325 states while lowering some reported WCRTs (for example 5 → 4
+and 5 → 3), so it pruned genuinely longest paths and is not sound for WCRT.
+
 ### Symmetry Reduction (`--reduction symmetry`)
 
 The reduction quotients the state-class graph by permutations of **provably

@@ -19,9 +19,10 @@ conventions.
 
 `--export-metrics` implies analysis (the SCG is built even if `--export-scg` is
 not given). Metrics are exact only under `--canonicalization equality` (the
-default), with no `--extrapolation`, no `--reduction upper-bound`, and without
-truncation; the other modes merge or omit state classes and the tool prints an
-"approximate" warning.
+default), with no `--extrapolation`, no state-merging reduction
+(`upper-bound`/`symmetry`), no `--horizon` pruning, and without truncation; the
+other modes merge or omit state classes and the tool prints an "approximate"
+warning.
 
 ## Upper-bound zone merging (`--reduction upper-bound`)
 
@@ -80,6 +81,39 @@ Cone mode reduces work only when a task's cone is strictly smaller than the full
 net. On connected task graphs (for example the bundled P-Bench/S-Bench DAGs) all
 cones equal the full net, so cone mode is slower; it is an opt-in mode for
 loosely coupled multi-core models, not the default.
+
+## Task-symmetry quotient (`--reduction symmetry`)
+
+The opt-in symmetry mode quotients the SCG by permutations of tasks that are
+**proved isomorphic** on distinct real cores. Each candidate permutation must be
+verified as an automorphism of the whole net (markings, arc weights, capacities,
+intervals, priorities, suspension flags, periodic markers, and a consistent
+relabelling of cores with equal parallelism); see the README section for the
+supported scope. Every class is replaced by the lexicographically smallest
+representative of its orbit, so the graph stores one vertex per symmetry class.
+
+Consequences for the metrics:
+
+- The exhaustive active-set semantics are unchanged: admissibility is
+  canonicalized, never filtered.
+- Per-task `wcrt` and `wcrt_lb` are preserved: symmetric tasks share the same
+  true values, and members of a verified group are pooled to the maximum
+  observed value. On correctly symmetric models these reproduce the unreduced
+  per-task results.
+- Secondary timing fields (`bcrt`, `jitter`, `worst_interference`,
+  `worst_blocking`) are **conservative bounds**, because a quotient state
+  represents several concrete schedules. `deadline_missed`, `slack`,
+  `local_deadlock` and `schedulable` are evaluated from the conservative pooled
+  values.
+- `exact` is `false` whenever the quotient is applied. If the net admits no
+  non-trivial verified group, the mode logs that fact and the graph is
+  unreduced, so the normal exactness rules apply.
+
+```bash
+# 6 identical tasks on 6 distinct cores: 792 states -> 34 states
+./build/ptpn tdg -f example/symmetry/symmetric-6t-6c.json \
+    -m 10000000 --reduction symmetry --export-metrics metrics.json
+```
 
 ## Time-horizon reduction
 
