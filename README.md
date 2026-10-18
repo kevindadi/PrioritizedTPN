@@ -5,7 +5,8 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 ## Features
 
 - Parse and validate **TDG JSON** (tasks, fork/join, locks, dependencies, periodic release)
-- Lower TDGs into **PTPNs** (multi-core, fixed-priority scheduling, preemption, mutex/spin locks)
+- Lower TDGs into **PTPNs** (multi-core fixed/dynamic-priority scheduling, preemption, mutex/spin locks)
+- **Scheduling policies**: fixed/restart/resume, RM/DM, PIP/PCP/SRP, EDF, FIFO, and Event-driven LLF; EDF/FIFO/LLF support statically partitioned multi-core with explicit supported-class guards (see [Scheduling Policies](#scheduling-policies))
 - Parse the **PTPN domain language** (`.ptpn`) directly, skipping TDG conversion
 - **State-class reachability analysis** with canonicalization (`equality`, `max-lower`, `intersection`)
 - **Sound upper-bound zone merging** (`--reduction upper-bound`): one-sided zone-inclusion merging for smaller graphs; WCRT stays a certified upper bound, `wcrt_lb` is reported as unavailable
@@ -186,7 +187,7 @@ ctest --test-dir build --output-on-failure
 
 | Option | Description |
 |--------|-------------|
-| `--policy` | Override scheduling policy for lowering (see below) |
+| `--policy` | Select the scheduling policy for lowering and analysis (see [Scheduling Policies](#scheduling-policies)) |
 
 **Exports (all opt-in — paths are exactly what you pass):**
 
@@ -381,6 +382,12 @@ JSON `configuration.policy` and `--policy` accept values such as:
 # TDG: WCET summary only (no reachability)
 ./build/ptpn tdg -f example/p-bench/initial.json \
   --no-analysis --export-wcet wcet.json
+
+# TDG: statically partitioned multi-core EDF/FIFO/LLF
+# (supported-class models: no locks/dependency releases, one job per task)
+./build/ptpn tdg -f input.json --policy edf --export-metrics edf.json
+./build/ptpn tdg -f input.json --policy fifo --export-metrics fifo.json
+./build/ptpn tdg -f input.json --policy llf --export-metrics llf.json
 
 # TDG: Romeo export (scheduling-net, default)
 ./build/ptpn export romeo -f example/p-bench/initial.json -o out.cts
