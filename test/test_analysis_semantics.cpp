@@ -6,6 +6,7 @@
 
 #include "analysis/dbm/clock_state.h"
 #include "analysis/dbm/dbm.h"
+#include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "export/scg_dot.h"
 #include "model/petri.h"
@@ -105,6 +106,64 @@ petri::PTPN make_resume_net() {
   ptpn.set_post_arc(low, low_done, 1);
   ptpn.set_pre_arc(high_in, high, 1);
   ptpn.set_post_arc(high, high_done, 1);
+  return ptpn;
+}
+
+// A low-priority suspendable execution segment preempted by a higher-priority
+// segment on the same core. Task metadata is attached so the metrics analyzer
+// reports per-task timings; consume transitions drain the exit tokens so the
+// final class is a legitimate sink.
+petri::PTPN make_preemption_metrics_net() {
+  petri::PTPN ptpn;
+  const petri::PlaceId low_entry = ptpn.add_place("Lentry", 1);
+  const petri::PlaceId low_exit = ptpn.add_place("Lexit", 1);
+  const petri::PlaceId low_done = ptpn.add_place("Ldone", 1);
+  const petri::PlaceId high_entry = ptpn.add_place("Hentry", 1);
+  const petri::PlaceId high_exit = ptpn.add_place("Hexit", 1);
+  const petri::PlaceId high_done = ptpn.add_place("Hdone", 1);
+  ptpn.set_initial_marking(low_entry, 1);
+  ptpn.set_initial_marking(high_entry, 1);
+
+  const petri::TransitionId low_exec =
+      ptpn.add_transition("Lexec", petri::TimeInterval(0, 8), 1, 0, true);
+  const petri::TransitionId high_exec =
+      ptpn.add_transition("Hexec", petri::TimeInterval(0, 3), 9, 0, false);
+  const petri::TransitionId low_consume =
+      ptpn.add_transition("Lconsume", petri::TimeInterval(0, 0), 0, -1, false);
+  const petri::TransitionId high_consume =
+      ptpn.add_transition("Hconsume", petri::TimeInterval(0, 0), 0, -1, false);
+
+  ptpn.set_pre_arc(low_entry, low_exec, 1);
+  ptpn.set_post_arc(low_exec, low_exit, 1);
+  ptpn.set_pre_arc(low_exit, low_consume, 1);
+  ptpn.set_post_arc(low_consume, low_done, 1);
+  ptpn.set_pre_arc(high_entry, high_exec, 1);
+  ptpn.set_post_arc(high_exec, high_exit, 1);
+  ptpn.set_pre_arc(high_exit, high_consume, 1);
+  ptpn.set_post_arc(high_consume, high_done, 1);
+
+  ptpn.set_task_chain(
+      "L", {petri::NodeRef::of(low_entry), petri::NodeRef::of(low_exec),
+            petri::NodeRef::of(low_exit)});
+  ptpn.set_node_span("L", petri::NodeRef::of(low_entry), petri::NodeRef::of(low_exit));
+  ptpn.set_task_chain(
+      "H", {petri::NodeRef::of(high_entry), petri::NodeRef::of(high_exec),
+            petri::NodeRef::of(high_exit)});
+  ptpn.set_node_span("H", petri::NodeRef::of(high_entry), petri::NodeRef::of(high_exit));
+
+  petri::TaskInfo low_info;
+  low_info.core = 0;
+  low_info.priority = 1;
+  low_info.wcet = 8;
+  low_info.bcet = 0;
+  ptpn.set_task_info("L", low_info);
+
+  petri::TaskInfo high_info;
+  high_info.core = 0;
+  high_info.priority = 9;
+  high_info.wcet = 3;
+  high_info.bcet = 0;
+  ptpn.set_task_info("H", high_info);
   return ptpn;
 }
 
@@ -341,6 +400,7 @@ TEST(PtpnAnalysisTest, BuildKeepsEveryInitialTieResolution) {
 TEST(PtpnAnalysisTest, SuspendedTransitionFreezesExecAndRunsSuspensionClock) {
   const petri::PTPN ptpn = make_same_core_priority_net();
   StateClassReachabilityGraph graph(ptpn);
+  graph.set_suspension_clock_projection(false);  // inspect the w_t clock directly
   const StateClass initial = graph.compute_initial_class();
   const StateClass elapsed = graph.time_elapse(initial);
 
@@ -379,6 +439,7 @@ TEST(PtpnAnalysisTest, PersistentTransitionKeepsAccumulatedClock) {
 TEST(PtpnAnalysisTest, ResumedTransitionDropsSuspensionKeepsExec) {
   const petri::PTPN ptpn = make_resume_net();
   StateClassReachabilityGraph graph(ptpn);
+  graph.set_suspension_clock_projection(false);  // exercise w_t inheritance/drop
   const StateClass initial = graph.compute_initial_class();
 
   ASSERT_EQ(initial.priority_enabled, (state_class::TransitionSet{1}));  // high active
@@ -392,6 +453,92 @@ TEST(PtpnAnalysisTest, ResumedTransitionDropsSuspensionKeepsExec) {
   EXPECT_TRUE(successor.suspended.empty());
   EXPECT_TRUE(successor.has_exec_clock(0));
   EXPECT_FALSE(successor.has_susp_clock(0));  // suspension clock dropped
+}
+
+namespace {
+
+void expect_time_value_equal(const state_class::TimeValue& projected,
+                             const state_class::TimeValue& kept, const std::string& label) {
+  EXPECT_EQ(projected.infinite, kept.infinite) << label;
+  if (!projected.infinite && !kept.infinite) {
+    EXPECT_EQ(projected.value, kept.value) << label;
+  }
+}
+
+}  // namespace
+
+TEST(PtpnAnalysisTest, SuspensionClockProjectionPreservesMetrics) {
+  const petri::PTPN ptpn = make_preemption_metrics_net();
+
+  StateClassReachabilityGraph projected(ptpn);
+  ASSERT_TRUE(projected.get_suspension_clock_projection());  // default
+  projected.build(1000);
+
+  StateClassReachabilityGraph kept(ptpn);
+  kept.set_suspension_clock_projection(false);
+  kept.build(1000);
+
+  ASSERT_FALSE(projected.get_statistics().truncated);
+  ASSERT_FALSE(kept.get_statistics().truncated);
+  EXPECT_LE(projected.get_statistics().total_states, kept.get_statistics().total_states);
+
+  // The suspended set survives the projection; only the w_t columns disappear.
+  const StateClass& projected_initial =
+      boost::get(boost::vertex_name, projected.get_graph(), projected.get_initial_vertex());
+  const StateClass& kept_initial =
+      boost::get(boost::vertex_name, kept.get_graph(), kept.get_initial_vertex());
+  EXPECT_EQ(projected_initial.suspended, (state_class::TransitionSet{0}));
+  EXPECT_EQ(kept_initial.suspended, (state_class::TransitionSet{0}));
+  EXPECT_FALSE(projected_initial.has_susp_clock(0));
+  EXPECT_TRUE(kept_initial.has_susp_clock(0));
+  for (const state_class::ClockVar& var : projected_initial.clock_vars) {
+    EXPECT_NE(var.kind, state_class::ClockKind::Suspension);
+  }
+
+  state_class::MetricsAnalyzer projected_analyzer(projected.get_graph(), ptpn,
+                                                  projected.get_initial_vertex(),
+                                                  /*exact=*/true);
+  const state_class::MetricsReport p = projected_analyzer.analyze();
+  state_class::MetricsAnalyzer kept_analyzer(kept.get_graph(), ptpn, kept.get_initial_vertex(),
+                                             /*exact=*/true);
+  const state_class::MetricsReport k = kept_analyzer.analyze();
+
+  EXPECT_LE(p.states, k.states);
+  EXPECT_EQ(p.bounded, k.bounded);
+  EXPECT_EQ(p.schedulable, k.schedulable);
+  EXPECT_EQ(p.deadlock_states.size(), k.deadlock_states.size());
+  ASSERT_EQ(p.tasks.size(), k.tasks.size());
+  ASSERT_EQ(p.tasks.size(), 2u);
+
+  for (size_t i = 0; i < p.tasks.size(); ++i) {
+    const state_class::TaskMetrics& a = p.tasks[i];
+    const state_class::TaskMetrics& b = k.tasks[i];
+    SCOPED_TRACE(a.name);
+    EXPECT_EQ(a.core, b.core);
+    EXPECT_EQ(a.priority, b.priority);
+    EXPECT_EQ(a.wcet, b.wcet);
+    EXPECT_EQ(a.bcet, b.bcet);
+    EXPECT_EQ(a.period, b.period);
+    EXPECT_EQ(a.deadline, b.deadline);
+    EXPECT_EQ(a.observed, b.observed);
+    EXPECT_EQ(a.activations, b.activations);
+    // WCRT upper and certified lower bounds, and every derived timing value,
+    // must agree between the projected and unprojected encodings.
+    expect_time_value_equal(a.wcrt, b.wcrt, "wcrt");
+    expect_time_value_equal(a.wcrt_lb, b.wcrt_lb, "wcrt_lb");
+    EXPECT_EQ(a.wcrt_interval_tight, b.wcrt_interval_tight);
+    expect_time_value_equal(a.bcrt, b.bcrt, "bcrt");
+    expect_time_value_equal(a.jitter, b.jitter, "jitter");
+    expect_time_value_equal(a.worst_interference, b.worst_interference, "worst_interference");
+    expect_time_value_equal(a.worst_blocking, b.worst_blocking, "worst_blocking");
+    expect_time_value_equal(a.slack, b.slack, "slack");
+    EXPECT_EQ(a.deadline_missed, b.deadline_missed);
+    EXPECT_EQ(a.local_deadlock, b.local_deadlock);
+    EXPECT_EQ(a.local_deadlock_scc_size, b.local_deadlock_scc_size);
+    EXPECT_EQ(a.max_preemptions, b.max_preemptions);
+    EXPECT_EQ(a.max_in_flight, b.max_in_flight);
+    EXPECT_EQ(a.jobs_per_hyperperiod, b.jobs_per_hyperperiod);
+  }
 }
 
 TEST(PtpnAnalysisTest, NewlyEnabledTransitionsResetToZero) {

@@ -49,6 +49,17 @@ class StateClassReachabilityGraph {
     return extrapolation_k_;
   }
 
+  // Projects the suspension clocks w_t out of the analysis state (default:
+  // enabled). The `suspended` set is retained, so suspended transitions' frozen
+  // execution clocks keep exactly their old semantics. w_t occurs in no firing
+  // guard, deadline cap or metric, so dropping it preserves reachability, WCRT,
+  // WCET and deadlock while reducing the DBM dimension.
+  void set_suspension_clock_projection(bool enabled);
+
+  [[nodiscard]] bool get_suspension_clock_projection() const {
+    return suspension_clock_projection_;
+  }
+
   // Explores the reachability graph, stopping once `max_states` classes exist.
   // Returns the number of state classes discovered.
   size_t build(size_t max_states = std::numeric_limits<size_t>::max());
@@ -105,6 +116,7 @@ class StateClassReachabilityGraph {
   Statistics stats_;
   CanonicalizationMode mode_ = CanonicalizationMode::EQUALITY;
   bool extrapolation_enabled_ = false;
+  bool suspension_clock_projection_ = true;
   int extrapolation_k_ = -1;  // computed lazily from the net's static intervals
   size_t next_id_ = 0;
 

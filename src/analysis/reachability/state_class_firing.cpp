@@ -21,7 +21,9 @@ StateClass StateClassReachabilityGraph::time_elapse(const StateClass& state) con
   for (size_t i = 1; i < n && i < out.clock_vars.size(); ++i) {
     const ClockVar& var = out.clock_vars[i];
     if (var.kind == ClockKind::Suspension) {
-      running[i] = true;  // suspension clocks always advance
+      // Only present when suspension-clock projection is disabled; such clocks
+      // always advance with time.
+      running[i] = true;
     } else if (var.kind == ClockKind::Execution && contains(out.priority_enabled, var.transition)) {
       running[i] = true;  // active execution clocks advance
     }
@@ -94,7 +96,7 @@ void StateClassReachabilityGraph::build_successor_zone(StateClass& successor, co
       if (t != fired_transition && source.has_exec_clock(t)) {
         source_index[i] = source.exec_index(t);
       }
-    } else {  // Suspension
+    } else {  // Suspension (only present when projection is disabled)
       if (t != fired_transition && source.has_susp_clock(t)) {
         source_index[i] = source.susp_index(t);
       }

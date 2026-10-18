@@ -258,6 +258,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
     const auto canonicalization = parse_canonicalization(opts.canonicalization_mode);
     state_class::StateClassReachabilityGraph reachability_graph(ptpn);
     reachability_graph.set_canonicalization_mode(canonicalization);
+    reachability_graph.set_suspension_clock_projection(!opts.keep_suspension_clocks);
     spdlog::info("[SCG] Canonicalization mode: {}", opts.canonicalization_mode);
     if (canonicalization != state_class::CanonicalizationMode::EQUALITY) {
       spdlog::warn(
@@ -266,6 +267,8 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
           opts.canonicalization_mode);
     }
     spdlog::info("[SCG] Priority semantics: enumerate all admissible active sets");
+    spdlog::info("[SCG] Suspension clock projection: {}",
+                 opts.keep_suspension_clocks ? "off (keeping w_t)" : "on (dropping w_t)");
     if (opts.extrapolation) {
       reachability_graph.set_extrapolation(true);
       spdlog::info("[SCG] k-extrapolation enabled (k={})",

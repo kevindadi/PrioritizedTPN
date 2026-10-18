@@ -13,6 +13,10 @@ void StateClassReachabilityGraph::set_canonicalization_mode(CanonicalizationMode
   mode_ = mode;
 }
 
+void StateClassReachabilityGraph::set_suspension_clock_projection(bool enabled) {
+  suspension_clock_projection_ = enabled;
+}
+
 void StateClassReachabilityGraph::set_extrapolation(bool enabled) {
   extrapolation_enabled_ = enabled;
   if (!enabled) {

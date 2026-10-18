@@ -48,7 +48,10 @@ void StateClassReachabilityGraph::build_layout(StateClass& state) const {
     state.clock_vars.push_back({ClockKind::Execution, t});
     state.exec_clock_of_transition[t] = exec_idx;
 
-    if (contains(state.suspended, t)) {
+    // Suspension clocks are projected out by default: w_t appears in no firing
+    // guard, deadline cap or metric, so the `suspended` set alone carries all
+    // scheduler information the analysis needs.
+    if (!suspension_clock_projection_ && contains(state.suspended, t)) {
       const int susp_idx = static_cast<int>(state.clock_vars.size());
       state.clock_vars.push_back({ClockKind::Suspension, t});
       state.susp_clock_of_transition[t] = susp_idx;
