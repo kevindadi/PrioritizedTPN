@@ -74,6 +74,12 @@ struct CoreMetrics {
 
 struct MetricsReport {
   bool exact = true;  // built under EQUALITY canonicalization
+  // False when the graph was built with a state-merging reduction (for
+  // example ReductionMode::UPPER_BOUND). In that case `wcrt` remains a sound
+  // upper bound, but the lower bounds derived from the same over-approximated
+  // graph (notably `wcrt_lb`) are not certified for the original state space
+  // and are reported as unavailable.
+  bool wcrt_lb_valid = true;
   size_t states = 0;
   size_t transitions = 0;
   bool truncated = false;
@@ -100,7 +106,11 @@ struct MetricsReport {
 // only.
 class MetricsAnalyzer {
  public:
-  MetricsAnalyzer(const SCGraph& graph, const petri::PTPN& net, SCVertex initial, bool exact);
+  // `wcrt_lb_valid` is false for graphs built with a state-merging reduction:
+  // WCRT stays a certified upper bound, but lower bounds obtained from the same
+  // over-approximated graph must not be reported (they are serialized as null).
+  MetricsAnalyzer(const SCGraph& graph, const petri::PTPN& net, SCVertex initial, bool exact,
+                  bool wcrt_lb_valid = true);
 
   [[nodiscard]] MetricsReport analyze();
 
@@ -132,6 +142,7 @@ class MetricsAnalyzer {
   const petri::PTPN& net_;
   SCVertex initial_;
   bool exact_;
+  bool wcrt_lb_valid_;
 
   size_t num_vertices_ = 0;
   std::vector<std::vector<Edge>> out_edges_;  // per vertex

@@ -24,6 +24,7 @@ struct PipelineOptions {
   size_t max_states = 10000;
   bool debug_mode = false;
   std::string canonicalization_mode = "equality";
+  std::string reduction_mode = "none";
   bool extrapolation = false;
   bool skip_analysis = false;
   std::optional<SchedulePolicy> policy_override;

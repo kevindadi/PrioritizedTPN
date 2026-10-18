@@ -1,16 +1,41 @@
 #include "analysis/reachability/ptpn_analysis.h"
 
 #include <algorithm>
+#include <functional>
 #include <spdlog/spdlog.h>
 
 #include "analysis/dbm/clock_state.h"
 
 namespace state_class {
 
+namespace {
+void hash_combine(size_t& seed, size_t value) {
+  seed ^= value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+}
+}  // namespace
+
 StateClassReachabilityGraph::StateClassReachabilityGraph(const petri::PTPN& net) : net_(net) {}
 
 void StateClassReachabilityGraph::set_canonicalization_mode(CanonicalizationMode mode) {
   mode_ = mode;
+}
+
+void StateClassReachabilityGraph::set_reduction_mode(ReductionMode mode) {
+  reduction_mode_ = mode;
+}
+
+ReductionMode StateClassReachabilityGraph::get_reduction_mode() const {
+  return reduction_mode_;
+}
+
+size_t StateClassReachabilityGraph::MarkingActiveHash::operator()(
+    const MarkingActiveKey& key) const {
+  size_t seed = MarkingHash{}(key.marking);
+  hash_combine(seed, key.active.size());
+  for (size_t t : key.active) {
+    hash_combine(seed, std::hash<size_t>{}(t));
+  }
+  return seed;
 }
 
 void StateClassReachabilityGraph::set_extrapolation(bool enabled) {
@@ -36,6 +61,26 @@ CanonicalizationMode StateClassReachabilityGraph::get_canonicalization_mode() co
 }
 
 bool StateClassReachabilityGraph::find_match(const StateClass& state, SCVertex& match) const {
+  if (reduction_mode_ == ReductionMode::UPPER_BOUND) {
+    // One-sided merging: a candidate is absorbed only when an already
+    // discovered class with the same marking and selected active set has a
+    // zone that contains the candidate's zone. `check_inclusion` re-verifies
+    // the full layout (clock variables and suspended set) before merging.
+    auto it = vertices_by_marking_and_active_.find(
+        MarkingActiveKey{state.marking, state.priority_enabled});
+    if (it == vertices_by_marking_and_active_.end()) {
+      return false;
+    }
+    for (SCVertex candidate : it->second) {
+      const StateClass& existing = boost::get(boost::vertex_name, graph_, candidate);
+      if (check_inclusion(state, existing)) {
+        match = candidate;
+        return true;
+      }
+    }
+    return false;
+  }
+
   if (mode_ == CanonicalizationMode::EQUALITY) {
     auto it = vertices_by_hash_.find(hash_state_class(state));
     if (it == vertices_by_hash_.end()) {
@@ -67,6 +112,12 @@ bool StateClassReachabilityGraph::find_match(const StateClass& state, SCVertex& 
 
 SCVertex StateClassReachabilityGraph::add_state(StateClass state) {
   state.id = next_id_++;
+  if (reduction_mode_ == ReductionMode::UPPER_BOUND) {
+    MarkingActiveKey key{state.marking, state.priority_enabled};
+    SCVertex v = boost::add_vertex(std::move(state), graph_);
+    vertices_by_marking_and_active_[std::move(key)].push_back(v);
+    return v;
+  }
   if (mode_ == CanonicalizationMode::EQUALITY) {
     const size_t hash = hash_state_class(state);
     SCVertex v = boost::add_vertex(std::move(state), graph_);
@@ -83,6 +134,8 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
   graph_.clear();
   vertices_by_marking_.clear();
   vertices_by_hash_.clear();
+  vertices_by_marking_and_active_.clear();
+  merge_targets_.clear();
   stats_ = Statistics();
   next_id_ = 0;
   reset_dbm_instrumentation();
@@ -190,6 +243,12 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
           SCVertex v;
           if (find_match(successor, v)) {
             stats_.dedup_hits++;
+            if (reduction_mode_ == ReductionMode::UPPER_BOUND) {
+              stats_.zone_merges++;
+              if (merge_targets_.insert(v).second) {
+                stats_.merged_states++;
+              }
+            }
             boost::add_edge(u, v, edge, graph_);
             stats_.total_transitions++;
             continue;
@@ -221,9 +280,10 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
 
   spdlog::info(
       "[SCG] build complete: states={}, transitions={}, dedup_hits={}, "
-      "truncated={}, dbm_minimize_calls={}",
-      stats_.total_states, stats_.total_transitions, stats_.dedup_hits,
-      stats_.truncated ? "true" : "false", get_dbm_instrumentation().minimize_calls);
+      "zone_merges={}, merged_states={}, truncated={}, dbm_minimize_calls={}",
+      stats_.total_states, stats_.total_transitions, stats_.dedup_hits, stats_.zone_merges,
+      stats_.merged_states, stats_.truncated ? "true" : "false",
+      get_dbm_instrumentation().minimize_calls);
 
   return stats_.total_states;
 }

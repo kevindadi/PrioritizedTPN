@@ -7,6 +7,7 @@
 #include <limits>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "analysis/reachability/canonicalization.h"
@@ -25,6 +26,15 @@ typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS,
 typedef boost::graph_traits<SCGraph>::vertex_descriptor SCVertex;
 typedef boost::graph_traits<SCGraph>::edge_descriptor SCEdge;
 
+// Sound one-sided reduction of the state-class graph. It is deliberately
+// separate from CanonicalizationMode: canonicalization controls how equality of
+// whole classes is decided, while a reduction may additionally merge a class
+// into a larger one and therefore changes the meaning of the timing metrics.
+enum class ReductionMode {
+  NONE,         // keep every class that is not matched exactly
+  UPPER_BOUND,  // merge a candidate into an existing class whose zone contains it
+};
+
 // Builds the state-class reachability graph of a P-TPN following the symbolic
 // construction in unconfirmed/ptpn-formal-semantics.tex: time elapse on a joint
 // DBM, then a branch for every priority-enabled transition that can fire.
@@ -34,6 +44,21 @@ class StateClassReachabilityGraph {
 
   void set_canonicalization_mode(CanonicalizationMode mode);
   [[nodiscard]] CanonicalizationMode get_canonicalization_mode() const;
+
+  // Enables the sound one-sided zone-merging reduction. When
+  // reduction == UPPER_BOUND, a candidate successor with the same marking and
+  // selected active set as an already-discovered class is merged into that
+  // class if candidate.zone is included in existing.zone. Only the (larger)
+  // existing class is kept, so the resulting graph over-approximates the exact
+  // state space: WCRT computed from it is a sound upper bound. Lower bounds
+  // derived from the same graph are not certified because the candidate's more
+  // precise zone (and its possibly tighter dwell bounds) is discarded.
+  //
+  // The reduction takes precedence over the canonicalization mode. Classes
+  // with different markings or different selected active sets are never
+  // merged.
+  void set_reduction_mode(ReductionMode mode);
+  [[nodiscard]] ReductionMode get_reduction_mode() const;
 
   // Enables k-extrapolation of successor zones (opt-in). The bound k is the
   // largest finite constant of any transition's static interval; zone bounds
@@ -91,6 +116,12 @@ class StateClassReachabilityGraph {
     size_t total_states = 0;
     size_t total_transitions = 0;
     size_t dedup_hits = 0;
+    // ReductionMode::UPPER_BOUND only: candidates merged into an existing
+    // class because their zone was included in the existing one.
+    size_t zone_merges = 0;
+    // Number of distinct existing classes that absorbed at least one candidate.
+    // zone_merges >= merged_states when a class absorbs several candidates.
+    size_t merged_states = 0;
     bool truncated = false;
   };
 
@@ -104,15 +135,39 @@ class StateClassReachabilityGraph {
   SCVertex initial_vertex_ = 0;
   Statistics stats_;
   CanonicalizationMode mode_ = CanonicalizationMode::EQUALITY;
+  ReductionMode reduction_mode_ = ReductionMode::NONE;
   bool extrapolation_enabled_ = false;
   int extrapolation_k_ = -1;  // computed lazily from the net's static intervals
   size_t next_id_ = 0;
+
+  // Key for UPPER_BOUND mode: classes that may merge must agree on the marking
+  // and on the selected active set. The remaining layout (clock variables,
+  // suspended set) is a function of those two, and check_inclusion verifies it
+  // again before merging.
+  struct MarkingActiveKey {
+    std::vector<int> marking;
+    TransitionSet active;
+
+    bool operator==(const MarkingActiveKey& other) const {
+      return marking == other.marking && active == other.active;
+    }
+  };
+
+  struct MarkingActiveHash {
+    size_t operator()(const MarkingActiveKey& key) const;
+  };
 
   std::unordered_map<std::vector<int>, std::vector<SCVertex>, MarkingHash> vertices_by_marking_;
   // Equality mode only: exact-identity hash -> candidate vertices. Collisions
   // are resolved with check_equality, so lookup is O(1) expected instead of a
   // linear scan over every zone variant of the same marking.
   std::unordered_map<size_t, std::vector<SCVertex>> vertices_by_hash_;
+  // UPPER_BOUND mode only: (marking, selected active set) -> vertices.
+  std::unordered_map<MarkingActiveKey, std::vector<SCVertex>, MarkingActiveHash>
+      vertices_by_marking_and_active_;
+  // UPPER_BOUND mode only: existing vertices that absorbed at least one
+  // candidate, used to count `Statistics::merged_states`.
+  std::unordered_set<SCVertex> merge_targets_;
 
   [[nodiscard]] int effective_earliest(size_t transition) const;
   [[nodiscard]] int effective_latest(size_t transition) const;

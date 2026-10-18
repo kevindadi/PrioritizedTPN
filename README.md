@@ -8,6 +8,7 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 - Lower TDGs into **PTPNs** (multi-core, fixed-priority scheduling, preemption, mutex/spin locks)
 - Parse the **PTPN domain language** (`.ptpn`) directly, skipping TDG conversion
 - **State-class reachability analysis** with canonicalization (`equality`, `max-lower`, `intersection`)
+- **Sound upper-bound zone merging** (`--reduction upper-bound`): one-sided zone-inclusion merging for smaller graphs; WCRT stays a certified upper bound, `wcrt_lb` is reported as unavailable
 - **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, metrics JSON, Romeo CTS, PToPNer `.ppn`
 - Dedicated **`export`** subcommands for Romeo and PToPNer workflows
 

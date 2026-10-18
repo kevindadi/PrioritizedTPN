@@ -11,12 +11,53 @@ conventions.
 ```bash
 ./build/ptpn tdg  -f example/common/input.json --export-metrics metrics.json
 ./build/ptpn ptpn -f model.ptpn               --export-metrics metrics.json
+
+# Sound upper bound with one-sided zone merging (fewer states, no wcrt_lb)
+./build/ptpn tdg  -f example/l-bench/pipeline-40t-8c.json \
+    --reduction upper-bound --export-metrics metrics-upper.json
 ```
 
 `--export-metrics` implies analysis (the SCG is built even if `--export-scg` is
-not given). Metrics are sound only under `--canonicalization equality` (the
-default); other modes merge state classes and the tool prints an
+not given). Metrics are exact only under `--canonicalization equality` (the
+default), with no `--extrapolation`, no `--reduction upper-bound`, and without
+truncation; the other modes merge or omit state classes and the tool prints an
 "approximate" warning.
+
+## Upper-bound zone merging (`--reduction upper-bound`)
+
+The default analysis keeps every distinct state class. The opt-in
+`--reduction upper-bound` mode applies a sound **one-sided** abstraction: when a
+newly discovered candidate class has the same marking and the same selected
+active set `E_pri-hat(M)` as an already-discovered class, and
+
+```
+candidate.zone ⊆ existing.zone
+```
+
+(`DBM::included_in`), the candidate is merged into the existing (larger) class.
+Classes with different markings or different selected active sets are never
+merged, because the scheduling semantics differs. The larger zone is kept
+unchanged, so every concrete behavior of the candidate is covered by the
+existing class and the resulting graph over-approximates the exact state space.
+
+Consequences for the metrics:
+
+- `wcrt` remains a **sound upper bound** on the exact WCRT.
+- `wcrt_lb` is **not certified** on this graph: the tighter candidate zones and
+  their `dwell_min` bounds were discarded, so a bound derived from the merged
+  graph is not a certified lower bound for the original. The analyzer therefore
+  reports `wcrt_lb` as JSON `null` and sets the top-level `wcrt_lb_valid` flag
+  to `false`. `wcrt_interval_tight` is always `false` in this mode.
+- `exact` is `false`.
+- `Statistics::zone_merges` counts candidate classes absorbed into a larger
+  class; `Statistics::merged_states` counts the distinct existing classes that
+  absorbed at least one candidate.
+
+The mode is one-sided by design: if the smaller zone happens to be discovered
+first, the later (larger) class is added as a separate vertex; the graph remains
+an over-approximation, just with less reduction. `--extrapolation` is an
+alternative upper-bound mode that bounds unbounded clocks; the two modes can be
+compared on a case-by-case basis, and either may produce fewer states.
 
 ## The single graph change: per-edge dwell time
 
@@ -92,7 +133,8 @@ the completion edge:
   edge's dwell is at least `dwell_min`, so this is a sound lower bound on the
   same quantity. The exact WCRT lies in `[wcrt_lb, wcrt]`;
   `wcrt_interval_tight` is true only when the two coincide (a sufficient, not
-  necessary, exactness certificate).
+  necessary, exactness certificate). Under `--reduction upper-bound` this bound
+  is not certified and is reported as unavailable (`null`); see above. 
 - **BCRT**: shortest path with weight `dwell_min`, then lifted to `max(path,
 bcet)` because the independent per-edge `dwell_min` sum ignores cross-state DBM
   correlation and would otherwise underestimate; `bcet` is an independent sound
@@ -149,7 +191,7 @@ For each lock resource place (held ⇔ token count is 0):
 
 ```json
 {
-  "exact": true, "states": N, "transitions": M,
+  "exact": true, "wcrt_lb_valid": true, "states": N, "transitions": M,
   "bounded": true, "schedulable": true,
   "has_steady_cycle": true, "recurrent_scc_size": K, "hyperperiod": H,
   "deadlock_states": [...],
@@ -164,7 +206,8 @@ For each lock resource place (held ⇔ token count is 0):
 ```
 
 Unbounded time values (`inf`) are serialised as JSON `null`. `max_preemptions`
-is `-1` when unbounded.
+is `-1` when unbounded. When `wcrt_lb_valid` is `false`, each task's `wcrt_lb`
+is serialised as `null`.
 
 ## Soundness conventions
 
@@ -173,9 +216,13 @@ is `-1` when unbounded.
   sound upper bound, `wcrt_lb` a sound lower bound, and BCRT (after the `bcet`
   lift) a sound lower bound. The exact value lies in `[wcrt_lb, wcrt]`.
 - `exact` is true only when the graph is complete
-  (`--canonicalization equality`, no `--extrapolation`, not truncated). With
-  extrapolation or canonicalization merging, timing values are bounds and the
-  flag is false.
+  (`--canonicalization equality`, no `--extrapolation`, no
+  `--reduction upper-bound`, not truncated). With extrapolation,
+  canonicalization merging or upper-bound zone merging, timing values are
+  bounds and the flag is false.
+- Under `--reduction upper-bound`, `wcrt` is a sound upper bound and
+  `wcrt_lb_valid` is false. The lower bound is computed only on an exact
+  (unmerged) graph.
 - Task-level metrics require TDG-sourced `task_info`; a direct `.ptpn` model
   produces structural and net-level metrics only.
 - The SCG enumerates every admissible equal-priority active set; worst-case

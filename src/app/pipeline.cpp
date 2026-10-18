@@ -125,6 +125,13 @@ state_class::CanonicalizationMode parse_canonicalization(const string& mode) {
   return state_class::CanonicalizationMode::EQUALITY;
 }
 
+state_class::ReductionMode parse_reduction(const string& mode) {
+  if (mode == "upper-bound") {
+    return state_class::ReductionMode::UPPER_BOUND;
+  }
+  return state_class::ReductionMode::NONE;
+}
+
 romeo::RomeoFormat romeo_format_from_string(const string& format) {
   if (format == "inhibitor-arc" || format == "inhibitor_arc") {
     return romeo::RomeoFormat::InhibitorArc;
@@ -256,10 +263,22 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
 
   if (should_run_analysis(opts)) {
     const auto canonicalization = parse_canonicalization(opts.canonicalization_mode);
+    const auto reduction = parse_reduction(opts.reduction_mode);
+    const bool upper_bound_merging = reduction == state_class::ReductionMode::UPPER_BOUND;
     state_class::StateClassReachabilityGraph reachability_graph(ptpn);
     reachability_graph.set_canonicalization_mode(canonicalization);
+    reachability_graph.set_reduction_mode(reduction);
     spdlog::info("[SCG] Canonicalization mode: {}", opts.canonicalization_mode);
-    if (canonicalization != state_class::CanonicalizationMode::EQUALITY) {
+    if (upper_bound_merging) {
+      spdlog::info(
+          "[SCG] Reduction: upper-bound zone merging (sound over-approximation; "
+          "WCRT is an upper bound, wcrt_lb unavailable)");
+      if (canonicalization != state_class::CanonicalizationMode::EQUALITY) {
+        spdlog::warn(
+            "[SCG] Reduction 'upper-bound' takes precedence over canonicalization '{}'",
+            opts.canonicalization_mode);
+      }
+    } else if (canonicalization != state_class::CanonicalizationMode::EQUALITY) {
       spdlog::warn(
           "[SCG] Canonicalization '{}' uses the zone-inclusion implementation; "
           "max-lower and intersection are currently aliases",
@@ -278,6 +297,8 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
                     "states=" + to_string(reachability_stats.total_states) +
                         ", edges=" + to_string(reachability_stats.total_transitions) +
                         ", dedup_hits=" + to_string(reachability_stats.dedup_hits) +
+                        ", zone_merges=" + to_string(reachability_stats.zone_merges) +
+                        ", merged_states=" + to_string(reachability_stats.merged_states) +
                         (reachability_stats.truncated ? ", truncated" : ""));
     if (reachability_stats.truncated) {
       spdlog::warn(
@@ -303,20 +324,28 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
     if (!opts.exports.metrics_json.empty()) {
       // Metrics are exact only for the complete, un-abstracted graph. Zone
       // extrapolation preserves reachable markings but relaxes timing bounds,
-      // and truncation omits part of the state space.
+      // upper-bound zone merging over-approximates the zone space, and
+      // truncation omits part of the state space.
       const bool exact = canonicalization == state_class::CanonicalizationMode::EQUALITY &&
-                         !opts.extrapolation && !reachability_stats.truncated;
+                         !opts.extrapolation && !upper_bound_merging &&
+                         !reachability_stats.truncated;
       if (!exact) {
         spdlog::warn(
             "[METRICS] Metrics are approximate (canonicalization='{}', "
-            "extrapolation={}, truncated={}); timing values are bounds, not "
-            "exact values",
-            opts.canonicalization_mode, opts.extrapolation,
+            "extrapolation={}, reduction='{}', truncated={}); timing values are "
+            "bounds, not exact values",
+            opts.canonicalization_mode, opts.extrapolation, opts.reduction_mode,
             reachability_stats.truncated ? "true" : "false");
+      }
+      if (upper_bound_merging) {
+        spdlog::warn(
+            "[METRICS] wcrt_lb is not certified on the merged graph and is "
+            "reported as unavailable (null)");
       }
       const auto metrics_start = PipelineClock::now();
       state_class::MetricsAnalyzer analyzer(reachability_graph.get_graph(), ptpn,
-                                            reachability_graph.get_initial_vertex(), exact);
+                                            reachability_graph.get_initial_vertex(), exact,
+                                            /*wcrt_lb_valid=*/!upper_bound_merging);
       const state_class::MetricsReport report = analyzer.analyze();
       if (state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
         log_step_timing("Metrics analysis", elapsed_ms(metrics_start));

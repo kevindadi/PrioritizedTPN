@@ -1,5 +1,6 @@
 {
   "exact": true,
+  "wcrt_lb_valid": true,
   "states": 125,
   "transitions": 163,
   "bounded": true,
