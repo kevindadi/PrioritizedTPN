@@ -1,9 +1,25 @@
 cmake_minimum_required(VERSION 3.27)
 
-# vcpkg toolchain must be set before project()
+# vcpkg toolchain must be set before project().
+#
+# Auto-detection is restricted to Windows. On Linux/macOS the system Boost and
+# CMake packages are used instead, because bootstrapping a vcpkg manifest tree
+# there is slow and usually redundant. An explicitly supplied vcpkg toolchain
+# (e.g. -DCMAKE_TOOLCHAIN_FILE=.../vcpkg.cmake) is still honored everywhere,
+# and -DPTPN_USE_VCPKG=ON re-enables auto-detection on non-Windows hosts.
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+    set(_ptpn_vcpkg_auto_default ON)
+else()
+    set(_ptpn_vcpkg_auto_default OFF)
+endif()
+option(PTPN_USE_VCPKG
+    "Auto-detect a vcpkg toolchain (default: ON on Windows, OFF elsewhere)"
+    ${_ptpn_vcpkg_auto_default})
+unset(_ptpn_vcpkg_auto_default)
+
 if(CMAKE_TOOLCHAIN_FILE MATCHES "[/\\\\]vcpkg\\.cmake$")
     message(STATUS "Using vcpkg toolchain: ${CMAKE_TOOLCHAIN_FILE}")
-else()
+elseif(PTPN_USE_VCPKG)
     foreach(_ptpn_vcpkg_root
         "$ENV{VCPKG_ROOT}"
         "$ENV{VCPKG_INSTALLATION_ROOT}"
@@ -17,6 +33,9 @@ else()
         endif()
     endforeach()
     unset(_ptpn_vcpkg_root)
+else()
+    message(STATUS "vcpkg auto-detection disabled on ${CMAKE_HOST_SYSTEM_NAME} "
+                   "(pass -DPTPN_USE_VCPKG=ON to enable)")
 endif()
 
 # Pick a host-matching triplet when vcpkg is active and the caller did not set one.
