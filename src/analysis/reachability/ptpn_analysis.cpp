@@ -35,6 +35,45 @@ CanonicalizationMode StateClassReachabilityGraph::get_canonicalization_mode() co
   return mode_;
 }
 
+void StateClassReachabilityGraph::set_symmetry_reduction(bool enabled) {
+  symmetry_enabled_ = enabled;
+  symmetry_.reset();
+  if (!enabled) {
+    return;
+  }
+  symmetry_ = std::make_unique<TaskSymmetry>(net_);
+  spdlog::info(
+      "[SCG] Symmetry reduction requested: group_order={}, task_groups={}, "
+      "applied={}",
+      symmetry_->group_order(), symmetry_->task_groups().size(),
+      symmetry_->has_nontrivial_group() ? "true" : "false");
+  if (!symmetry_->has_nontrivial_group()) {
+    spdlog::info(
+        "[SCG] No verified permutations of isomorphic tasks on distinct real "
+        "cores; graph is not reduced");
+  }
+}
+
+bool StateClassReachabilityGraph::symmetry_applied() const {
+  return symmetry_ != nullptr && symmetry_->has_nontrivial_group();
+}
+
+size_t StateClassReachabilityGraph::symmetry_group_order() const {
+  return symmetry_ != nullptr ? symmetry_->group_order() : 1;
+}
+
+const std::vector<std::vector<std::string>>&
+StateClassReachabilityGraph::symmetry_task_groups() const {
+  static const std::vector<std::vector<std::string>> kEmpty;
+  return symmetry_ != nullptr ? symmetry_->task_groups() : kEmpty;
+}
+
+void StateClassReachabilityGraph::canonicalize_state(StateClass& state) const {
+  if (symmetry_ != nullptr && symmetry_->has_nontrivial_group()) {
+    state = symmetry_->canonicalize(std::move(state));
+  }
+}
+
 bool StateClassReachabilityGraph::find_match(const StateClass& state, SCVertex& match) const {
   if (mode_ == CanonicalizationMode::EQUALITY) {
     auto it = vertices_by_hash_.find(hash_state_class(state));
@@ -95,8 +134,20 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
   std::vector<SCVertex> frontier;
   frontier.reserve(initial_states.size());
   for (StateClass& initial : initial_states) {
+    canonicalize_state(initial);
     if (extrapolation_enabled_) {
       initial.zone.extrapolate(extrapolation_k_);
+    }
+    // Different admissible initial branches (e.g. one of two isomorphic tasks
+    // being scheduled first on its own core) can share an orbit; keep one.
+    // Guarded so runs without symmetry keep the previous initial-state
+    // semantics exactly.
+    if (symmetry_applied()) {
+      SCVertex existing;
+      if (find_match(initial, existing)) {
+        stats_.dedup_hits++;
+        continue;
+      }
     }
     SCVertex v = add_state(std::move(initial));
     if (frontier.empty()) {
@@ -183,6 +234,9 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
         // the edge weight is identical for all of them.
         std::vector<StateClass> successors = fire_all(elapsed, t);
         for (StateClass& successor : successors) {
+          // Canonicalize before both indexing and extrapolation so the graph
+          // and the dedup keys agree with the initial-state canonical form.
+          canonicalize_state(successor);
           if (extrapolation_enabled_) {
             successor.zone.extrapolate(extrapolation_k_);
           }

@@ -266,6 +266,11 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
           opts.canonicalization_mode);
     }
     spdlog::info("[SCG] Priority semantics: enumerate all admissible active sets");
+    if (opts.reduction == "symmetry") {
+      reachability_graph.set_symmetry_reduction(true);
+    } else {
+      spdlog::info("[SCG] Reduction: none");
+    }
     if (opts.extrapolation) {
       reachability_graph.set_extrapolation(true);
       spdlog::info("[SCG] k-extrapolation enabled (k={})",
@@ -304,19 +309,26 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       // Metrics are exact only for the complete, un-abstracted graph. Zone
       // extrapolation preserves reachable markings but relaxes timing bounds,
       // and truncation omits part of the state space.
+      // Symmetry quotients keep all reachable classes, but graph edges carry
+      // representative task labels; timing values are pooled within verified
+      // groups and therefore reported as bounds rather than certified exact.
+      const bool symmetry_used = reachability_graph.symmetry_applied();
       const bool exact = canonicalization == state_class::CanonicalizationMode::EQUALITY &&
-                         !opts.extrapolation && !reachability_stats.truncated;
+                         !opts.extrapolation && !reachability_stats.truncated &&
+                         !symmetry_used;
       if (!exact) {
         spdlog::warn(
             "[METRICS] Metrics are approximate (canonicalization='{}', "
-            "extrapolation={}, truncated={}); timing values are bounds, not "
-            "exact values",
+            "extrapolation={}, truncated={}, symmetry={}); timing values are "
+            "bounds, not exact values",
             opts.canonicalization_mode, opts.extrapolation,
-            reachability_stats.truncated ? "true" : "false");
+            reachability_stats.truncated ? "true" : "false",
+            symmetry_used ? "true" : "false");
       }
       const auto metrics_start = PipelineClock::now();
       state_class::MetricsAnalyzer analyzer(reachability_graph.get_graph(), ptpn,
                                             reachability_graph.get_initial_vertex(), exact);
+      analyzer.set_symmetry_task_groups(reachability_graph.symmetry_task_groups());
       const state_class::MetricsReport report = analyzer.analyze();
       if (state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
         log_step_timing("Metrics analysis", elapsed_ms(metrics_start));

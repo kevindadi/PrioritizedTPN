@@ -25,6 +25,9 @@ struct PipelineOptions {
   bool debug_mode = false;
   std::string canonicalization_mode = "equality";
   bool extrapolation = false;
+  // Reachability reduction: "none" (full graph) or "symmetry" (quotient by
+  // verified permutations of isomorphic tasks). Off by default.
+  std::string reduction = "none";
   bool skip_analysis = false;
   std::optional<SchedulePolicy> policy_override;
   std::string romeo_format = "scheduling-net";

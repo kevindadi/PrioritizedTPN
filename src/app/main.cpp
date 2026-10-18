@@ -45,6 +45,11 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
                 "Enable k-extrapolation of clock zones: merges behaviorally "
                 "equivalent state classes, preserving the reachable marking "
                 "set (default: off)");
+  cmd->add_option("--reduction", opts.reduction,
+                  "Reachability reduction: none or symmetry (quotient by "
+                  "verified permutations of isomorphic tasks on distinct real "
+                  "cores; default: none)")
+      ->check(CLI::IsMember({"none", "symmetry"}));
   add_export_target_options(cmd, opts.exports);
 }
 

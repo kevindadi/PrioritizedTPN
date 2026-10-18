@@ -8,6 +8,7 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 - Lower TDGs into **PTPNs** (multi-core, fixed-priority scheduling, preemption, mutex/spin locks)
 - Parse the **PTPN domain language** (`.ptpn`) directly, skipping TDG conversion
 - **State-class reachability analysis** with canonicalization (`equality`, `max-lower`, `intersection`)
+- Conservative **symmetry reduction** (`--reduction symmetry`) for verified isomorphic tasks on distinct cores
 - **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, metrics JSON, Romeo CTS, PToPNer `.ppn`
 - Dedicated **`export`** subcommands for Romeo and PToPNer workflows
 
@@ -168,6 +169,7 @@ ctest --test-dir build --output-on-failure
 | `-m, --max-states` | Max states in reachability graph (default: `10000`) |
 | `--canonicalization` | `equality` (default), `max-lower`, or `intersection` |
 | `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
+| `--reduction` | `none` (default) or `symmetry` (see [Symmetry Reduction](#symmetry-reduction---reduction-symmetry)) |
 | `--no-analysis` | Skip state-class reachability analysis |
 | `--debug` | Enable debug logging |
 | `-v, --version` | Show version |
@@ -192,6 +194,52 @@ ctest --test-dir build --output-on-failure
 | `--tina PATH` | Tina `.net` (not implemented) |
 
 > **Note:** Exports are **opt-in**. Running `ptpn tdg -f input.json` alone performs analysis but writes **no** output files unless you pass one or more export flags.
+
+### Symmetry Reduction (`--reduction symmetry`)
+
+The reduction quotients the state-class graph by permutations of **provably
+isomorphic tasks**. It is conservative and off by default.
+
+Candidate tasks must have identical signatures: chain node kinds and
+attributes, execution intervals, priority, core behaviour, lock names,
+period/deadline, periodic markers, and the external arcs attached to the chain
+(consumers, core/lock resources, dependency edges and the neighbouring task
+structure). Each candidate swap is then **verified as an automorphism of the
+whole net** before use: pre/post arcs and weights, place
+capacity/saturation/initial tokens, transition interval/priority/suspension,
+periodic transitions fixed, and a consistent relabelling of real cores with
+equal parallelism. The control core never moves.
+
+Supported scope (deliberately narrower than full task symmetry):
+
+- Only tasks bound to **distinct real cores** (`core >= 0`); at most one member
+  per core. Control-core tasks and tasks sharing a core are never permuted,
+  because on a shared core the canonical representative would hide which task
+  runs and per-task timing would no longer be recoverable.
+- A signature group is dropped when any of its lock names is also used by a
+  **non-isomorphic** task outside the group.
+- Periodic release transitions must stay fixed, so periodic tasks with distinct
+  release transitions are not permuted.
+
+Canonicalization applies to every identity-bearing field of a state class:
+marking, clock variables and the derived per-transition clock maps, enabled /
+priority / suspended transition sets, the DBM rows and columns, and the
+lexicographic state key. The lexicographically smallest representative of the
+orbit is used, and the reduction is active only when the verified group is
+non-trivial. `elapsed_time` and the graph-assigned `id` are metadata and are
+not permuted.
+
+Because a quotient state represents several concrete schedules, timing metrics
+are reported as **conservative bounds** (`exact=false` in the metrics JSON).
+Per-task values are pooled within each verified task group; on a correctly
+symmetric model they reproduce the unreduced per-task WCRT and WCRT lower
+bound. Heterogeneous tasks are never merged.
+
+```bash
+# 6 identical tasks on 6 distinct cores: 792 states -> 34 states
+./build/ptpn tdg -f example/symmetry/symmetric-6t-6c.json \
+  -m 10000000 --reduction symmetry --export-metrics metrics.json
+```
 
 ### Scheduling Policies
 

@@ -35,9 +35,7 @@ void StateClassReachabilityGraph::recompute_sets(StateClass& state,
   }
 }
 
-void StateClassReachabilityGraph::build_layout(StateClass& state) const {
-  const size_t num_transitions = net_.num_transitions();
-
+void build_clock_layout(StateClass& state, size_t num_transitions) {
   state.clock_vars.clear();
   state.clock_vars.push_back({ClockKind::Zero, NO_TRANSITION});
   state.exec_clock_of_transition.assign(num_transitions, -1);
@@ -54,6 +52,10 @@ void StateClassReachabilityGraph::build_layout(StateClass& state) const {
       state.susp_clock_of_transition[t] = susp_idx;
     }
   }
+}
+
+void StateClassReachabilityGraph::build_layout(StateClass& state) const {
+  build_clock_layout(state, net_.num_transitions());
 }
 
 StateClass StateClassReachabilityGraph::compute_initial_class() {

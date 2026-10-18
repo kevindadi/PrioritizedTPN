@@ -1,8 +1,30 @@
 #include "analysis/metrics/metrics.h"
 
+#include <algorithm>
+#include <unordered_map>
+#include <utility>
+
 #include "analysis/dbm/clock_state.h"
 
 namespace state_class {
+
+namespace {
+
+TimeValue time_max(const TimeValue& left, const TimeValue& right) {
+  if (left.infinite) {
+    return left;
+  }
+  if (right.infinite) {
+    return right;
+  }
+  return left.value >= right.value ? left : right;
+}
+
+bool is_time_equal(const TimeValue& left, const TimeValue& right) {
+  return !left.infinite && !right.infinite && left.value == right.value;
+}
+
+}  // namespace
 
 std::string TimeValue::to_string() const {
   return infinite ? std::string("inf") : std::to_string(value);
@@ -175,6 +197,101 @@ bool MetricsAnalyzer::task_blocked_by_lower(const TaskTopology& task, size_t v) 
   return false;
 }
 
+void MetricsAnalyzer::set_symmetry_task_groups(
+    std::vector<std::vector<std::string>> groups) {
+  symmetry_task_groups_ = std::move(groups);
+}
+
+void MetricsAnalyzer::apply_symmetry_groups(MetricsReport& report) {
+  if (symmetry_task_groups_.empty()) {
+    return;
+  }
+  std::unordered_map<std::string, size_t> task_index;
+  for (size_t i = 0; i < report.tasks.size(); ++i) {
+    task_index[report.tasks[i].name] = i;
+  }
+
+  for (const std::vector<std::string>& group : symmetry_task_groups_) {
+    std::vector<size_t> members;
+    for (const std::string& name : group) {
+      const auto it = task_index.find(name);
+      if (it != task_index.end()) {
+        members.push_back(it->second);
+      }
+    }
+    if (members.size() < 2) {
+      continue;
+    }
+
+    bool any_observed = false;
+    bool any_local_deadlock = false;
+    int max_activations = 0;
+    int max_in_flight = 0;
+    int max_preemptions = 0;
+    size_t max_scc = 0;
+    TimeValue pooled_wcrt;
+    TimeValue pooled_wcrt_lb;
+    TimeValue pooled_bcrt;
+    TimeValue pooled_interference;
+    TimeValue pooled_blocking;
+    for (size_t member : members) {
+      const TaskMetrics& task = report.tasks[member];
+      any_observed = any_observed || task.observed;
+      any_local_deadlock = any_local_deadlock || task.local_deadlock;
+      max_activations = std::max(max_activations, task.activations);
+      max_in_flight = std::max(max_in_flight, task.max_in_flight);
+      max_preemptions = (max_preemptions < 0 || task.max_preemptions < 0)
+                            ? -1
+                            : std::max(max_preemptions, task.max_preemptions);
+      max_scc = std::max(max_scc, task.local_deadlock_scc_size);
+      if (!task.observed) {
+        continue;
+      }
+      pooled_wcrt = time_max(pooled_wcrt, task.wcrt);
+      pooled_wcrt_lb = time_max(pooled_wcrt_lb, task.wcrt_lb);
+      pooled_bcrt = time_max(pooled_bcrt, task.bcrt);
+      pooled_interference = time_max(pooled_interference, task.worst_interference);
+      pooled_blocking = time_max(pooled_blocking, task.worst_blocking);
+    }
+
+    for (size_t member : members) {
+      TaskMetrics& task = report.tasks[member];
+      // Symmetric tasks are interchangeable, so a release observed through one
+      // representative label is observable for every group member.
+      task.observed = any_observed;
+      task.activations = max_activations;
+      task.max_in_flight = max_in_flight;
+      task.max_preemptions = max_preemptions;
+      task.local_deadlock = any_local_deadlock;
+      task.local_deadlock_scc_size = max_scc;
+
+      if (!any_observed) {
+        continue;
+      }
+      task.wcrt = pooled_wcrt;
+      task.wcrt_lb = pooled_wcrt_lb;
+      task.bcrt = pooled_bcrt;
+      task.worst_interference = pooled_interference;
+      task.worst_blocking = pooled_blocking;
+      task.wcrt_interval_tight = is_time_equal(pooled_wcrt, pooled_wcrt_lb);
+      task.jitter.infinite = pooled_wcrt.infinite;
+      if (!pooled_wcrt.infinite && !pooled_bcrt.infinite) {
+        task.jitter.value =
+            std::max<long long>(0, pooled_wcrt.value - pooled_bcrt.value);
+      }
+      if (task.has_deadline) {
+        task.deadline_missed =
+            pooled_wcrt.infinite || pooled_wcrt.value > task.deadline;
+        task.slack.infinite = pooled_wcrt.infinite;
+        if (!pooled_wcrt.infinite) {
+          task.slack.value =
+              static_cast<long long>(task.deadline) - pooled_wcrt.value;
+        }
+      }
+    }
+  }
+}
+
 MetricsReport MetricsAnalyzer::analyze() {
   MetricsReport report;
   report.exact = exact_;
@@ -188,6 +305,7 @@ MetricsReport MetricsAnalyzer::analyze() {
   compute_structural(report);
   compute_task_timing(report);
   compute_local_deadlocks(report);
+  apply_symmetry_groups(report);
   compute_schedulability(report);
   compute_locks(report);
   compute_utilisation(report);
