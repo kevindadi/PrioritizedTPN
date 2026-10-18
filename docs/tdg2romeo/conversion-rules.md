@@ -1,6 +1,6 @@
 # TDG → Romeo Conversion Rules
 
-This document describes how TDG JSON is lowered to Romeo `.cts` files through the standalone [`src/tdg2romeo/`](../../src/tdg2romeo/) module. It is **not** routed through `petri::PTPN`.
+This document describes how TDG JSON is lowered to Romeo `.cts` files through the standalone [`src/lower/tdg2romeo/`](../../src/lower/tdg2romeo/) module. It is **not** routed through `petri::PTPN`.
 
 ## Pipeline architecture
 
@@ -102,7 +102,7 @@ Romeo is intended for qualitative state-class exploration and benchmark comparis
 
 ```bash
 ./build/ptpn export romeo -f example/s-bench/a.json -o example/romeo/s-bench/a.cts
-python3 scripts/run.py --profiles romeo
+python3 run.py --profiles romeo
 ```
 
 Golden files live under [`example/romeo/`](../../example/romeo/).

@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
-#include "json/json.h"
 
-using parse::Parser;
+#include "parse/json.h"
+
 using parse::JsonNode;
+using parse::Parser;
 
 class JsonParserTest : public ::testing::Test {
  protected:

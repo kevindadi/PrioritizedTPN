@@ -1,0 +1,47 @@
+transition  preset  postset  time  prior  is_suspend
+Fget_core          0,18.    1.       0    96.2      0
+Fexec          1.    2,18.       3    96.0      1
+Eget_core          3,19.    4.       0    98.2      0
+Eexec          4.    5,19.       28    98.0      1
+Bget_core          6,18.    7.       0    98.2      0
+Bexec          7.    8,18.       5    98.0      0
+Dget_core          9,19.    10.       0    97.2      0
+Dexec          10.    11,19.       8    97.0      1
+Cget_core          12,19.    13.       0    99.2      0
+Cexec          13.    14,19.       8    99.0      0
+Aget_core          15,18.    16.       0    97.2      0
+Aexec          16.    17,18.       8    97.0      1
+A_to_B          17.    6.       0    0.0      0
+B_to_C          8.    12.       0    0.0      0
+D_to_E          11.    3.       0    0.0      0
+E_to_C          5.    12.       0    0.0      0
+D_to_F          11.    0.       0    0.0      0
+C_consume          14.    .       0    0.0      0
+F_consume          2.    .       0    0.0      0
+C_restart_preempt_E_0          4,12.    3,13.       0    99.1      0
+C_restart_preempt_D_1          10,12.    9,13.       0    99.1      0
+E_restart_preempt_D_2          3,10.    4,9.       0    98.1      0
+B_restart_preempt_A_3          6,16.    7,15.       0    98.1      0
+B_restart_preempt_F_4          1,6.    0,7.       0    98.1      0
+A_restart_preempt_F_5          1,15.    0,16.       0    97.1      0  @
+place    name    tokens
+0        Fentry      0
+1        Fready      0
+2        Fexit      0
+3        Eentry      0
+4        Eready      0
+5        Eexit      0
+6        Bentry      0
+7        Bready      0
+8        Bexit      0
+9        Dentry      1
+10        Dready      0
+11        Dexit      0
+12        Centry      0
+13        Cready      0
+14        Cexit      0
+15        Aentry      1
+16        Aready      0
+17        Aexit      0
+18        core0      1
+19        core1      1  @

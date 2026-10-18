@@ -1,11 +1,10 @@
 .cache
 .DS_Store
-.claude
-.cursor
 .clangd
 
+__pycache__/
+
 build
-.ptpn-build-dir
 tools.zip
 
 compile_commands.json
@@ -13,12 +12,12 @@ compile_commands.json
 # Keep the project's Zed configuration tracked despite the `*.json` rule above
 !.zed/*.json
 paper/
-unconfirmed
-
-scripts/__pycache__/
 
 **.dot
 **.ppn
 **.ptpn
 **.pdf
 **.log
+
+# Golden fixtures are committed despite the generated-artifact patterns above.
+!test/golden/**

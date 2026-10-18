@@ -1,28 +1,13 @@
-#include <gtest/gtest.h>
-
 #include <boost/graph/adjacency_list.hpp>
+#include <gtest/gtest.h>
 #include <set>
 #include <vector>
 
-#include "analysis/clock_state.h"
-#include "analysis/clock_state.h"
-#include "analysis/dbm.h"
-#include "analysis/ptpn_analysis.h"
-#include "petri/petri.h"
-
-namespace state_class {
-// Grants tests access to the private formatting helpers of the analyzer.
-struct StateClassReachabilityGraphTestAccess {
-  static std::string format_state_dump(
-      const StateClassReachabilityGraph& graph, const StateClass& state) {
-    return graph.format_state_dump(state);
-  }
-  static std::string format_named_dbm(const StateClassReachabilityGraph& graph,
-                                      const StateClass& state) {
-    return graph.format_named_dbm(state);
-  }
-};
-}  // namespace state_class
+#include "analysis/dbm/clock_state.h"
+#include "analysis/dbm/dbm.h"
+#include "analysis/reachability/ptpn_analysis.h"
+#include "export/scg_dot.h"
+#include "model/petri.h"
 
 namespace {
 
@@ -30,8 +15,8 @@ using state_class::StateClass;
 using state_class::StateClassReachabilityGraph;
 
 // Collects the transition ids on the out-edges of a vertex.
-std::multiset<int> out_edge_transitions(
-    const state_class::SCGraph& graph, state_class::SCVertex vertex) {
+std::multiset<int> out_edge_transitions(const state_class::SCGraph& graph,
+                                        state_class::SCVertex vertex) {
   std::multiset<int> result;
   for (auto [it, end] = boost::out_edges(vertex, graph); it != end; ++it) {
     const auto& edge = boost::get(boost::edge_name, graph, *it);
@@ -44,21 +29,21 @@ std::multiset<int> out_edge_transitions(
 // class; used to verify the analyzer branches over every firable transition.
 petri::PTPN make_two_independent_transitions_net() {
   petri::PTPN ptpn;
-  const size_t left_in = ptpn.add_place("left_in", 1);
-  const size_t right_in = ptpn.add_place("right_in", 1);
-  ptpn.add_place("left_done", 1);
-  ptpn.add_place("right_done", 1);
+  const petri::PlaceId left_in = ptpn.add_place("left_in", 1);
+  const petri::PlaceId right_in = ptpn.add_place("right_in", 1);
+  const petri::PlaceId left_done = ptpn.add_place("left_done", 1);
+  const petri::PlaceId right_done = ptpn.add_place("right_done", 1);
   ptpn.set_initial_marking(left_in, 1);
   ptpn.set_initial_marking(right_in, 1);
 
-  const size_t left =
+  const petri::TransitionId left =
       ptpn.add_transition("left", petri::TimeInterval(0, 2), petri::INF, -1);
-  const size_t right =
+  const petri::TransitionId right =
       ptpn.add_transition("right", petri::TimeInterval(0, 2), petri::INF, -1);
   ptpn.set_pre_arc(left_in, left, 1);
-  ptpn.set_post_arc(left, 2, 1);
+  ptpn.set_post_arc(left, left_done, 1);
   ptpn.set_pre_arc(right_in, right, 1);
-  ptpn.set_post_arc(right, 3, 1);
+  ptpn.set_post_arc(right, right_done, 1);
   return ptpn;
 }
 
@@ -66,37 +51,38 @@ petri::PTPN make_two_independent_transitions_net() {
 // Both are structurally enabled, but only the high-priority one is active.
 petri::PTPN make_same_core_priority_net() {
   petri::PTPN ptpn;
-  const size_t input = ptpn.add_place("input", 2);
+  const petri::PlaceId input = ptpn.add_place("input", 2);
   ptpn.set_initial_marking(input, 1);
 
   // low: priority 1, suspendable; high: priority 9, not suspendable.
-  ptpn.add_transition("low", petri::TimeInterval(0, 5), 1, 0, true);
-  ptpn.add_transition("high", petri::TimeInterval(3, 3), 9, 0, false);
-  ptpn.set_pre_arc(input, 0, 1);
-  ptpn.set_post_arc(0, input, 1);
-  ptpn.set_pre_arc(input, 1, 1);
-  ptpn.set_post_arc(1, input, 1);
+  const petri::TransitionId low = ptpn.add_transition("low", petri::TimeInterval(0, 5), 1, 0, true);
+  const petri::TransitionId high =
+      ptpn.add_transition("high", petri::TimeInterval(3, 3), 9, 0, false);
+  ptpn.set_pre_arc(input, low, 1);
+  ptpn.set_post_arc(low, input, 1);
+  ptpn.set_pre_arc(input, high, 1);
+  ptpn.set_post_arc(high, input, 1);
   return ptpn;
 }
 
 // A trigger that fires at time 2 alongside a survivor task that keeps running.
 petri::PTPN make_persistent_survivor_net() {
   petri::PTPN ptpn;
-  const size_t trigger_in = ptpn.add_place("trigger_in", 1);
-  const size_t survivor_in = ptpn.add_place("survivor_in", 1);
-  ptpn.add_place("trigger_done", 1);
-  ptpn.add_place("survivor_done", 1);
+  const petri::PlaceId trigger_in = ptpn.add_place("trigger_in", 1);
+  const petri::PlaceId survivor_in = ptpn.add_place("survivor_in", 1);
+  const petri::PlaceId trigger_done = ptpn.add_place("trigger_done", 1);
+  const petri::PlaceId survivor_done = ptpn.add_place("survivor_done", 1);
   ptpn.set_initial_marking(trigger_in, 1);
   ptpn.set_initial_marking(survivor_in, 1);
 
-  const size_t trigger =
+  const petri::TransitionId trigger =
       ptpn.add_transition("trigger", petri::TimeInterval(2, 2), petri::INF, -1);
-  const size_t survivor =
+  const petri::TransitionId survivor =
       ptpn.add_transition("survivor", petri::TimeInterval(0, 5), petri::INF, -1);
   ptpn.set_pre_arc(trigger_in, trigger, 1);
-  ptpn.set_post_arc(trigger, 2, 1);
+  ptpn.set_post_arc(trigger, trigger_done, 1);
   ptpn.set_pre_arc(survivor_in, survivor, 1);
-  ptpn.set_post_arc(survivor, 3, 1);
+  ptpn.set_post_arc(survivor, survivor_done, 1);
   return ptpn;
 }
 
@@ -104,43 +90,44 @@ petri::PTPN make_persistent_survivor_net() {
 // suspended low-priority task to resume.
 petri::PTPN make_resume_net() {
   petri::PTPN ptpn;
-  const size_t low_in = ptpn.add_place("low_in", 1);
-  const size_t high_in = ptpn.add_place("high_in", 1);
-  ptpn.add_place("low_done", 1);
-  ptpn.add_place("high_done", 1);
+  const petri::PlaceId low_in = ptpn.add_place("low_in", 1);
+  const petri::PlaceId high_in = ptpn.add_place("high_in", 1);
+  const petri::PlaceId low_done = ptpn.add_place("low_done", 1);
+  const petri::PlaceId high_done = ptpn.add_place("high_done", 1);
   ptpn.set_initial_marking(low_in, 1);
   ptpn.set_initial_marking(high_in, 1);
 
-  ptpn.add_transition("low", petri::TimeInterval(0, 8), 1, 0, true);
-  ptpn.add_transition("high", petri::TimeInterval(0, 3), 9, 0, false);
-  ptpn.set_pre_arc(low_in, 0, 1);
-  ptpn.set_post_arc(0, 2, 1);
-  ptpn.set_pre_arc(high_in, 1, 1);
-  ptpn.set_post_arc(1, 3, 1);
+  const petri::TransitionId low = ptpn.add_transition("low", petri::TimeInterval(0, 8), 1, 0, true);
+  const petri::TransitionId high =
+      ptpn.add_transition("high", petri::TimeInterval(0, 3), 9, 0, false);
+  ptpn.set_pre_arc(low_in, low, 1);
+  ptpn.set_post_arc(low, low_done, 1);
+  ptpn.set_pre_arc(high_in, high, 1);
+  ptpn.set_post_arc(high, high_done, 1);
   return ptpn;
 }
 
 // A trigger that, when fired, enables two sibling transitions at once.
 petri::PTPN make_newly_enabled_siblings_net() {
   petri::PTPN ptpn;
-  const size_t input = ptpn.add_place("input", 1);
-  const size_t shared = ptpn.add_place("shared", 2);
-  ptpn.add_place("left_done", 1);
-  ptpn.add_place("right_done", 1);
+  const petri::PlaceId input = ptpn.add_place("input", 1);
+  const petri::PlaceId shared = ptpn.add_place("shared", 2);
+  const petri::PlaceId left_done = ptpn.add_place("left_done", 1);
+  const petri::PlaceId right_done = ptpn.add_place("right_done", 1);
   ptpn.set_initial_marking(input, 1);
 
-  const size_t trigger =
+  const petri::TransitionId trigger =
       ptpn.add_transition("trigger", petri::TimeInterval(0, 0), petri::INF, -1);
-  const size_t left =
+  const petri::TransitionId left =
       ptpn.add_transition("left", petri::TimeInterval(0, 4), petri::INF, -1);
-  const size_t right =
+  const petri::TransitionId right =
       ptpn.add_transition("right", petri::TimeInterval(0, 6), petri::INF, -1);
   ptpn.set_pre_arc(input, trigger, 1);
   ptpn.set_post_arc(trigger, shared, 2);
   ptpn.set_pre_arc(shared, left, 1);
-  ptpn.set_post_arc(left, 2, 1);
+  ptpn.set_post_arc(left, left_done, 1);
   ptpn.set_pre_arc(shared, right, 1);
-  ptpn.set_post_arc(right, 3, 1);
+  ptpn.set_post_arc(right, right_done, 1);
   return ptpn;
 }
 
@@ -220,8 +207,7 @@ TEST(PtpnAnalysisTest, BranchesOverEveryFirableTransition) {
   StateClassReachabilityGraph graph(ptpn);
   graph.build(64);
 
-  const auto transitions =
-      out_edge_transitions(graph.get_graph(), graph.get_initial_vertex());
+  const auto transitions = out_edge_transitions(graph.get_graph(), graph.get_initial_vertex());
   EXPECT_EQ(transitions.count(0), 1u);
   EXPECT_EQ(transitions.count(1), 1u);
 }
@@ -235,13 +221,11 @@ TEST(PtpnAnalysisTest, PriorityFilterFiresHighPriorityNotEarliest) {
   graph.build(64);
 
   const StateClass initial =
-      boost::get(boost::vertex_name, graph.get_graph(),
-                 graph.get_initial_vertex());
+      boost::get(boost::vertex_name, graph.get_graph(), graph.get_initial_vertex());
   EXPECT_EQ(initial.priority_enabled, (state_class::TransitionSet{1}));
   EXPECT_EQ(initial.suspended, (state_class::TransitionSet{0}));
 
-  const auto transitions =
-      out_edge_transitions(graph.get_graph(), graph.get_initial_vertex());
+  const auto transitions = out_edge_transitions(graph.get_graph(), graph.get_initial_vertex());
   EXPECT_EQ(transitions.count(1), 1u);
   EXPECT_EQ(transitions.count(0), 0u);
 }
@@ -252,19 +236,21 @@ TEST(PtpnAnalysisTest, ControlTransitionsAreAlsoPriorityFiltered) {
   // one is active (this is what lets a resume transition win over ordinary
   // control steps).
   petri::PTPN ptpn;
-  const size_t low_in = ptpn.add_place("low_in", 1);
-  const size_t high_in = ptpn.add_place("high_in", 1);
-  ptpn.add_place("low_done", 1);
-  ptpn.add_place("high_done", 1);
+  const petri::PlaceId low_in = ptpn.add_place("low_in", 1);
+  const petri::PlaceId high_in = ptpn.add_place("high_in", 1);
+  const petri::PlaceId low_done = ptpn.add_place("low_done", 1);
+  const petri::PlaceId high_done = ptpn.add_place("high_done", 1);
   ptpn.set_initial_marking(low_in, 1);
   ptpn.set_initial_marking(high_in, 1);
 
-  ptpn.add_transition("low_ctrl", petri::TimeInterval(0, 0), 0, -1);
-  ptpn.add_transition("high_ctrl", petri::TimeInterval(0, 0), 1, -1);
-  ptpn.set_pre_arc(low_in, 0, 1);
-  ptpn.set_post_arc(0, 2, 1);
-  ptpn.set_pre_arc(high_in, 1, 1);
-  ptpn.set_post_arc(1, 3, 1);
+  const petri::TransitionId low_ctrl =
+      ptpn.add_transition("low_ctrl", petri::TimeInterval(0, 0), 0, -1);
+  const petri::TransitionId high_ctrl =
+      ptpn.add_transition("high_ctrl", petri::TimeInterval(0, 0), 1, -1);
+  ptpn.set_pre_arc(low_in, low_ctrl, 1);
+  ptpn.set_post_arc(low_ctrl, low_done, 1);
+  ptpn.set_pre_arc(high_in, high_ctrl, 1);
+  ptpn.set_post_arc(high_ctrl, high_done, 1);
 
   StateClassReachabilityGraph graph(ptpn);
   const StateClass initial = graph.compute_initial_class();
@@ -274,19 +260,21 @@ TEST(PtpnAnalysisTest, ControlTransitionsAreAlsoPriorityFiltered) {
 // Builds two equal-priority execution transitions on the same real core (0).
 petri::PTPN make_same_core_equal_priority_net() {
   petri::PTPN ptpn;
-  const size_t a_in = ptpn.add_place("a_in", 1);
-  const size_t b_in = ptpn.add_place("b_in", 1);
-  ptpn.add_place("a_done", 1);
-  ptpn.add_place("b_done", 1);
+  const petri::PlaceId a_in = ptpn.add_place("a_in", 1);
+  const petri::PlaceId b_in = ptpn.add_place("b_in", 1);
+  const petri::PlaceId a_done = ptpn.add_place("a_done", 1);
+  const petri::PlaceId b_done = ptpn.add_place("b_done", 1);
   ptpn.set_initial_marking(a_in, 1);
   ptpn.set_initial_marking(b_in, 1);
 
-  ptpn.add_transition("a_exec", petri::TimeInterval(1, 2), 5, 0, true);
-  ptpn.add_transition("b_exec", petri::TimeInterval(1, 2), 5, 0, true);
-  ptpn.set_pre_arc(a_in, 0, 1);
-  ptpn.set_post_arc(0, 2, 1);
-  ptpn.set_pre_arc(b_in, 1, 1);
-  ptpn.set_post_arc(1, 3, 1);
+  const petri::TransitionId a_exec =
+      ptpn.add_transition("a_exec", petri::TimeInterval(1, 2), 5, 0, true);
+  const petri::TransitionId b_exec =
+      ptpn.add_transition("b_exec", petri::TimeInterval(1, 2), 5, 0, true);
+  ptpn.set_pre_arc(a_in, a_exec, 1);
+  ptpn.set_post_arc(a_exec, a_done, 1);
+  ptpn.set_pre_arc(b_in, b_exec, 1);
+  ptpn.set_post_arc(b_exec, b_done, 1);
   return ptpn;
 }
 
@@ -295,7 +283,7 @@ TEST(PtpnAnalysisTest, CoreCapacityOneEnforcesMutualExclusion) {
   // single transition stays active (the lower index wins the deterministic
   // tie-break) and the other is suspended.
   petri::PTPN ptpn = make_same_core_equal_priority_net();
-  ptpn.core_parallelism[0] = 1;
+  ptpn.set_core_parallelism(0, 1);
 
   StateClassReachabilityGraph graph(ptpn);
   const StateClass initial = graph.compute_initial_class();
@@ -307,7 +295,7 @@ TEST(PtpnAnalysisTest, CoreCapacityTwoAllowsParallelExecution) {
   // The same core declared with two slots lets both equal-priority tasks run
   // in parallel, so both are active and neither is suspended.
   petri::PTPN ptpn = make_same_core_equal_priority_net();
-  ptpn.core_parallelism[0] = 2;
+  ptpn.set_core_parallelism(0, 2);
 
   StateClassReachabilityGraph graph(ptpn);
   const StateClass initial = graph.compute_initial_class();
@@ -402,15 +390,12 @@ TEST(PtpnAnalysisTest, NamedDumpIncludesPlaceAndClockLabels) {
   const petri::PTPN ptpn = make_same_core_priority_net();
   StateClassReachabilityGraph graph(ptpn);
   const StateClass initial = graph.compute_initial_class();
+  const scg_export::ScgFormatter formatter(ptpn, graph.get_graph());
 
-  const std::string dump =
-      state_class::StateClassReachabilityGraphTestAccess::format_state_dump(
-          graph, initial);
+  const std::string dump = formatter.format_state_dump(initial);
   EXPECT_NE(dump.find("input"), std::string::npos);
   EXPECT_NE(dump.find("E_pri"), std::string::npos);
 
-  const std::string zone =
-      state_class::StateClassReachabilityGraphTestAccess::format_named_dbm(
-          graph, initial);
+  const std::string zone = formatter.format_named_dbm(initial);
   EXPECT_NE(zone.find("h(T1)"), std::string::npos);
 }

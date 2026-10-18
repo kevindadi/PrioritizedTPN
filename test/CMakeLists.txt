@@ -17,6 +17,11 @@ add_executable(ptpn_test
   test_metrics.cpp
   test_saturation.cpp
   test_tdg2romeo.cpp
+  test_tdg2pn_lowering.cpp
+  test_pipeline_golden.cpp
+  test_invariants.cpp
+  test_parser_robustness.cpp
+  test_conversion.cpp
 )
 
 target_link_libraries(ptpn_test
@@ -26,7 +31,6 @@ target_link_libraries(ptpn_test
 )
 
 target_include_directories(ptpn_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(ptpn_test PRIVATE PTPN_ENABLE_TEST_ACCESS)
 
 include(GoogleTest)
 gtest_discover_tests(ptpn_test PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

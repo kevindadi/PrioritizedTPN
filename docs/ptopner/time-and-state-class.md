@@ -41,7 +41,7 @@ This is the implementation form of the formal state `S = (M, C, E, X, R, Θ)` in
 There are two aligned views of time:
 
 1. `DBM zone` in `src/analysis/state.h:55` is the main symbolic time representation.
-2. `TransitionClock` in `src/analysis/clock_state.h:16` is the per-transition view:
+2. `TransitionClock` in `src/analysis/dbm/clock_state.h:16` is the per-transition view:
 
 ```cpp
 struct TransitionClock {
@@ -51,13 +51,13 @@ struct TransitionClock {
 };
 ```
 
-`ClockState` (`src/analysis/clock_state.h:10`) has exactly three cases:
+`ClockState` (`src/analysis/dbm/clock_state.h:10`) has exactly three cases:
 
 - `UNACTIVE` — transition not currently ticking
 - `ACTIVE` — clock advances with time
 - `SUSPENDED` — clock is frozen
 
-The DBM implementation in `src/analysis/dbm.h` exposes the operations this semantics needs: `elapse_time`, `reset_clock`, `freeze_clock`, `unfreeze_clock`, `restrict_clock`, `restrict_for_firing`, `intersection`, and `is_empty`.
+The DBM implementation in `src/analysis/dbm/dbm.h` exposes the operations this semantics needs: `elapse_time`, `reset_clock`, `freeze_clock`, `unfreeze_clock`, `restrict_clock`, `restrict_for_firing`, `intersection`, and `is_empty`.
 
 ## Where time advances
 
@@ -109,8 +109,8 @@ That is why state identity in `StateKey` (`src/analysis/state.h:107`) includes `
 
 - `src/analysis/state.h:52` — concrete `StateClass` layout
 - `src/analysis/state.h:107` — `StateKey` fields used for equivalence / deduplication
-- `src/analysis/clock_state.h:10` — `ClockState::{UNACTIVE, ACTIVE, SUSPENDED}`
-- `src/analysis/dbm.h:16` — DBM operations for elapse / freeze / firing restriction
+- `src/analysis/dbm/clock_state.h:10` — `ClockState::{UNACTIVE, ACTIVE, SUSPENDED}`
+- `src/analysis/dbm/dbm.h:16` — DBM operations for elapse / freeze / firing restriction
 - `src/analysis/graph.h:80` — `advance_time`
 - `src/analysis/graph.h:98` — `fire_with_time`
 - `src/analysis/graph.h:110` — `recompute_enabled_sets`

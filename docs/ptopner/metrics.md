@@ -53,24 +53,25 @@ empty, so only structural and net-level metrics are produced; task-level metrics
 are skipped gracefully.
 
 Tasks are mapped to net elements through `node_pn_map[task]`, whose chain
-strictly alternates place, transition, place, … (even indices are places, odd
-are transitions). From it the analyzer derives each task's `entry` place, `exit`
-(`end`) place, chain places (`entry/ready/seg_done/hold/exit`), execution
-transitions (name contains `exec`), and the deadline-monitor place
-`<task>timeout`.
+strictly alternates place, transition, place, … (each entry is a tagged
+`NodeRef`). From it the analyzer derives each task's `entry` place, `exit`
+(`end`) place, chain places (`entry/ready/seg_done/hold/exit`) and execution
+transitions (name contains `exec`).
 
 ## Metrics
 
 ### Tier 0 — structural / correctness
 
-| Metric                         | Definition                                                                                                | Algorithm                                                                           |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Boundedness / max queue        | `max_tokens_per_place[p] = max_v M_v[p]`; compared against capacity                                       | one pass over vertices, `O(V·P)`                                                    |
-| Max in-flight (per task)       | max simultaneous tokens across the task's chain places                                                    | one pass, `O(V·P)`                                                                  |
-| Deadlock / illegitimate sink   | a vertex with no successor while a task chain place still holds a token or a `<task>timeout` token is set | one pass over sinks                                                                 |
-| Deadline miss / schedulability | reachability of any `<task>timeout` token                                                                 | BFS from initial; the path to the first miss is reported as `deadline_miss_witness` |
+| Metric                         | Definition                                                                  | Algorithm                        |
+| ------------------------------ | --------------------------------------------------------------------------- | -------------------------------- |
+| Boundedness / max queue        | `max_tokens_per_place[p] = max_v M_v[p]`; compared against capacity         | one pass over vertices, `O(V·P)` |
+| Max in-flight (per task)       | max simultaneous tokens across the task's chain places                      | one pass, `O(V·P)`               |
+| Deadlock / illegitimate sink   | a vertex with no successor while a task chain place still holds a token     | one pass over sinks              |
+| Schedulability                 | no illegitimate deadlock reachable                                          | sink scan                        |
 
-`schedulable = (no timeout reachable) AND (no illegitimate deadlock)`.
+`schedulable = (no illegitimate deadlock)`. Deadline misses are not detected
+structurally: the model has no deadline-monitor sub-net. Use the per-task
+`slack` (`deadline − WCRT`) instead.
 
 ### Tier 1 — timing / response (dwell-weighted, per single activation)
 
@@ -134,12 +135,11 @@ For each lock resource place (held ⇔ token count is 0):
   "exact": true, "states": N, "transitions": M,
   "bounded": true, "schedulable": true,
   "has_steady_cycle": true, "recurrent_scc_size": K, "hyperperiod": H,
-  "deadlock_states": [...], "deadline_miss_witness": [...],
+  "deadlock_states": [...],
   "tasks": [ { "name", "core", "priority", "wcet", "bcet", "period", "deadline",
                "observed", "activations", "wcrt", "bcrt", "jitter",
                "worst_interference", "worst_blocking", "max_preemptions",
-               "max_in_flight", "slack", "deadline_missed",
-               "jobs_per_hyperperiod" } ],
+               "max_in_flight", "slack", "jobs_per_hyperperiod" } ],
   "locks": [ { "name", "worst_hold", "total_hold", "total_wait" } ],
   "cores": [ { "core", "util_min", "util_max", "graph_busy_fraction" } ]
 }

@@ -117,48 +117,197 @@ else()
     message(STATUS "Boost ${Boost_VERSION} (system paths)")
 endif()
 
-include_directories(src)
-
-# Core library containing all logic
-add_library(PTPN_core STATIC
-    src/types/types.cpp
-    src/json/json.cpp
-    src/tdg/tdg.cpp
-    src/petri/petri.cpp
-    src/petri/export_ptpn.cpp
-    src/petri/export_dot.cpp
-    src/tdg2pn/tdg2pn.cpp
-    src/tdg2romeo/cts_writer.cpp
-    src/tdg2romeo/encode_common.cpp
-    src/tdg2romeo/inhibitor_arc.cpp
-    src/tdg2romeo/scheduling_net.cpp
-    src/tdg2romeo/tdg2romeo.cpp
-    src/tdg2romeo/tdg_helpers.cpp
-    src/tdg2ptopner/validate.cpp
-    src/tdg2ptopner/export_ppn.cpp
-    src/tdg2ptopner/ptpn_to_ppn.cpp
-    src/tdg2ptopner/tdg2ptopner.cpp
-    src/analysis/dbm.cpp
-    src/analysis/state_class.cpp
-    src/analysis/ptpn_analysis.cpp
-    src/analysis/canonicalization.cpp
-    src/analysis/scheduling.cpp
-    src/analysis/metrics.cpp
-    src/parser/ptpn_parser.cpp
+# Module libraries. Each target owns one layer of the pipeline and declares
+# only the dependencies it actually uses, so build order and layering stay
+# explicit. `PTPN_core` below is the aggregate used by the executables.
+add_library(ptpn_types STATIC
+    src/model/types.cpp
 )
-target_include_directories(PTPN_core PUBLIC src)
-target_link_libraries(PTPN_core PUBLIC
-    Boost::graph
-    Boost::filesystem
-    Boost::thread
-    Boost::date_time
+target_include_directories(ptpn_types PUBLIC src)
+
+add_library(ptpn_json STATIC
+    src/parse/json.cpp
+)
+target_link_libraries(ptpn_json
+    PUBLIC
+    ptpn_types
     nlohmann_json::nlohmann_json
+    PRIVATE
+    spdlog::spdlog
+)
+
+add_library(ptpn_tdg STATIC
+    src/model/tdg.cpp
+)
+target_link_libraries(ptpn_tdg
+    PUBLIC
+    ptpn_types
+    PRIVATE
+    ptpn_json
+    spdlog::spdlog
+)
+
+add_library(ptpn_petri STATIC
+    src/model/petri.cpp
+)
+target_link_libraries(ptpn_petri
+    PUBLIC
+    ptpn_types
+    PRIVATE
+    spdlog::spdlog
+)
+
+add_library(ptpn_export STATIC
+    src/export/export_ptpn.cpp
+    src/export/export_dot.cpp
+    src/export/scg_dot.cpp
+)
+target_link_libraries(ptpn_export
+    PUBLIC
+    ptpn_petri
+    ptpn_reachability
+    PRIVATE
+    Boost::filesystem
+    spdlog::spdlog
+)
+
+add_library(ptpn_lowering STATIC
+    src/lower/tdg2pn/tdg2pn.cpp
+    src/lower/tdg2pn/vertex_lowering.cpp
+    src/lower/tdg2pn/edge_lowering.cpp
+    src/lower/tdg2pn/binding_lowering.cpp
+    src/lower/tdg2pn/resource_lowering.cpp
+    src/lower/tdg2pn/task_metadata.cpp
+    src/lower/tdg2pn/preemption.cpp
+)
+target_link_libraries(ptpn_lowering
+    PUBLIC
+    ptpn_petri
+    ptpn_tdg
+    PRIVATE
+    spdlog::spdlog
+)
+
+add_library(ptpn_romeo STATIC
+    src/lower/tdg2romeo/cts_writer.cpp
+    src/lower/tdg2romeo/encode_common.cpp
+    src/lower/tdg2romeo/inhibitor_arc.cpp
+    src/lower/tdg2romeo/scheduling_net.cpp
+    src/lower/tdg2romeo/tdg2romeo.cpp
+    src/lower/tdg2romeo/tdg_helpers.cpp
+)
+target_link_libraries(ptpn_romeo
+    PUBLIC
+    ptpn_tdg
+    PRIVATE
+    Boost::filesystem
+    spdlog::spdlog
+)
+
+add_library(ptpn_ptopner STATIC
+    src/lower/tdg2ptopner/validate.cpp
+    src/lower/tdg2ptopner/export_ppn.cpp
+    src/lower/tdg2ptopner/ptpn_to_ppn.cpp
+    src/lower/tdg2ptopner/tdg2ptopner.cpp
+)
+target_link_libraries(ptpn_ptopner
+    PUBLIC
+    ptpn_petri
+    ptpn_tdg
+    PRIVATE
+    ptpn_lowering
+    spdlog::spdlog
+)
+
+# Unified lowering facade: TDG -> {PTPN, Romeo, PToPNer} with PTPN as the
+# canonical hub for composed conversions.
+add_library(ptpn_convert STATIC
+    src/lower/convert/registry.cpp
+    src/lower/convert/tdg_converters.cpp
+    src/lower/convert/ptpn_converters.cpp
+    src/lower/convert/defaults.cpp
+)
+target_link_libraries(ptpn_convert
+    PUBLIC
+    ptpn_lowering
+    ptpn_romeo
+    ptpn_ptopner
+)
+
+add_library(ptpn_parser STATIC
+    src/parse/ptpn_parser.cpp
+)
+target_link_libraries(ptpn_parser
+    PUBLIC
+    ptpn_petri
+)
+
+add_library(ptpn_dbm STATIC
+    src/analysis/dbm/dbm.cpp
+    src/analysis/dbm/dbm_clocks.cpp
+    src/analysis/dbm/dbm_relations.cpp
+)
+target_link_libraries(ptpn_dbm
+    PUBLIC
+    ptpn_types
+)
+
+add_library(ptpn_reachability STATIC
+    src/analysis/reachability/state_class.cpp
+    src/analysis/reachability/ptpn_analysis.cpp
+    src/analysis/reachability/state_class_layout.cpp
+    src/analysis/reachability/state_class_firing.cpp
+    src/analysis/reachability/canonicalization.cpp
+    src/analysis/reachability/scheduling.cpp
+)
+target_link_libraries(ptpn_reachability
+    PUBLIC
+    ptpn_dbm
+    ptpn_petri
+    Boost::graph
+    PRIVATE
+    spdlog::spdlog
+)
+
+add_library(ptpn_metrics STATIC
+    src/analysis/metrics/metrics.cpp
+    src/analysis/metrics/metrics_structural.cpp
+    src/analysis/metrics/metrics_timing.cpp
+    src/analysis/metrics/metrics_locks.cpp
+    src/analysis/metrics/metrics_utilisation.cpp
+    src/analysis/metrics/metrics_json.cpp
+)
+target_link_libraries(ptpn_metrics
+    PUBLIC
+    ptpn_reachability
+)
+
+# Aggregate facade kept for the executables and tests.
+add_library(PTPN_core INTERFACE)
+target_link_libraries(PTPN_core
+    INTERFACE
+    ptpn_types
+    ptpn_json
+    ptpn_tdg
+    ptpn_petri
+    ptpn_export
+    ptpn_lowering
+    ptpn_romeo
+    ptpn_ptopner
+    ptpn_convert
+    ptpn_parser
+    ptpn_dbm
+    ptpn_reachability
+    ptpn_metrics
     spdlog::spdlog
     fmt::fmt
 )
 
 # Main executable
-add_executable(ptpn src/main.cpp)
+add_executable(ptpn
+    src/app/main.cpp
+    src/app/pipeline.cpp
+)
 target_include_directories(ptpn PUBLIC src)
 target_link_libraries(ptpn PRIVATE PTPN_core CLI11::CLI11)
 

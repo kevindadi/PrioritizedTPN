@@ -59,7 +59,7 @@ Periodic release is added separately:
 release_p -> release_t(P) -> release_p, entry_p
 ```
 
-This release structure is created only when periodic activation is expressed by configuration or by an explicit self-loop release edge.
+This release structure is created only when periodic activation is expressed by the `periodic` configuration (or a dashed binding edge). Self-loop edges are allowed in the input but are ignored by lowering.
 
 ## Task template with one lock
 

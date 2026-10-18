@@ -1,28 +1,18 @@
-#include <gtest/gtest.h>
-
 #include <fstream>
+#include <gtest/gtest.h>
 #include <sstream>
 #include <string>
 
-#include "json/json.h"
-#include "tdg/tdg.h"
-#include "tdg2romeo/tdg2romeo.h"
+#include "lower/tdg2romeo/tdg2romeo.h"
+#include "model/tdg.h"
+#include "parse/json.h"
+#include "tdg_test_helpers.h"
 
 namespace {
 
-tdg::TDG load_tdg(const std::string& path) {
-  parse::Parser parser;
-  const auto result = parser.parse_file(path);
-  if (!result.success) {
-    throw std::runtime_error("Failed to parse: " + path);
-  }
-  tdg::TDG tdg(1, 1);
-  tdg.parse_json(path);
-  return tdg;
-}
+using ptpn_test::load_tdg;
 
-std::string render(const tdg::TDG& tdg, romeo::RomeoFormat format,
-                   bool explicit_core_places) {
+std::string render(const tdg::TDG& tdg, romeo::RomeoFormat format, bool explicit_core_places) {
   romeo::RomeoExportOptions opts;
   opts.format = format;
   opts.explicit_core_places = explicit_core_places;
