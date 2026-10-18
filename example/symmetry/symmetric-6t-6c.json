@@ -1,0 +1,27 @@
+{
+  "graph": { "name": "Symmetric6T6C" },
+  "configuration": {
+    "num_cpus": 6,
+    "cores_per_cpu": 1,
+    "shared_locks": [],
+    "policy": "fixed",
+    "start": [
+      { "task": "T0", "tokens": 1 },
+      { "task": "T1", "tokens": 1 },
+      { "task": "T2", "tokens": 1 },
+      { "task": "T3", "tokens": 1 },
+      { "task": "T4", "tokens": 1 },
+      { "task": "T5", "tokens": 1 }
+    ],
+    "end": ["T0", "T1", "T2", "T3", "T4", "T5"]
+  },
+  "nodes": [
+    { "id": "T0", "type": "task", "priority": 1, "core": 0, "time": [[3, 5]], "locks": [] },
+    { "id": "T1", "type": "task", "priority": 1, "core": 1, "time": [[3, 5]], "locks": [] },
+    { "id": "T2", "type": "task", "priority": 1, "core": 2, "time": [[3, 5]], "locks": [] },
+    { "id": "T3", "type": "task", "priority": 1, "core": 3, "time": [[3, 5]], "locks": [] },
+    { "id": "T4", "type": "task", "priority": 1, "core": 4, "time": [[3, 5]], "locks": [] },
+    { "id": "T5", "type": "task", "priority": 1, "core": 5, "time": [[3, 5]], "locks": [] }
+  ],
+  "edges": []
+}

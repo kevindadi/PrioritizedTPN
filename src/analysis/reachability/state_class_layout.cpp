@@ -35,9 +35,8 @@ void StateClassReachabilityGraph::recompute_sets(StateClass& state,
   }
 }
 
-void StateClassReachabilityGraph::build_layout(StateClass& state) const {
-  const size_t num_transitions = net_.num_transitions();
-
+void build_clock_layout(StateClass& state, size_t num_transitions,
+                        bool keep_suspension_clocks) {
   state.clock_vars.clear();
   state.clock_vars.push_back({ClockKind::Zero, NO_TRANSITION});
   state.exec_clock_of_transition.assign(num_transitions, -1);
@@ -51,12 +50,16 @@ void StateClassReachabilityGraph::build_layout(StateClass& state) const {
     // Suspension clocks are projected out by default: w_t appears in no firing
     // guard, deadline cap or metric, so the `suspended` set alone carries all
     // scheduler information the analysis needs.
-    if (!suspension_clock_projection_ && contains(state.suspended, t)) {
+    if (keep_suspension_clocks && contains(state.suspended, t)) {
       const int susp_idx = static_cast<int>(state.clock_vars.size());
       state.clock_vars.push_back({ClockKind::Suspension, t});
       state.susp_clock_of_transition[t] = susp_idx;
     }
   }
+}
+
+void StateClassReachabilityGraph::build_layout(StateClass& state) const {
+  build_clock_layout(state, net_.num_transitions(), !suspension_clock_projection_);
 }
 
 StateClass StateClassReachabilityGraph::compute_initial_class() {

@@ -118,6 +118,15 @@ struct StateClass {
   }
 };
 
+// Rebuilds clock_vars and the per-transition clock index maps from
+// struct_enabled/suspended. The layout is canonical: one execution clock per
+// structurally enabled transition in ascending order, followed by its
+// suspension clock when the transition is suspended and
+// `keep_suspension_clocks` is set. Shared by the symbolic construction and the
+// symmetry canonicalizer so both agree bit for bit.
+void build_clock_layout(StateClass& state, size_t num_transitions,
+                        bool keep_suspension_clocks = false);
+
 // Hashes the marking alone so candidates that might merge land in one bucket.
 struct MarkingHash {
   size_t operator()(const std::vector<int>& marking) const;

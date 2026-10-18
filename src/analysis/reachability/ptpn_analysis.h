@@ -5,6 +5,7 @@
 #include <boost/graph/graph_traits.hpp>
 #include <cstddef>
 #include <limits>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -12,6 +13,7 @@
 
 #include "analysis/reachability/canonicalization.h"
 #include "analysis/reachability/state_class.h"
+#include "analysis/reachability/symmetry.h"
 #include "model/petri.h"
 
 namespace state_class {
@@ -106,6 +108,24 @@ class StateClassReachabilityGraph {
     return horizon_;
   }
 
+  // Enables the conservative task-symmetry quotient (default off). Every state
+  // class is replaced by the lexicographically smallest representative of its
+  // orbit under the verified task permutations before it is indexed, so the
+  // graph stores one vertex per symmetry class. The exhaustive active-set
+  // semantics are unchanged: admissibility is only canonicalized, never
+  // filtered. Construction is cheap when the net has no admissible task
+  // permutation; see TaskSymmetry for the supported scope.
+  void set_symmetry_reduction(bool enabled);
+  [[nodiscard]] bool get_symmetry_reduction() const {
+    return symmetry_enabled_;
+  }
+  // True when symmetry was requested and the net admits a non-trivial verified
+  // task permutation group (i.e. the built graph is actually reduced).
+  [[nodiscard]] bool symmetry_applied() const;
+  [[nodiscard]] size_t symmetry_group_order() const;
+  // Task-name groups proven interchangeable by net automorphisms.
+  [[nodiscard]] const std::vector<std::vector<std::string>>& symmetry_task_groups() const;
+
   // Explores the reachability graph, stopping once `max_states` classes exist.
   // Returns the number of state classes discovered.
   size_t build(size_t max_states = std::numeric_limits<size_t>::max());
@@ -179,6 +199,8 @@ class StateClassReachabilityGraph {
   int extrapolation_k_ = -1;  // computed lazily from the net's static intervals
   bool horizon_enabled_ = false;
   int horizon_ = 0;
+  bool symmetry_enabled_ = false;
+  std::unique_ptr<TaskSymmetry> symmetry_;
   size_t next_id_ = 0;
 
   // Key for UPPER_BOUND mode: classes that may merge must agree on the marking
@@ -222,6 +244,9 @@ class StateClassReachabilityGraph {
   void build_successor_zone(StateClass& successor, const DBM& fired, const StateClass& source,
                             size_t fired_transition) const;
 
+  // Replaces `state` by its canonical orbit representative when symmetry is
+  // active. No-op otherwise.
+  void canonicalize_state(StateClass& state) const;
   // Returns the vertex matching `state` under the current mode, or npos.
   [[nodiscard]] bool find_match(const StateClass& state, SCVertex& match) const;
   SCVertex add_state(StateClass state);

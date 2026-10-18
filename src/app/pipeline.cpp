@@ -486,6 +486,21 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
     spdlog::info("[SCG] Priority semantics: enumerate all admissible active sets");
     spdlog::info("[SCG] Suspension clock projection: {}",
                  opts.keep_suspension_clocks ? "off (keeping w_t)" : "on (dropping w_t)");
+    if (opts.reduction_mode == "symmetry") {
+      reachability_graph.set_symmetry_reduction(true);
+      if (reachability_graph.symmetry_applied()) {
+        spdlog::info(
+            "[SCG] Reduction: symmetry quotient (verified task permutations, "
+            "group order {})",
+            reachability_graph.symmetry_group_order());
+      } else {
+        spdlog::info(
+            "[SCG] Reduction: symmetry requested, but no verified task "
+            "permutation applies; graph is not reduced");
+      }
+    } else if (!upper_bound_merging) {
+      spdlog::info("[SCG] Reduction: none");
+    }
     if (opts.extrapolation) {
       reachability_graph.set_extrapolation(true);
       spdlog::info("[SCG] k-extrapolation enabled (k={})",
@@ -554,20 +569,27 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       // extrapolation preserves reachable markings but relaxes timing bounds,
       // upper-bound zone merging over-approximates the zone space, truncation
       // omits part of the state space, and a horizon cut makes WCRT sound only
-      // under the caller's H >= WCRT assumption.
+      // under the caller's H >= WCRT assumption. Symmetry quotients keep all
+      // reachable classes, but graph edges carry representative task labels;
+      // timing values are pooled within verified groups and therefore reported
+      // as bounds rather than certified exact.
       const bool horizon_truncated = opts.time_horizon.has_value() &&
                                      reachability_stats.horizon_truncated;
+      const bool symmetry_used = reachability_graph.symmetry_applied();
       const bool exact = canonicalization == state_class::CanonicalizationMode::EQUALITY &&
                          !opts.extrapolation && !upper_bound_merging &&
-                         !reachability_stats.truncated && !horizon_truncated;
+                         !reachability_stats.truncated && !horizon_truncated &&
+                         !symmetry_used;
       if (!exact) {
         spdlog::warn(
             "[METRICS] Metrics are approximate (canonicalization='{}', "
             "extrapolation={}, reduction='{}', truncated={}, "
-            "horizon_truncated={}); timing values are bounds, not exact values",
+            "horizon_truncated={}, symmetry={}); timing values are bounds, not "
+            "exact values",
             opts.canonicalization_mode, opts.extrapolation, opts.reduction_mode,
             reachability_stats.truncated ? "true" : "false",
-            horizon_truncated ? "true" : "false");
+            horizon_truncated ? "true" : "false",
+            symmetry_used ? "true" : "false");
       }
       if (upper_bound_merging) {
         spdlog::warn(
@@ -586,6 +608,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
         horizon_info.pruned_states = reachability_stats.horizon_pruned_states;
       }
       analyzer.set_horizon_info(horizon_info);
+      analyzer.set_symmetry_task_groups(reachability_graph.symmetry_task_groups());
       const state_class::MetricsReport report = analyzer.analyze();
       if (state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
         log_step_timing("Metrics analysis", elapsed_ms(metrics_start));

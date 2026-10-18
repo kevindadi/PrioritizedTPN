@@ -135,6 +135,14 @@ class MetricsAnalyzer {
   // the horizon truncated expansion.
   void set_horizon_info(HorizonInfo info);
 
+  // Declares task groups that the reachability graph proved interchangeable
+  // (StateClassReachabilityGraph::symmetry_task_groups()). Timing values are
+  // pooled within each group: the members are symmetric, so they share the
+  // same true WCRT/BCRT, and the representative-labelled quotient may expose
+  // only part of the group's paths to any single member. Leave empty for an
+  // unreduced graph.
+  void set_symmetry_task_groups(std::vector<std::vector<std::string>> groups);
+
   [[nodiscard]] MetricsReport analyze();
 
   static bool save_to_json(const MetricsReport& report, const std::string& file_path);
@@ -167,6 +175,7 @@ class MetricsAnalyzer {
   bool exact_;
   bool wcrt_lb_valid_;
   HorizonInfo horizon_;
+  std::vector<std::vector<std::string>> symmetry_task_groups_;
 
   size_t num_vertices_ = 0;
   std::vector<std::vector<Edge>> out_edges_;  // per vertex
@@ -190,6 +199,10 @@ class MetricsAnalyzer {
   void compute_structural(MetricsReport& report);
   void compute_schedulability(MetricsReport& report);
   void compute_task_timing(MetricsReport& report);
+  // Pools per-task results within verified symmetry groups. Runs after the
+  // per-task passes and before schedulability so deadline/slack and
+  // local-deadlock verdicts see the pooled values.
+  void apply_symmetry_groups(MetricsReport& report);
   void compute_local_deadlocks(MetricsReport& report);
   void compute_locks(MetricsReport& report);
   void compute_utilisation(MetricsReport& report);
