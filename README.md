@@ -9,6 +9,7 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 - Parse the **PTPN domain language** (`.ptpn`) directly, skipping TDG conversion
 - **State-class reachability analysis** with canonicalization (`equality`, `max-lower`, `intersection`)
 - **Sound upper-bound zone merging** (`--reduction upper-bound`): one-sided zone-inclusion merging for smaller graphs; WCRT stays a certified upper bound, `wcrt_lb` is reported as unavailable
+- Optional **per-task cone decomposition** (`--reduction cone`): analyze each task on its dependency/contention cone; per-task timing and local-deadlock metrics match the full graph, but whole-net deadlock detection is unavailable and connected DAGs may not shrink
 - Optional **WCRT time-horizon reduction** (`--horizon N`) that bounds SCG expansion and reports truncation/approximation explicitly
 - **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, metrics JSON, Romeo CTS, PToPNer `.ppn`
 - Dedicated **`export`** subcommands for Romeo and PToPNer workflows
@@ -170,6 +171,7 @@ ctest --test-dir build --output-on-failure
 | `-m, --max-states` | Max states in reachability graph (default: `10000`) |
 | `--canonicalization` | `equality` (default), `max-lower`, or `intersection` |
 | `--keep-suspension-clocks` | Keep `w_t` in the DBM (default: project it out; exact optimization) |
+| `--reduction` | `none` (default), `upper-bound` (sound WCRT upper bound, `wcrt_lb` unavailable), or `cone` (per-task cone analysis; no whole-net deadlock) |
 | `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
 | `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified. See [docs/ptopner/metrics.md](docs/ptopner/metrics.md#time-horizon-reduction) |
 | `--no-analysis` | Skip state-class reachability analysis |

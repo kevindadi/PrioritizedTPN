@@ -58,7 +58,29 @@ first, the later (larger) class is added as a separate vertex; the graph remains
 an over-approximation, just with less reduction. `--extrapolation` is an
 alternative upper-bound mode that bounds unbounded clocks; the two modes can be
 compared on a case-by-case basis, and either may produce fewer states.
-||||||| 3d2c07c
+
+## Per-task cone decomposition (`--reduction cone`)
+
+For each task, the tool projects the net onto that task's cone (its chain, the
+tasks on the same real core, transitive lock holders, and dependency/periodic
+control nodes) and builds a separate SCG for the projection. Only the focus
+task's `TaskMetrics` is kept; the merged report sums the per-cone state counts
+and recomputes the hyperperiod and analytic core utilisation from the full task
+metadata.
+
+Per-task `wcrt`, `wcrt_lb`, `wcet`, `bcet`, `deadline_missed` and
+`local_deadlock` are exact (under `--canonicalization equality`, no
+extrapolation, no truncation) and match the full-graph analysis. Whole-net
+deadlock discovery, graph-wide lock metrics and per-place token maxima are not
+available in this mode: `deadlock_states` is empty and `schedulable` reflects
+only the per-task deadline/local-deadlock verdicts. Use the full graph
+(`--reduction none`) when those whole-net properties are required.
+
+Cone mode reduces work only when a task's cone is strictly smaller than the full
+net. On connected task graphs (for example the bundled P-Bench/S-Bench DAGs) all
+cones equal the full net, so cone mode is slower; it is an opt-in mode for
+loosely coupled multi-core models, not the default.
+
 ## Time-horizon reduction
 
 For WCRT-oriented runs the SCG exploration can be bounded by a wall-clock time
