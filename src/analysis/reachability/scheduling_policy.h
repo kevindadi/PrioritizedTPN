@@ -16,8 +16,8 @@
 
 namespace state_class {
 
-// Policy decisions are expressed over the state-class clock layout: EDF reads
-// the per-task release clocks, and TransitionSet/TaskChain come from
+// Policy decisions are expressed over the state-class clock layout: EDF and
+// FIFO read the per-task release clocks, and TransitionSet/TaskChain come from
 // state_class.h.
 
 // How a filtered-out transition is treated by the analysis engine.
@@ -69,9 +69,10 @@ struct PolicyBranch {
 // scheduling priority. Implementations must be deterministic.
 //
 // Policies whose decisions depend on clock values that must stay explicit in
-// the state (EDF) override `branches()` and `uses_release_clocks()` instead of
-// encoding a fake scalar priority: the analysis graph then creates a release
-// clock per in-flight job and splits each zone by deadline order.
+// the state (EDF and FIFO) override `branches()` and
+// `uses_release_clocks()` instead of encoding a fake scalar priority: the
+// analysis graph then creates a release clock per in-flight job and splits
+// each zone by the policy's arrival/deadline order.
 class FiringRule {
  public:
   virtual ~FiringRule() = default;
@@ -229,9 +230,8 @@ class TaskLockTopology {
 
 // Reads the priority statically encoded on each PTPN transition. This covers
 // FIXED/FIXED_PRIOR_WITH_RESUME/FIXED_PRIOR_WITH_RESTART and RM/DM whose
-// priorities are computed during lowering and stored on the transitions. The
-// remaining policies (EDF/LLF/FIFO) keep their static priorities and are not
-// otherwise analyzed yet.
+// priorities are computed during lowering and stored on the transitions. LLF
+// and UNKNOWN keep their static priorities and are not otherwise analyzed yet.
 class StaticPriorityRule : public FiringRule {
  public:
   explicit StaticPriorityRule(PreemptionMode mode) : mode_(mode) {}
@@ -308,6 +308,100 @@ class EdfFiringRule : public FiringRule {
   }
   PreemptionMode preemption_mode() const override {
     return PreemptionMode::RESUME;
+  }
+  bool uses_release_clocks() const override {
+    return true;
+  }
+
+  std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled,
+                                     const petri::PTPN& net,
+                                     const PolicyContext& context) const override;
+
+  // Name-sorted task chains and transition -> task ordinal map. Exposed for
+  // diagnostics and tests.
+  [[nodiscard]] const std::vector<TaskChain>& tasks() const {
+    return tasks_;
+  }
+  [[nodiscard]] const std::vector<int>& task_of_transition() const {
+    return task_of_transition_;
+  }
+  // transition -> task ordinal for period-release (`_fire`) transitions, or -1.
+  [[nodiscard]] const std::vector<int>& task_of_periodic_transition() const {
+    return task_of_periodic_transition_;
+  }
+
+ private:
+  // Validates the supported class and builds the chain index.
+  void ensure_index(const petri::PTPN& net) const;
+
+  mutable const petri::PTPN* net_ = nullptr;
+  mutable std::vector<TaskChain> tasks_;
+  mutable std::vector<int> task_of_transition_;
+  mutable std::vector<int> task_of_periodic_transition_;
+};
+
+// First-In First-Out scheduling under the release-clock state extension.
+//
+// Supported class (enforced by lowering and re-checked when the rule indexes a
+// net): TDG2PN-lowered nets with `num_cpus == 1`, `cores_per_cpu == 1`, all
+// tasks on core 0, `task_place_capacity == 1`, no locks, no fork/join, no
+// task-to-task dependency edges, at most one start token per task, and every
+// task either periodic with a positive period or started once at time 0. Each
+// task chain carries at most one in-flight job. FIFO is strictly
+// non-preemptive: once a job leaves the entry it runs until its final
+// execution segment places a token in the exit place.
+//
+// A job is pending while its token is at the task entry and running while its
+// token is in any other non-exit chain place. At most one job runs on the
+// single real core (the structural `core0` place in the standard lowering, and
+// the marking-derived running set here for nets without a CPU place):
+//   - If a job is already running, every branch contains only the control
+//     transitions plus that job's enabled chain transitions.
+//   - Otherwise, for each pending job whose start is structurally enabled the
+//     rule emits one branch containing the control transitions plus that
+//     candidate's chain transitions. The candidate is the earliest arrival:
+//
+//       r_candidate >= r_other  <=>  r_other - r_candidate <= 0
+//                                      (BranchConstraint{candidate, other, 0})
+//
+//     where `r` is the per-task release clock (larger value = earlier arrival;
+//     every in-flight job's release clock advances at rate 1). A branch whose
+//     constraint set is inconsistent with the current zone is dropped. Ties
+//     (equal release values) admit every tied candidate, so both dispatch
+//     orders are enumerated rather than chosen by task index.
+//
+// Release-clock lifecycle (shared with EDF):
+//   - A release that fires while the task has no job creates a job whose
+//     release clock starts at zero.
+//   - A release merged into a job still waiting at the capacity-1 entry place
+//     does not reset the pending job's release clock.
+//   - A release that fires while the previous job is running (entry empty)
+//     adds a second chain token. The supported class has one in-flight job per
+//     task, so the resulting state is rejected with `std::invalid_argument`
+//     instead of modeling a queue.
+//   - A periodic release is deferred while a completed job's exit token is
+//     pending; the zero-time consumer runs first.
+//   - Completion drops the release clock.
+//
+// FIFO has no scalar priority; `effective_priority()` throws so no code path
+// can silently fall back to static priorities. Preemption is disabled
+// structurally: lowering uses the non-resume encoding (a `core0` place and
+// non-suspendable execution segments), and `preemption_mode()` is
+// NON_PREEMPTIVE.
+//
+// Multi-core scope: not supported. The supported class has exactly one real
+// core, so there is no cross-core ordering to model.
+class FifoFiringRule : public FiringRule {
+ public:
+  FifoFiringRule() = default;
+  explicit FifoFiringRule(const petri::PTPN& net);
+
+  int effective_priority(const PolicyContext& context, size_t transition) const override;
+  bool admissible(const PolicyContext& /*context*/, size_t /*transition*/) const override {
+    return true;
+  }
+  PreemptionMode preemption_mode() const override {
+    return PreemptionMode::NON_PREEMPTIVE;
   }
   bool uses_release_clocks() const override {
     return true;
@@ -559,11 +653,13 @@ class SrpFiringRule : public FiringRule {
 // Policy -> rule mapping:
 //   FIXED, FIXED_PRIOR_WITH_RESUME, RM, DM -> static priorities, RESUME
 //   EDF                                   -> EdfFiringRule, release clocks, RESUME
+//   FIFO                                  -> FifoFiringRule, release clocks,
+//                                            NON_PREEMPTIVE
 //   PIP                                   -> PipFiringRule, RESUME
 //   PCP                                   -> PcpFiringRule, RESUME
 //   SRP                                   -> SrpFiringRule, RESUME
 //   FIXED_PRIOR_WITH_RESTART              -> static priorities, RESTART
-//   LLF, FIFO, UNKNOWN                    -> static priorities, NON_PREEMPTIVE
+//   LLF, UNKNOWN                          -> static priorities, NON_PREEMPTIVE
 //
 // The policy-only overload cannot precompute the dynamic protocols' task-chain
 // index; it returns a rule that lazily indexes `PolicyContext::net` on first

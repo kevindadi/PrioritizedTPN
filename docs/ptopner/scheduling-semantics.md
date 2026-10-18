@@ -79,12 +79,13 @@ Current coverage:
 | `pcp` | base `priority` + static lock ceilings + dynamic admission/inheritance, see below | `RESUME` | analyzed |
 | `srp` | base `priority` as preemption level + dynamic global system-ceiling start gate, see below | `RESUME` | analyzed |
 | `edf` | absolute deadlines from per-task release clocks, see below | `RESUME` | analyzed for the restricted single-core class |
-| `llf`, `fifo` | static | `NON_PREEMPTIVE` | **not implemented**; only the static rule applies |
+| `fifo` | arrival order from per-task release clocks (no scalar priority), see below | `NON_PREEMPTIVE` | analyzed for the restricted single-core class |
+| `llf` | static | `NON_PREEMPTIVE` | **not implemented**; only the static rule applies |
 
-LLF/FIFO are accepted by the parser but must not be described as analyzed:
-they currently fall back to their static transition priorities and
-non-preemptive handling. EDF is not a static-priority policy; the supported
-class and its restrictions are documented in the EDF section below.
+LLF is accepted by the parser but must not be described as analyzed: it
+currently falls back to its static transition priorities and non-preemptive
+handling. EDF and FIFO are not static-priority policies; their supported
+classes and restrictions are documented in the EDF and FIFO sections below.
 
 ### Priority Inheritance Protocol (`pip`)
 
@@ -534,6 +535,135 @@ behavior is:
   zone-dependent branch constraints, layout invariants, and the rejection
   paths.
 
+## FIFO (restricted supported class)
+
+FIFO is implemented by `FifoFiringRule` and is **not** a static priority
+policy. Arrival order depends on when each job was released, which the analysis
+represents with the same per-task release clocks as EDF. FIFO is strictly
+non-preemptive: once a job is dispatched it keeps the CPU until it reaches its
+exit place.
+
+### Supported class
+
+The supported class is the EDF class minus deadlines, plus an explicit
+single-core CPU. TDG lowering (`validate_fifo_supported_class` in
+`src/lower/tdg2pn/tdg2pn.cpp`) rejects the whole model when any of these does
+not hold, and `FifoFiringRule::ensure_index` re-checks the lowered net:
+
+- `num_cpus == 1` and `cores_per_cpu == 1`; every task bound to core `0`.
+- No locks (`shared_locks` / task `locks` must be empty), no fork/join (every
+  real-core transition belongs to exactly one task chain).
+- `task_place_capacity == 1`; all task places saturate.
+- At most one start token per task (`configuration.start[].tokens <= 1`).
+- Every task is either periodic with a positive period released by `_fire`, or
+  a one-shot task started once at time 0. A task with neither a period nor a
+  start is rejected.
+- No task-to-task TDG edge (dependency-driven release). Self-loops and dashed
+  periodic-release edges are not dependency releases.
+- The standard TDG2PN no-lock task chain: alternating place/transition,
+  `entry/get_core/ready/first-exec/.../exit`, at least 5 nodes.
+- No periodic release may fire while the same task's job is between core
+  acquisition and completion (see "Periodic releases and the one-job class"
+  below).
+- Multi-core is not supported. There is no per-core independent FIFO variant:
+  the rule models exactly one real core.
+
+Unsupported models raise `std::invalid_argument` during lowering or analysis;
+they are never approximated by static priorities or silent merging.
+`FifoFiringRule::effective_priority` raises `std::logic_error`, so no code path
+can silently use a scalar priority for FIFO.
+
+### Job states
+
+A task's chain carries at most one in-flight job:
+
+- **Pending:** one token at the task `entry` place. The job has been released
+  but not dispatched.
+- **Running:** one token in a non-entry, non-exit chain place. The job has been
+  dispatched and will not be preempted.
+- **Completed:** one token at the `exit` place (waiting for the zero-time
+  end-of-task consumer), or no token after it has been consumed. A completion
+  token is a notification, not a job.
+
+At most one running job is allowed per real core. The standard lowering also
+enforces this structurally with a `core0` place of capacity 1: `get_core`
+consumes the core token and the final execution segment returns it, while all
+execution segments are non-suspendable. The rule derives the running set from
+the marking as well, so nets/hand-built variants without a CPU place cannot
+dispatch a second job while one is running.
+
+### Arrival-order branches
+
+When the core is free, every pending job is a dispatch candidate. Release
+clocks `r_i` measure time since release and always advance at rate 1, so a
+larger value means an earlier arrival. Candidate `i` is earliest exactly when
+
+```
+r_i >= r_j  for every other pending job j
+<=>  r_j - r_i <= 0
+```
+
+For each feasible candidate the rule emits one `PolicyBranch` whose active set
+is all control (`core < 0`) transitions plus that candidate's structurally
+enabled chain transitions; its `BranchConstraint{i, j, 0}` list records every
+order constraint. The branch is dropped if its constraint set is infeasible in
+the current zone. Equal release values make every tied candidate feasible, so
+all tie resolutions are emitted rather than selecting by task index. If no
+candidate is feasible, the analysis raises an error rather than emitting a
+partial schedule.
+
+The engine intersects the constraints with the successor zone **before**
+hashing/deduplication. States that differ only in arrival-order release-clock
+differences therefore remain distinct identities.
+
+While a job is running, the only active chain transitions are that job's own
+(plus independent control transitions). A pending job's `get_core` is excluded
+even in a structurally enabled hand-built net. There is no preemption branch:
+a high-priority periodic arrival waits until the running job exits.
+
+The supported class has one real core, so there is no cross-core ordering and
+no Cartesian product of per-core choices. `cores_per_cpu > 1`, `num_cpus > 1`,
+and tasks on another core are rejected.
+
+### Periodic releases and the one-job class
+
+The lowered `_fire` transition consumes and re-adds the unit period token and
+posts one token to the task entry. Its behavior is:
+
+- **Idle task:** the release creates a job with a fresh zero release clock.
+- **Job waiting at the entry:** the saturating capacity-1 entry place clamps
+  the post arc. The marking is unchanged and the release clock is *not* reset;
+  the pending job keeps its original relative arrival order. This is the
+  conservative merge of an overlapping release.
+- **Completed job's exit token pending:** `_fire` is deferred until the
+  zero-time end-of-task consumer has removed the token. The consumer is always
+  enabled and consumes no time, so the release clock is not delayed.
+- **Job mid-chain (entry empty):** the post arc would create a second job token
+  in the same chain. That is outside the one-job supported class; the analysis
+  raises `std::invalid_argument` with an "ambiguous job layout" message instead
+  of modeling a queue. A response time exceeding the task period (including a
+  release at the exact completion instant, unless the completion consumer is
+  taken first) is the typical cause.
+
+The same restriction applies to the initial state: more than one start token
+for a task is rejected.
+
+### Restrictions and diagnostics
+
+- `k-extrapolation` is rejected for release-clock states
+  (`set_extrapolation(true)` / enabling extrapolation before installing FIFO
+  both throw). Relaxing arrival-order bounds would be unsound.
+- Task-symmetry reduction is not implemented for release-clock states. For the
+  single-core FIFO class the verified symmetry group is trivial (no distinct
+  cores to permute), so enabling the reduction is harmless and
+  `symmetry_applied()` stays false.
+- The SCG DOT export labels release clocks `r(K<ordinal>)`; execution clocks
+  remain `h(T<id>)`.
+- Tests: `test/test_fifo.cpp` covers FIFO vs fixed preemption/WCRT, tie
+  enumeration, symbolic arrival ambiguity, timed one-order dispatch,
+  non-preemption invariants, release-clock merge/dispatch/completion lifecycle,
+  state identity, and the rejection paths.
+
 ## When these sets are recomputed
 
 `StateClassReachabilityGraph::recompute_sets` (`src/analysis/reachability/state_class_layout.cpp`)
@@ -553,7 +683,6 @@ forward. Suspension state is recomputed only when the marking changes.
 The `fixed_prior_with_resume` policy, the legacy `fixed` alias, `rm`/`dm`, the
 dynamic `pip`/`pcp`/`srp` rules, and EDF rely on the sets above to model
 preemption directly, instead of any structural encoding:
-
 - It does NOT create the CPU-resource place. Instead it registers a parallelism
   bound of **1 for every real core** (`PTPN::core_parallelism`), so each branch
   keeps exactly one active transition per core. This enforces CPU mutual
@@ -567,9 +696,11 @@ preemption directly, instead of any structural encoding:
   surviving clock). This permits mid-segment preemption.
 
 The `fixed_prior_with_restart` policy and the PToPNer export path keep the
-structural CPU place and structural preemption sub-net unchanged. They register
-no parallelism bound, so the filter falls back to "keep every highest-priority
-transition" for them.
+structural CPU place and structural preemption sub-net unchanged. FIFO also
+keeps the structural CPU place, but no preemption sub-net: its execution
+segments are simply non-suspendable, so a dispatched job runs to exit. They
+register no parallelism bound, so the filter falls back to "keep every
+highest-priority transition" for them.
 
 Note: multi-core parallelism per CPU (`cores_per_cpu` > 1) is intentionally not
 modeled here -- the resume policy fixes the bound at one task per core. Spin-lock
@@ -579,8 +710,8 @@ segments non-suspendable.
 ## Key files
 
 - `src/analysis/reachability/scheduling_policy.h` / `.cpp` — `FiringRule`,
-  `StaticPriorityRule`, `EdfFiringRule`, `PipFiringRule`, `PcpFiringRule`,
-  `SrpFiringRule`, `PolicyBranch`/`BranchConstraint`,
+  `StaticPriorityRule`, `EdfFiringRule`, `FifoFiringRule`, `PipFiringRule`,
+  `PcpFiringRule`, `SrpFiringRule`, `PolicyBranch`/`BranchConstraint`,
   `detail::TaskLockTopology`, `PolicyContext`, `make_firing_rule`
 - `src/analysis/reachability/state_class.h` / `.cpp` — `ClockKind::Release`,
   `TaskChain`, `build_task_chains`, `task_in_flight`, `release_clock_of_task`

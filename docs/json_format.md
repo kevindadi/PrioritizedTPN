@@ -80,6 +80,11 @@ lock-hold, and exit places) use **saturating** capacity semantics:
   while the job token is between core acquisition and completion would add a
   second token at the empty entry. EDF rejects that successor as an ambiguous
   job layout instead of modeling a queued release (see the policy list below).
+- `fifo` likewise supports only `task_place_capacity == 1`, at most one start
+  token per task, and at most one in-flight job per task. A release that fires
+  while the job is mid-chain is rejected as an ambiguous job layout; a release
+  while the job waits at the entry merges without resetting its arrival clock.
+  See the policy list below.
 
 Resource places are **not** saturating: core places (capacity =
 `cores_per_cpu`), lock places (capacity 1), and the periodic control place
@@ -187,8 +192,31 @@ Analysis coverage in this phase:
   reduction are rejected for EDF states. See
   `docs/ptopner/scheduling-semantics.md` for the full supported class and
   semantics.
-- `llf` and `fifo` are accepted by the parser but are **not implemented** as
-  scheduling semantics. They fall back to the static transition priorities with
+- `fifo` implements First In First Out for a deliberately restricted class,
+  **not** as a static priority and **not** as a preemptive policy. Lowering
+  accepts only: `num_cpus == 1` (all tasks on core `0`), `cores_per_cpu == 1`,
+  no locks, no fork/join, no task-to-task dependency edges (all task edges must
+  be self or dashed), `task_place_capacity == 1`, at most one start token per
+  task, and every task either periodic with a positive period released by
+  `_fire` or a one-shot task started at time 0. No deadline is required. The
+  state class adds a per-task release clock and an arrival-order constraint to
+  the DBM zone: dispatching a pending candidate `X` on the core requires
+  `r_other - r_X <= 0` for every other pending job, and every feasible earliest
+  candidate (ties included) yields its own branch. FIFO is strictly
+  non-preemptive: the structural `core0` place keeps at most one job running,
+  execution segments are not suspendable, and a job that has started keeps the
+  core (and its own chain transitions) active until it reaches the exit
+  place. If a periodic release fires while the previous job is mid-chain, the
+  resulting two-token chain is rejected with `std::invalid_argument`; there is
+  at most one in-flight job per task. A release while the job waits at the
+  entry merges without resetting its arrival clock. `k-extrapolation` is
+  rejected for FIFO states, and symmetry reduction is not applied to them.
+  Multi-core is not supported beyond the lowering guard (the parser accepts
+  `num_cpus > 1`, lowering rejects it for FIFO). See
+  `docs/ptopner/scheduling-semantics.md` for the full supported class and
+  semantics.
+- `llf` is accepted by the parser but is **not implemented** as scheduling
+  semantics. It falls back to the static transition priorities with
   non-preemptive handling and must not be treated as analyzed.
 
 ## `nodes`

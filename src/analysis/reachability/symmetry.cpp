@@ -1127,9 +1127,10 @@ StateClass TaskSymmetry::apply(const StateClass& state,
     const ClockVar& variable = out.clock_vars[i];
     if (variable.kind == ClockKind::Release) {
       // Release clocks are keyed by task ordinal, but NetPermutation does not
-      // carry a task permutation. The supported EDF class is single-core, so
-      // no non-identity task permutation can be generated; if one ever reaches
-      // here, returning the original state is the safe (non-reducing) fallback.
+      // carry a task permutation. The supported EDF/FIFO classes are
+      // single-core, so no non-identity task permutation can be generated; if
+      // one ever reaches here, returning the original state is the safe
+      // (non-reducing) fallback.
       return state;
     }
     const size_t source_transition = element.transition_inverse[variable.transition];

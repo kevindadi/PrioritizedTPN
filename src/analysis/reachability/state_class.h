@@ -134,8 +134,8 @@ struct StateClass {
   std::vector<int> exec_clock_of_transition;  // transition -> h_t index or -1
   std::vector<int> susp_clock_of_transition;  // transition -> w_t index or -1
   // Task ordinal (name-sorted build_task_chains order) -> r_task index or -1.
-  // Present only when release-clock tracking is enabled (EDF). A task has a
-  // release clock exactly while it has an in-flight job.
+  // Present only when release-clock tracking is enabled (EDF/FIFO). A task has
+  // a release clock exactly while it has an in-flight job.
   std::vector<int> release_clock_of_task;
 
   TransitionSet struct_enabled;    // E_struct(M)

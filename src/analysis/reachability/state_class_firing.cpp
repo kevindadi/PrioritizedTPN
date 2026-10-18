@@ -9,7 +9,8 @@ namespace state_class {
 
 namespace {
 
-// Intersects the EDF deadline-order constraints with the successor zone.
+// Intersects the release-clock scheduling constraints with the successor
+// zone.
 // Returns false when the branch is infeasible and must be dropped.
 bool apply_branch_constraints(StateClass& state,
                               const std::vector<BranchConstraint>& constraints) {
@@ -196,7 +197,7 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
   // release-clock prefix depends only on the successor marking, so a probe
   // built with the full structural set has the same release indices as every
   // final branch. Its zone is the unsplit successor zone (surviving clocks
-  // carried over, fresh clocks zero); EDF tests each candidate ordering
+  // carried over, fresh clocks zero); EDF/FIFO test each candidate ordering
   // against it and emits the selected difference constraints.
   StateClass prepared;
   prepared.marking = marking;

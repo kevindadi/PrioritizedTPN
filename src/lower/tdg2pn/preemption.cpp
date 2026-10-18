@@ -238,6 +238,8 @@ std::unique_ptr<PreemptionStrategy> make_preemption_strategy(SchedulePolicy poli
   // their effective priorities or admission from the marking, and EDF derives
   // its deadline ordering from the analysis release clocks, but their runtime
   // preemption semantics are exactly the resume strategy used by `fixed`.
+  // FIFO is intentionally absent: it is non-preemptive and uses the structural
+  // CPU place instead.
   if (policy == SchedulePolicy::FIXED || policy == SchedulePolicy::FIXED_PRIOR_WITH_RESUME ||
       policy == SchedulePolicy::RM || policy == SchedulePolicy::DM ||
       policy == SchedulePolicy::PIP || policy == SchedulePolicy::PCP ||

@@ -984,13 +984,24 @@ TEST(SchedulingPolicyTest, PolicyPreemptionModesMatchCurrentCoverage) {
   EXPECT_TRUE(edf_rule->uses_release_clocks());
   EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::EDF));
 
-  // Unimplemented policies (LLF/FIFO) fall back to the static rule and are
-  // explicitly non-preemptive; they are not otherwise analyzed.
-  for (const SchedulePolicy policy : {SchedulePolicy::LLF, SchedulePolicy::FIFO}) {
-    auto rule = state_class::make_firing_rule(policy);
-    EXPECT_EQ(rule->preemption_mode(), PreemptionMode::NON_PREEMPTIVE);
-    EXPECT_TRUE(rule->admissible(context, 0));
-  }
+  // FIFO is analyzed dynamically through explicit release clocks and
+  // arrival-order branches. It is strictly non-preemptive, so it is not a
+  // resume policy and has no scalar static priority.
+  auto fifo_rule = state_class::make_firing_rule(SchedulePolicy::FIFO);
+  ASSERT_NE(fifo_rule, nullptr);
+  EXPECT_NE(dynamic_cast<state_class::FifoFiringRule*>(fifo_rule.get()), nullptr);
+  EXPECT_EQ(fifo_rule->preemption_mode(), PreemptionMode::NON_PREEMPTIVE);
+  EXPECT_TRUE(fifo_rule->admissible(context, 0));
+  EXPECT_TRUE(fifo_rule->uses_release_clocks());
+  EXPECT_THROW(fifo_rule->effective_priority(context, 0), std::logic_error);
+  EXPECT_FALSE(converter::detail::is_resume_policy(SchedulePolicy::FIFO));
+
+  // LLF remains unimplemented: it falls back to the static rule and is
+  // explicitly non-preemptive.
+  auto llf_rule = state_class::make_firing_rule(SchedulePolicy::LLF);
+  EXPECT_EQ(llf_rule->preemption_mode(), PreemptionMode::NON_PREEMPTIVE);
+  EXPECT_TRUE(llf_rule->admissible(context, 0));
+  EXPECT_FALSE(llf_rule->uses_release_clocks());
 }
 
 // ---------------------------------------------------------------------------

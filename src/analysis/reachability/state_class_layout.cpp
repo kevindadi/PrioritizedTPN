@@ -20,7 +20,8 @@ DBM all_clock_zeros(size_t clock_count) {
   return zone;
 }
 
-// Intersects the EDF deadline-order constraints with the state zone. Returns
+// Intersects the release-clock scheduling constraints with the state
+// zone. Returns
 // false when the branch is infeasible and must be dropped.
 bool apply_branch_constraints(StateClass& state,
                               const std::vector<BranchConstraint>& constraints) {
@@ -81,7 +82,7 @@ void build_clock_layout(StateClass& state, const petri::PTPN& net,
   if (include_release_clocks) {
     // Release clocks are placed immediately after x0, ordered by task ordinal.
     // Their indices therefore do not depend on the active set, which keeps the
-    // EDF deadline-order constraints stable across branch layouts.
+    // release-clock branch constraints stable across branch layouts.
     const std::vector<TaskChain> tasks = build_task_chains(net);
     state.release_clock_of_task.assign(tasks.size(), -1);
     for (size_t ordinal = 0; ordinal < tasks.size(); ++ordinal) {
