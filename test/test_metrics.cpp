@@ -123,4 +123,88 @@ TEST(MetricsTest, NetWithoutTaskInfoYieldsStructuralOnly) {
   EXPECT_GE(report.states, 1u);
 }
 
+TEST(MetricsTest, WcrtCertifiedIntervalBracketsTheExactValue) {
+  // The DP upper bound and the certified lower bound bracket the true WCRT;
+  // for an unconstrained execution window [3,5] they are 5 and 3.
+  const MetricsReport report = analyze(make_single_task_net(true));
+
+  ASSERT_EQ(report.tasks.size(), 1u);
+  const auto& t = report.tasks.front();
+  EXPECT_EQ(t.wcrt.value, 5);
+  EXPECT_EQ(t.wcrt_lb.value, 3);
+  EXPECT_LE(t.wcrt_lb.value, t.wcrt.value);
+  EXPECT_FALSE(t.wcrt_interval_tight);
+}
+
+// High-priority task H keeps core 0 busy forever (period 2, execution 2),
+// while low-priority task L holds a token in its entry place and can never be
+// dispatched. The SCG has a positive-time cycle with an edge labelled by H's
+// periodic release, which is exactly a periodic local deadlock for L.
+petri::PTPN make_starved_task_net() {
+  petri::PTPN net;
+  const petri::PlaceId h_period = net.add_place("H_period", 1, true);
+  const petri::PlaceId h_entry = net.add_place("Hentry", 1);
+  const petri::PlaceId h_ready = net.add_place("Hready", 1);
+  const petri::PlaceId h_exit = net.add_place("Hexit", 1);
+  net.set_initial_marking(h_period, 1);
+  net.set_initial_marking(h_entry, 1);
+
+  const petri::TransitionId h_fire =
+      net.add_transition("H_fire", petri::TimeInterval(2, 2), 0, -1, false);
+  net.set_pre_arc(h_period, h_fire, 1);
+  net.set_post_arc(h_fire, h_period, 1);
+  net.set_post_arc(h_fire, h_entry, 1);
+  net.set_periodic_transition("H", h_fire);
+
+  const petri::TransitionId h_get =
+      net.add_transition("Hget_core", petri::TimeInterval(0, 0), 10, 0, false);
+  net.set_pre_arc(h_entry, h_get, 1);
+  net.set_post_arc(h_get, h_ready, 1);
+
+  const petri::TransitionId h_exec =
+      net.add_transition("Hexec", petri::TimeInterval(2, 2), 10, 0, false);
+  net.set_pre_arc(h_ready, h_exec, 1);
+  net.set_post_arc(h_exec, h_exit, 1);
+
+  const petri::TransitionId h_consume =
+      net.add_transition("Hconsume", petri::TimeInterval(0, 0), 0, -1, false);
+  net.set_pre_arc(h_exit, h_consume, 1);  // token is consumed, keeping the net bounded
+
+  const petri::PlaceId l_entry = net.add_place("Lentry", 1);
+  const petri::PlaceId l_ready = net.add_place("Lready", 1);
+  const petri::PlaceId l_exit = net.add_place("Lexit", 1);
+  net.set_initial_marking(l_entry, 1);
+
+  const petri::TransitionId l_get =
+      net.add_transition("Lget_core", petri::TimeInterval(0, 0), 1, 0, false);
+  net.set_pre_arc(l_entry, l_get, 1);
+  net.set_post_arc(l_get, l_ready, 1);
+
+  const petri::TransitionId l_exec =
+      net.add_transition("Lexec", petri::TimeInterval(1, 1), 1, 0, false);
+  net.set_pre_arc(l_ready, l_exec, 1);
+  net.set_post_arc(l_exec, l_exit, 1);
+
+  net.set_core_parallelism(0, 1);
+  net.set_task_chain("L", {petri::NodeRef::of(l_entry), petri::NodeRef::of(l_get),
+                           petri::NodeRef::of(l_ready), petri::NodeRef::of(l_exec),
+                           petri::NodeRef::of(l_exit)});
+  net.set_node_span("L", petri::NodeRef::of(l_entry), petri::NodeRef::of(l_exit));
+  petri::TaskInfo info;
+  info.core = 0;
+  info.priority = 1;
+  net.set_task_info("L", info);
+  return net;
+}
+
+TEST(MetricsTest, PeriodicLocalDeadlockIsDetected) {
+  const MetricsReport report = analyze(make_starved_task_net());
+
+  ASSERT_EQ(report.tasks.size(), 1u);
+  const auto& t = report.tasks.front();
+  EXPECT_TRUE(t.local_deadlock);
+  EXPECT_GT(t.local_deadlock_scc_size, 0u);
+  EXPECT_FALSE(report.schedulable);
+}
+
 }  // namespace

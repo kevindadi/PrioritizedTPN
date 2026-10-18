@@ -41,7 +41,18 @@ void MetricsAnalyzer::compute_structural(MetricsReport& report) {
 }
 
 void MetricsAnalyzer::compute_schedulability(MetricsReport& report) {
+  // The paper's definition is WCRT(a) <= DL(a) for every task, together with
+  // the absence of reachable deadlocks. `deadline_missed` uses the sound WCRT
+  // upper bound, so a schedulable verdict is conservative.
   report.schedulable = report.deadlock_states.empty();
+  for (const auto& task : report.tasks) {
+    if (task.has_deadline && task.deadline_missed) {
+      report.schedulable = false;
+    }
+    if (task.local_deadlock) {
+      report.schedulable = false;
+    }
+  }
 }
 
 }  // namespace state_class

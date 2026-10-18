@@ -105,6 +105,21 @@ bool MetricsAnalyzer::task_in_flight(const TaskTopology& task, size_t v) const {
   return false;
 }
 
+bool MetricsAnalyzer::task_pending(const TaskTopology& task, size_t v) const {
+  // Pending = a token is waiting anywhere before the exit place. The exit
+  // token itself means the activation already completed, so it is excluded.
+  const std::vector<int>& m = state_of_[v]->marking;
+  for (size_t p : task.chain_places) {
+    if (p == task.end_place) {
+      continue;
+    }
+    if (p < m.size() && m[p] > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool MetricsAnalyzer::task_active(const TaskTopology& task, size_t v) const {
   const TransitionSet& active = state_of_[v]->priority_enabled;
   for (size_t t : task.chain_transitions) {
@@ -171,8 +186,9 @@ MetricsReport MetricsAnalyzer::analyze() {
   report.transitions = edge_count;
 
   compute_structural(report);
-  compute_schedulability(report);
   compute_task_timing(report);
+  compute_local_deadlocks(report);
+  compute_schedulability(report);
   compute_locks(report);
   compute_utilisation(report);
   return report;

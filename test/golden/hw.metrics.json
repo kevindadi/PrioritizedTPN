@@ -20,6 +20,8 @@
       "observed": true,
       "activations": 1,
       "wcrt": 19,
+      "wcrt_lb": 8,
+      "wcrt_interval_tight": false,
       "bcrt": 8,
       "jitter": 11,
       "worst_interference": 3,
@@ -27,6 +29,9 @@
       "max_preemptions": 1,
       "max_in_flight": 1,
       "slack": null,
+      "deadline_missed": false,
+      "local_deadlock": false,
+      "local_deadlock_scc_size": 0,
       "jobs_per_hyperperiod": 0
     },
     {
@@ -40,6 +45,8 @@
       "observed": true,
       "activations": 2,
       "wcrt": 3,
+      "wcrt_lb": 2,
+      "wcrt_interval_tight": false,
       "bcrt": 2,
       "jitter": 1,
       "worst_interference": 0,
@@ -47,6 +54,9 @@
       "max_preemptions": 0,
       "max_in_flight": 1,
       "slack": null,
+      "deadline_missed": false,
+      "local_deadlock": false,
+      "local_deadlock_scc_size": 0,
       "jobs_per_hyperperiod": 0
     },
     {
@@ -60,6 +70,8 @@
       "observed": true,
       "activations": 3,
       "wcrt": 6,
+      "wcrt_lb": 4,
+      "wcrt_interval_tight": false,
       "bcrt": 4,
       "jitter": 2,
       "worst_interference": 0,
@@ -67,6 +79,9 @@
       "max_preemptions": 0,
       "max_in_flight": 1,
       "slack": 14,
+      "deadline_missed": false,
+      "local_deadlock": false,
+      "local_deadlock_scc_size": 0,
       "jobs_per_hyperperiod": 1
     }
   ],

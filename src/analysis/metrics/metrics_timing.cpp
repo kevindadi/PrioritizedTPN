@@ -186,6 +186,12 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
       };
 
       tm.wcrt = to_time(run_dp(task, w_dwell_max, true, release_states));
+      // Certified lower bound for the same worst case: every edge's dwell is at
+      // least (fire_min - entry_high)^+, so the longest such path is a sound
+      // lower bound on the true WCRT. [wcrt_lb, wcrt] brackets the exact value.
+      tm.wcrt_lb = to_time(run_dp(task, w_dwell_min, true, release_states));
+      tm.wcrt_interval_tight =
+          !tm.wcrt.infinite && !tm.wcrt_lb.infinite && tm.wcrt.value == tm.wcrt_lb.value;
       tm.bcrt = to_time(run_dp(task, w_dwell_min, false, release_states));
       // The per-edge dwell_min sum ignores cross-state DBM correlation and can
       // dip below the execution demand. BCET is an independent, sound lower
@@ -203,6 +209,7 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
       tm.max_preemptions = preempt.infinite ? -1 : static_cast<int>(preempt.value);
 
       if (tm.has_deadline) {
+        tm.deadline_missed = tm.wcrt.infinite || tm.wcrt.value > tm.deadline;
         tm.slack.infinite = tm.wcrt.infinite;
         if (!tm.wcrt.infinite) {
           tm.slack.value = static_cast<long long>(tm.deadline) - tm.wcrt.value;

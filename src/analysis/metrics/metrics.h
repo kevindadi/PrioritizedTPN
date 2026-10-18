@@ -31,7 +31,12 @@ struct TaskMetrics {
   bool observed = false;  // at least one activation seen in the graph
   int activations = 0;    // number of release events observed
 
-  TimeValue wcrt;                // worst-case response time
+  TimeValue wcrt;                // worst-case response time (sound upper bound)
+  TimeValue wcrt_lb;             // certified lower bound for the same quantity
+  // True when the certified interval collapses (wcrt_lb == wcrt). A false
+  // value does NOT prove that `wcrt` is inexact; it only means the interval
+  // did not certify exactness.
+  bool wcrt_interval_tight = false;
   TimeValue bcrt;                // best-case response time
   TimeValue jitter;              // wcrt - bcrt
   TimeValue worst_interference;  // max time suspended by higher priority
@@ -40,8 +45,14 @@ struct TaskMetrics {
   int max_in_flight = 0;         // max simultaneous tokens across this task's chain
 
   bool has_deadline = false;
+  bool deadline_missed = false;  // wcrt exceeds the deadline (or is infinite)
   TimeValue slack;               // deadline - wcrt (only when has_deadline)
   int jobs_per_hyperperiod = 0;  // hyperperiod / period (0 if aperiodic)
+
+  // Periodic local deadlock: the current instance stays pending forever while
+  // the system keeps making periodic progress (see the paper's SCC criterion).
+  bool local_deadlock = false;
+  size_t local_deadlock_scc_size = 0;
 };
 
 // Per-lock contention metrics.
@@ -135,6 +146,7 @@ class MetricsAnalyzer {
 
   // Predicates over a vertex.
   [[nodiscard]] bool task_in_flight(const TaskTopology& task, size_t v) const;
+  [[nodiscard]] bool task_pending(const TaskTopology& task, size_t v) const;
   [[nodiscard]] bool task_active(const TaskTopology& task, size_t v) const;
   [[nodiscard]] bool task_suspended(const TaskTopology& task, size_t v) const;
   [[nodiscard]] bool core_busy(int core, size_t v) const;
@@ -143,6 +155,7 @@ class MetricsAnalyzer {
   void compute_structural(MetricsReport& report);
   void compute_schedulability(MetricsReport& report);
   void compute_task_timing(MetricsReport& report);
+  void compute_local_deadlocks(MetricsReport& report);
   void compute_locks(MetricsReport& report);
   void compute_utilisation(MetricsReport& report);
 };

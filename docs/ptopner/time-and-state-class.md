@@ -59,6 +59,8 @@ struct TransitionClock {
 
 The DBM implementation in `src/analysis/dbm/dbm.h` exposes the operations this semantics needs: `elapse_time`, `reset_clock`, `freeze_clock`, `unfreeze_clock`, `restrict_clock`, `restrict_for_firing`, `intersection`, and `is_empty`.
 
+The suspension clock `w` is maintained in the zone and in the state identity and is rendered by the SCG export, but it appears in no firing guard. The timing metrics are computed from the per-edge dwell intervals instead; `w` is therefore an observer of the suspension history rather than a constraint on firing. This is the semantic basis for the projection argued in the paper.
+
 ## Where time advances
 
 `src/analysis/graph.h:80` documents `StateClassReachabilityGraph::advance_time` as the time-elapse step.
@@ -102,6 +104,13 @@ This project does not hide all scheduling consequences inside anonymous timing c
 - `enabled` means structurally enabled under the marking
 - `active` means enabled and currently ticking
 - `suspended` means enabled but frozen by higher-priority competition on the same core
+
+In `--tie-break all` mode the selected active set (`priority_enabled`) is part of
+the state identity as well: two classes can share the marking, variable layout
+and DBM matrix but run different clocks. The implementation therefore includes
+`priority_enabled` (and the derived `suspended` set) in both the state hash and
+the equality test, so they are never merged. In the default `index` mode the set
+is a function of the marking and adds no distinctions.
 
 That is why state identity in `StateKey` (`src/analysis/state.h:107`) includes `enabled`, `active`, `suspended`, and DBM frozen-clock information, not just the marking and a raw matrix.
 

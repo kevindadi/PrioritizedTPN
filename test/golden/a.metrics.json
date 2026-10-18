@@ -20,6 +20,8 @@
       "observed": true,
       "activations": 9,
       "wcrt": 5,
+      "wcrt_lb": 3,
+      "wcrt_interval_tight": false,
       "bcrt": 3,
       "jitter": 2,
       "worst_interference": 0,
@@ -27,6 +29,9 @@
       "max_preemptions": 0,
       "max_in_flight": 1,
       "slack": null,
+      "deadline_missed": false,
+      "local_deadlock": false,
+      "local_deadlock_scc_size": 0,
       "jobs_per_hyperperiod": 0
     },
     {
@@ -40,6 +45,8 @@
       "observed": true,
       "activations": 9,
       "wcrt": 38,
+      "wcrt_lb": 36,
+      "wcrt_interval_tight": false,
       "bcrt": 28,
       "jitter": 10,
       "worst_interference": 8,
@@ -47,6 +54,9 @@
       "max_preemptions": 1,
       "max_in_flight": 1,
       "slack": null,
+      "deadline_missed": false,
+      "local_deadlock": false,
+      "local_deadlock_scc_size": 0,
       "jobs_per_hyperperiod": 0
     },
     {
@@ -60,6 +70,8 @@
       "observed": true,
       "activations": 1,
       "wcrt": 7,
+      "wcrt_lb": 5,
+      "wcrt_interval_tight": false,
       "bcrt": 5,
       "jitter": 2,
       "worst_interference": 0,
@@ -67,6 +79,9 @@
       "max_preemptions": 0,
       "max_in_flight": 1,
       "slack": null,
+      "deadline_missed": false,
+      "local_deadlock": false,
+      "local_deadlock_scc_size": 0,
       "jobs_per_hyperperiod": 0
     },
     {
@@ -80,6 +95,8 @@
       "observed": true,
       "activations": 16,
       "wcrt": 18,
+      "wcrt_lb": 16,
+      "wcrt_interval_tight": false,
       "bcrt": 8,
       "jitter": 10,
       "worst_interference": 8,
@@ -87,6 +104,9 @@
       "max_preemptions": 1,
       "max_in_flight": 1,
       "slack": 32,
+      "deadline_missed": false,
+      "local_deadlock": false,
+      "local_deadlock_scc_size": 0,
       "jobs_per_hyperperiod": 2
     },
     {
@@ -100,6 +120,8 @@
       "observed": true,
       "activations": 14,
       "wcrt": 12,
+      "wcrt_lb": 8,
+      "wcrt_interval_tight": false,
       "bcrt": 8,
       "jitter": 4,
       "worst_interference": 0,
@@ -107,6 +129,9 @@
       "max_preemptions": 0,
       "max_in_flight": 1,
       "slack": null,
+      "deadline_missed": false,
+      "local_deadlock": false,
+      "local_deadlock_scc_size": 0,
       "jobs_per_hyperperiod": 0
     },
     {
@@ -120,6 +145,8 @@
       "observed": true,
       "activations": 8,
       "wcrt": 5,
+      "wcrt_lb": 3,
+      "wcrt_interval_tight": false,
       "bcrt": 3,
       "jitter": 2,
       "worst_interference": 0,
@@ -127,6 +154,9 @@
       "max_preemptions": 0,
       "max_in_flight": 1,
       "slack": 95,
+      "deadline_missed": false,
+      "local_deadlock": false,
+      "local_deadlock_scc_size": 0,
       "jobs_per_hyperperiod": 1
     }
   ],

@@ -22,6 +22,20 @@ inline bool contains(const TransitionSet& set, size_t value) {
   return std::binary_search(set.begin(), set.end(), value);
 }
 
+// How equal-priority transitions sharing a core are resolved.
+//   INDEX:         deterministic fixed-priority policy. Ties are broken by the
+//                  smallest transition index, so every marking has exactly one
+//                  active set. This is the default and matches a scheduler
+//                  whose tie-break rule is part of the policy.
+//   ALL_BRANCHES:  explore every admissible active set E_pri-hat(M), i.e. the
+//                  worst case over all same-priority tie resolutions. The
+//                  selected active set becomes part of the state-class
+//                  identity, because it decides which clocks run.
+enum class TieBreakMode {
+  INDEX,
+  ALL_BRANCHES,
+};
+
 // Every column/row of the joint DBM corresponds to one timed variable.
 enum class ClockKind {
   Zero,        // the reference variable x0 (always lives at index 0)
@@ -95,8 +109,8 @@ struct StateClass {
   std::vector<int> susp_clock_of_transition;  // transition -> w_t index or -1
 
   TransitionSet struct_enabled;    // E_struct(M)
-  TransitionSet priority_enabled;  // E_pri(M): active transitions
-  TransitionSet suspended;         // (E_struct \ E_pri) intersect T2
+  TransitionSet priority_enabled;  // E_pri-hat(M): selected active transitions
+  TransitionSet suspended;         // (E_struct \ E_pri-hat) intersect T2
 
   double elapsed_time = 0.0;  // auxiliary metadata, excluded from identity
   size_t id = 0;              // assigned when inserted into the graph
@@ -123,9 +137,11 @@ struct MarkingHash {
   size_t operator()(const std::vector<int>& marking) const;
 };
 
-// Exact-identity hash over (marking, clock_vars, zone matrix) used for O(1)
-// deduplication in equality mode. Collisions must be resolved with
-// check_equality() against the stored state.
+// Exact-identity hash over (marking, scheduler sets, clock_vars, zone matrix)
+// used for O(1) deduplication in equality mode. The selected active set is part
+// of the identity: under ALL_BRANCHES two classes may share marking, layout and
+// zone but differ in which clocks are allowed to run, and they are different
+// semantic states. Collisions are resolved with check_equality().
 size_t hash_state_class(const StateClass& state);
 
 }  // namespace state_class

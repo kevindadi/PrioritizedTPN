@@ -25,6 +25,16 @@ class Scheduling {
   // keep every transition sharing the maximal priority (ties allowed).
   static TransitionSet filter_priority_per_core(const TransitionSet& struct_enabled,
                                                 const petri::PTPN& net);
+
+  // All admissible selected-active sets E_pri-hat(M) under `mode`.
+  //   INDEX:        exactly one set (filter_priority_per_core).
+  //   ALL_BRANCHES: one set per way of picking up to K equal-priority
+  //                 transitions per core, cartesian-combined across cores.
+  // The result is sorted and duplicate-free. Unbounded groups contribute a
+  // single choice containing every maximal-priority transition.
+  static std::vector<TransitionSet> priority_branches(const TransitionSet& struct_enabled,
+                                                      const petri::PTPN& net,
+                                                      TieBreakMode mode);
 };
 
 }  // namespace state_class

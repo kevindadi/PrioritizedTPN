@@ -51,6 +51,9 @@ bool MetricsAnalyzer::save_to_json(const MetricsReport& report, const std::strin
     out << "      \"observed\": " << (t.observed ? "true" : "false") << ",\n";
     out << "      \"activations\": " << t.activations << ",\n";
     out << "      \"wcrt\": " << time_json(t.wcrt) << ",\n";
+    out << "      \"wcrt_lb\": " << time_json(t.wcrt_lb) << ",\n";
+    out << "      \"wcrt_interval_tight\": " << (t.wcrt_interval_tight ? "true" : "false")
+        << ",\n";
     out << "      \"bcrt\": " << time_json(t.bcrt) << ",\n";
     out << "      \"jitter\": " << time_json(t.jitter) << ",\n";
     out << "      \"worst_interference\": " << time_json(t.worst_interference) << ",\n";
@@ -59,6 +62,9 @@ bool MetricsAnalyzer::save_to_json(const MetricsReport& report, const std::strin
     out << "      \"max_in_flight\": " << t.max_in_flight << ",\n";
     out << "      \"slack\": " << (t.has_deadline ? time_json(t.slack) : std::string("null"))
         << ",\n";
+    out << "      \"deadline_missed\": " << (t.deadline_missed ? "true" : "false") << ",\n";
+    out << "      \"local_deadlock\": " << (t.local_deadlock ? "true" : "false") << ",\n";
+    out << "      \"local_deadlock_scc_size\": " << t.local_deadlock_scc_size << ",\n";
     out << "      \"jobs_per_hyperperiod\": " << t.jobs_per_hyperperiod << "\n";
     out << "    }" << (i + 1 < report.tasks.size() ? "," : "") << "\n";
   }

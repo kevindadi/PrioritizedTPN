@@ -167,6 +167,8 @@ ctest --test-dir build --output-on-failure
 | `-f, --file` | Input file (required) |
 | `-m, --max-states` | Max states in reachability graph (default: `10000`) |
 | `--canonicalization` | `equality` (default), `max-lower`, or `intersection` |
+| `--tie-break` | `index` (deterministic, default) or `all` (explore every same-priority active set) |
+| `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
 | `--no-analysis` | Skip state-class reachability analysis |
 | `--debug` | Enable debug logging |
 | `-v, --version` | Show version |

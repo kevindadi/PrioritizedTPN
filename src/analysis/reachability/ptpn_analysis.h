@@ -35,6 +35,15 @@ class StateClassReachabilityGraph {
   void set_canonicalization_mode(CanonicalizationMode mode);
   [[nodiscard]] CanonicalizationMode get_canonicalization_mode() const;
 
+  // Selects how equal-priority transitions on one core are resolved. INDEX is
+  // the deterministic fixed-priority policy (smallest transition index wins);
+  // ALL_BRANCHES explores every admissible tie resolution and makes the
+  // selected active set part of the state-class identity.
+  void set_tie_break_mode(TieBreakMode mode);
+  [[nodiscard]] TieBreakMode get_tie_break_mode() const {
+    return tie_break_mode_;
+  }
+
   // Enables k-extrapolation of successor zones (opt-in). The bound k is the
   // largest finite constant of any transition's static interval; zone bounds
   // beyond k are relaxed, which merges behaviorally equivalent state classes
@@ -66,7 +75,10 @@ class StateClassReachabilityGraph {
   }
 
   // The initial state class C0 = (M0, Omega0) with every clock pinned to zero.
+  // In INDEX mode there is exactly one; ALL_BRANCHES yields one initial class
+  // per admissible selected active set.
   StateClass compute_initial_class();
+  std::vector<StateClass> compute_initial_classes();
 
   // TimeElapse operator: returns a copy of `state` whose zone has had time
   // pushed forward (running clocks released and re-capped at their deadlines).
@@ -77,8 +89,11 @@ class StateClassReachabilityGraph {
 
   // Discrete firing: from the time-elapsed class, fire `t` and produce the
   // successor class (marking, sets, layout and zone). Returns false if the
-  // firing domain is empty.
+  // firing domain is empty. This wrapper resolves the target branch with the
+  // configured tie-break mode and returns the first successor; `fire_all`
+  // returns one successor per admissible target active set.
   bool fire(const StateClass& elapsed, size_t t, StateClass& successor) const;
+  std::vector<StateClass> fire_all(const StateClass& elapsed, size_t t) const;
 
   struct Statistics {
     size_t total_states = 0;
@@ -97,6 +112,7 @@ class StateClassReachabilityGraph {
   SCVertex initial_vertex_ = 0;
   Statistics stats_;
   CanonicalizationMode mode_ = CanonicalizationMode::EQUALITY;
+  TieBreakMode tie_break_mode_ = TieBreakMode::INDEX;
   bool extrapolation_enabled_ = false;
   int extrapolation_k_ = -1;  // computed lazily from the net's static intervals
   size_t next_id_ = 0;
@@ -110,8 +126,9 @@ class StateClassReachabilityGraph {
   [[nodiscard]] int effective_earliest(size_t transition) const;
   [[nodiscard]] int effective_latest(size_t transition) const;
 
-  // Fills struct_enabled / priority_enabled / suspended from state.marking.
-  void recompute_sets(StateClass& state) const;
+  // Fills struct_enabled / priority_enabled / suspended from state.marking and
+  // the selected active set `active` (which is E_pri-hat(M)).
+  void recompute_sets(StateClass& state, const TransitionSet& active) const;
   // Builds clock_vars and the per-transition index maps from the sets.
   void build_layout(StateClass& state) const;
   // Builds a successor zone by carrying surviving clocks over from `fired`.

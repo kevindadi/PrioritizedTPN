@@ -303,6 +303,32 @@ TEST(PtpnAnalysisTest, CoreCapacityTwoAllowsParallelExecution) {
   EXPECT_TRUE(initial.suspended.empty());
 }
 
+TEST(PtpnAnalysisTest, AllBranchesEnumeratesEveryEqualPriorityChoice) {
+  // ALL_BRANCHES must yield both admissible selected active sets; the choice
+  // is part of the state identity because it decides which clock runs.
+  petri::PTPN ptpn = make_same_core_equal_priority_net();
+  ptpn.set_core_parallelism(0, 1);
+
+  StateClassReachabilityGraph graph(ptpn);
+  graph.set_tie_break_mode(state_class::TieBreakMode::ALL_BRANCHES);
+  const std::vector<StateClass> initials = graph.compute_initial_classes();
+
+  ASSERT_EQ(initials.size(), 2u);
+  std::set<state_class::TransitionSet> branches;
+  for (const StateClass& initial : initials) {
+    branches.insert(initial.priority_enabled);
+    EXPECT_EQ(initial.suspended.size(), 1u);
+    EXPECT_EQ(initial.priority_enabled.size() + initial.suspended.size(),
+              initial.struct_enabled.size());
+  }
+  EXPECT_EQ(branches.count(state_class::TransitionSet{0}), 1u);
+  EXPECT_EQ(branches.count(state_class::TransitionSet{1}), 1u);
+
+  // Building the graph must keep both initial branches, not merge them.
+  graph.build(256);
+  EXPECT_GE(graph.get_statistics().total_states, 2u);
+}
+
 TEST(PtpnAnalysisTest, SuspendedTransitionFreezesExecAndRunsSuspensionClock) {
   const petri::PTPN ptpn = make_same_core_priority_net();
   StateClassReachabilityGraph graph(ptpn);

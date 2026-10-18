@@ -86,7 +86,13 @@ the completion edge:
 - **WCRT**: longest path with weight `dwell_max`. A cycle in the in-flight
   subgraph means the job can be delayed forever (identical state class revisited
   while still in flight under `EQUALITY`), so WCRT is reported as `inf`
-  (unbounded / starvation).
+  (unbounded / starvation). This is a sound **upper bound**: it relaxes the
+  cross-edge correlation between entry clock values.
+- **WCRT lower bound (`wcrt_lb`)**: longest path with weight `dwell_min`. Every
+  edge's dwell is at least `dwell_min`, so this is a sound lower bound on the
+  same quantity. The exact WCRT lies in `[wcrt_lb, wcrt]`;
+  `wcrt_interval_tight` is true only when the two coincide (a sufficient, not
+  necessary, exactness certificate).
 - **BCRT**: shortest path with weight `dwell_min`, then lifted to `max(path,
 bcet)` because the independent per-edge `dwell_min` sum ignores cross-state DBM
   correlation and would otherwise underestimate; `bcet` is an independent sound
@@ -99,7 +105,18 @@ bcet)` because the independent per-edge `dwell_min` sum ignores cross-state DBM
   lower-priority task executes on its core.
 - **Max preemptions**: longest path counting edges where the task goes
   `active → suspended`.
-- **Slack**: `deadline − WCRT` (negative ⇒ unschedulable).
+- **Deadline miss**: `wcrt > deadline` (using the sound upper bound), or an
+  infinite WCRT. `schedulable` is false when any task misses its deadline, when
+  a reachable illegitimate sink exists, or when a periodic local deadlock is
+  detected.
+- **Periodic local deadlock**: for each task, the analysis restricts the SCG to
+  classes where the current instance is still pending (a chain token before the
+  exit place), removes edges labelled by the task's own periodic release, and
+  runs an iterative Tarjan SCC decomposition. A cyclic SCC containing an internal
+  edge labelled by a positive periodic release of another task is a periodic
+  local deadlock. This is the paper's Algorithm 5; `local_deadlock_scc_size`
+  reports the largest such SCC.
+- **Slack**: `deadline − wcrt` (negative ⇒ unschedulable upper bound).
 
 Each DP is `O(V + E)`; the per-vertex result is memoized.
 
@@ -137,9 +154,10 @@ For each lock resource place (held ⇔ token count is 0):
   "has_steady_cycle": true, "recurrent_scc_size": K, "hyperperiod": H,
   "deadlock_states": [...],
   "tasks": [ { "name", "core", "priority", "wcet", "bcet", "period", "deadline",
-               "observed", "activations", "wcrt", "bcrt", "jitter",
-               "worst_interference", "worst_blocking", "max_preemptions",
-               "max_in_flight", "slack", "jobs_per_hyperperiod" } ],
+               "observed", "activations", "wcrt", "wcrt_lb", "wcrt_interval_tight",
+               "bcrt", "jitter", "worst_interference", "worst_blocking",
+               "max_preemptions", "max_in_flight", "slack", "deadline_missed",
+               "local_deadlock", "local_deadlock_scc_size", "jobs_per_hyperperiod" } ],
   "locks": [ { "name", "worst_hold", "total_hold", "total_wait" } ],
   "cores": [ { "core", "util_min", "util_max", "graph_busy_fraction" } ]
 }
@@ -152,7 +170,18 @@ is `-1` when unbounded.
 
 - Dwell bounds are per-state-class sound upper/lower bounds; they ignore
   cross-state DBM correlation (the standard SCG over-approximation), so WCRT is a
-  sound upper bound and BCRT (after the `bcet` lift) a sound lower bound.
+  sound upper bound, `wcrt_lb` a sound lower bound, and BCRT (after the `bcet`
+  lift) a sound lower bound. The exact value lies in `[wcrt_lb, wcrt]`.
+- `exact` is true only when the graph is complete
+  (`--canonicalization equality`, no `--extrapolation`, not truncated). With
+  extrapolation or canonicalization merging, timing values are bounds and the
+  flag is false.
+- Task-level metrics require TDG-sourced `task_info`; a direct `.ptpn` model
+  produces structural and net-level metrics only.
+- `--tie-break index` (default) reports the deterministic fixed-priority policy;
+  `--tie-break all` explores all same-priority tie resolutions and can be
+  exponentially larger. Results from the two modes answer different questions
+  and should not be mixed in one table.
 - Response-style metrics are scoped to a **single activation** so periodic cycles
   do not produce spurious unbounded longest paths; a genuine in-flight cycle is
   reported as unbounded.

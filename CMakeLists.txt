@@ -292,6 +292,7 @@ add_library(ptpn_metrics STATIC
     src/analysis/metrics/metrics.cpp
     src/analysis/metrics/metrics_structural.cpp
     src/analysis/metrics/metrics_timing.cpp
+    src/analysis/metrics/metrics_deadlock.cpp
     src/analysis/metrics/metrics_locks.cpp
     src/analysis/metrics/metrics_utilisation.cpp
     src/analysis/metrics/metrics_json.cpp

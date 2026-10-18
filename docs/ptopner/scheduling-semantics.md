@@ -50,6 +50,25 @@ are never suspendable, so a filtered-out control transition is simply blocked fo
 that instant (neither active nor suspended) and becomes active again in the next
 state class.
 
+### Tie-break modes
+
+`filter_priority_per_core` keeps at most `K = parallelism_of_core(core)`
+transitions. When several candidates tie at the maximal priority, two policies
+are available (`--tie-break`):
+
+- `index` (default): the smallest transition index wins. This is a deterministic
+  fixed-priority policy; every marking has exactly one active set, and the set is
+  a function of the marking, so it need not be stored in the state key.
+- `all`: every admissible active set is a separate branch. The chosen set is
+  stored in `StateClass::priority_enabled` and included in the state hash and
+  equality test, because it decides which clocks run. This mode computes the
+  worst case over same-priority tie resolutions and can be exponentially larger
+  than `index`.
+
+Control transitions have core `-1`, which has no registered parallelism bound, so
+all maximal-priority control transitions are active simultaneously. They do not
+compete with task transitions.
+
 ## Implementation
 
 `src/analysis/reachability/scheduling.h` / `scheduling.cpp`:
@@ -73,11 +92,12 @@ static std::set<size_t> filter_priority_per_core(
 
 ## When these sets are recomputed
 
-`StateClassReachabilityGraph::recompute_sets` (`src/analysis/reachability/ptpn_analysis.cpp`)
-is called whenever the marking changes (in `compute_initial_class` and after each
-`fire`). It:
+`StateClassReachabilityGraph::recompute_sets` (`src/analysis/reachability/state_class_layout.cpp`)
+is called whenever the marking changes (in `compute_initial_classes` and after
+each `fire`). It:
 1. Recomputes `struct_enabled` from the new marking (`Scheduling::structural_enabled`).
-2. Computes `priority_enabled` via `Scheduling::filter_priority_per_core`.
+2. Installs the selected active set (`Scheduling::priority_branches`; one set in
+   `index` mode, every admissible set in `all` mode).
 3. Derives `suspended = { t ∈ struct_enabled \ priority_enabled | suspendable(t) }`.
 
 `time_elapse` does NOT change these sets — it only pushes the symbolic clock zone

@@ -13,6 +13,11 @@ enum class CanonicalizationMode {
   INTERSECTION,     // CheckInclusion: zone-inclusion abstraction
 };
 
+// NOTE: MAX_LOWER_BOUND and INTERSECTION currently share the same
+// zone-inclusion implementation (see canonicalization.cpp). They are kept as
+// distinct CLI names for compatibility with the planned semantics, but no
+// reader should assume they behave differently today.
+
 struct StateClass;
 
 // Exact match: same marking, same variable layout, identical DBM matrix.

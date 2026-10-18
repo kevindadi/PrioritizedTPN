@@ -325,6 +325,13 @@ class PTPN {
     locks_place_[lock] = place;
   }
 
+  // Records the periodic-release transition that creates new instances of
+  // `task`. The metrics layer uses it to distinguish periodic progress from
+  // ordinary internal cycles when detecting periodic local deadlocks.
+  void set_periodic_transition(const std::string& task, TransitionId transition) {
+    periodic_transitions_[task] = transition;
+  }
+
   void set_task_info(const std::string& task, TaskInfo info) {
     task_info_[task] = std::move(info);
   }
@@ -335,6 +342,7 @@ class PTPN {
     cpus_place_.clear();
     core_parallelism_.clear();
     locks_place_.clear();
+    periodic_transitions_.clear();
     task_info_.clear();
     node_index_ = 0;
   }
@@ -406,6 +414,10 @@ class PTPN {
 
   [[nodiscard]] const std::unordered_map<std::string, PlaceId>& lock_places() const {
     return locks_place_;
+  }
+
+  [[nodiscard]] const std::unordered_map<std::string, TransitionId>& periodic_transitions() const {
+    return periodic_transitions_;
   }
 
   [[nodiscard]] const std::unordered_map<std::string, TaskInfo>& task_info() const {
@@ -550,6 +562,7 @@ class PTPN {
   std::unordered_map<std::string, std::vector<NodeRef>> node_pn_map_;
   std::vector<PlaceId> cpus_place_;
   std::unordered_map<std::string, PlaceId> locks_place_;
+  std::unordered_map<std::string, TransitionId> periodic_transitions_;
   std::unordered_map<int, int> core_parallelism_;
   std::unordered_map<std::string, TaskInfo> task_info_;
   size_t node_index_ = 0;

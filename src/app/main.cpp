@@ -41,6 +41,10 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
                   "Canonicalization mode: equality, max-lower, or intersection "
                   "(default: equality)")
       ->check(CLI::IsMember({"equality", "max-lower", "intersection"}));
+  cmd->add_option("--tie-break", opts.tie_break_mode,
+                  "Equal-priority tie handling: index (deterministic, default) "
+                  "or all (explore every admissible active set)")
+      ->check(CLI::IsMember({"index", "all"}));
   cmd->add_flag("--extrapolation", opts.extrapolation,
                 "Enable k-extrapolation of clock zones: merges behaviorally "
                 "equivalent state classes, preserving the reachable marking "

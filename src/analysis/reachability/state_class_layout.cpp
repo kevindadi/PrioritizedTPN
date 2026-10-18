@@ -16,9 +16,11 @@ int StateClassReachabilityGraph::effective_latest(size_t transition) const {
   return latest == petri::INF ? INF_TIME : latest;
 }
 
-void StateClassReachabilityGraph::recompute_sets(StateClass& state) const {
+void StateClassReachabilityGraph::recompute_sets(StateClass& state,
+                                                 const TransitionSet& active) const {
   state.struct_enabled = Scheduling::structural_enabled(net_, state.marking);
-  state.priority_enabled = Scheduling::filter_priority_per_core(state.struct_enabled, net_);
+  state.priority_enabled = active;
+  std::sort(state.priority_enabled.begin(), state.priority_enabled.end());
 
   state.suspended.clear();
   // struct_enabled is sorted, so suspended stays sorted too.
@@ -54,24 +56,40 @@ void StateClassReachabilityGraph::build_layout(StateClass& state) const {
 }
 
 StateClass StateClassReachabilityGraph::compute_initial_class() {
-  StateClass state;
-  state.marking = net_.get_marking();
-  state.elapsed_time = 0.0;
+  std::vector<StateClass> initials = compute_initial_classes();
+  return std::move(initials.front());
+}
 
-  recompute_sets(state);
-  build_layout(state);
+std::vector<StateClass> StateClassReachabilityGraph::compute_initial_classes() {
+  StateClass base;
+  base.marking = net_.get_marking();
+  base.elapsed_time = 0.0;
 
-  // Every clock starts at zero, i.e. pinned to the reference variable x0.
-  const size_t n = state.clock_vars.size();
-  DBM zone(n);
-  for (size_t i = 1; i < n; ++i) {
-    zone.set_constraint(0, i, 0);
-    zone.set_constraint(i, 0, 0);
+  const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, base.marking);
+  const std::vector<TransitionSet> branches =
+      Scheduling::priority_branches(struct_enabled, net_, tie_break_mode_);
+
+  std::vector<StateClass> out;
+  out.reserve(branches.size());
+  for (const TransitionSet& active : branches) {
+    StateClass state = base;
+    recompute_sets(state, active);
+    build_layout(state);
+
+    // Every clock starts at zero, i.e. pinned to the reference variable x0.
+    const size_t n = state.clock_vars.size();
+    DBM zone(n);
+    for (size_t i = 1; i < n; ++i) {
+      zone.set_constraint(0, i, 0);
+      zone.set_constraint(i, 0, 0);
+    }
+    zone.minimize();
+    state.zone = std::move(zone);
+
+    out.push_back(std::move(state));
   }
-  zone.minimize();
-  state.zone = std::move(zone);
 
-  return state;
+  return out;
 }
 
 }  // namespace state_class

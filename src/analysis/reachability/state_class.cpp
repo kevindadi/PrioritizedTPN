@@ -37,6 +37,18 @@ size_t hash_state_class(const StateClass& state) {
   for (int value : state.marking) {
     hash_combine(seed, int_hash(value));
   }
+  // The selected active set is part of the semantic state: under
+  // ALL_BRANCHES, two classes can share marking/layout/zone but run different
+  // clocks. `suspended` is included as well so that a layout-equivalent but
+  // scheduler-different class never collides.
+  hash_combine(seed, state.priority_enabled.size());
+  for (size_t t : state.priority_enabled) {
+    hash_combine(seed, size_hash(t));
+  }
+  hash_combine(seed, state.suspended.size());
+  for (size_t t : state.suspended) {
+    hash_combine(seed, size_hash(t));
+  }
   for (const ClockVar& var : state.clock_vars) {
     hash_combine(seed, size_hash(static_cast<size_t>(var.kind)));
     hash_combine(seed, size_hash(var.transition));

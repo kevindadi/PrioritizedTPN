@@ -2,6 +2,7 @@
 
 #include "analysis/dbm/clock_state.h"
 #include "analysis/reachability/ptpn_analysis.h"
+#include "analysis/reachability/scheduling.h"
 
 namespace state_class {
 
@@ -126,10 +127,11 @@ void StateClassReachabilityGraph::build_successor_zone(StateClass& successor, co
   successor.zone = std::move(zone);
 }
 
-bool StateClassReachabilityGraph::fire(const StateClass& elapsed, size_t t,
-                                       StateClass& successor) const {
+std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& elapsed,
+                                                              size_t t) const {
+  std::vector<StateClass> result;
   if (!is_firable(elapsed, t)) {
-    return false;
+    return result;
   }
 
   // Step 1: intersect the firing-domain constraint h_t >= downSI(t). The
@@ -139,23 +141,42 @@ bool StateClassReachabilityGraph::fire(const StateClass& elapsed, size_t t,
   const size_t idx = static_cast<size_t>(elapsed.exec_index(t));
   const int lower = effective_earliest(t);
   if (!fired.tighten(0, idx, -lower)) {
-    return false;
+    return result;
   }
 
-  // Step 2: discrete token shuffle.
-  successor = StateClass();
-  successor.marking = petri::PTPN::fire(elapsed.marking, net_, petri::TransitionId{t});
-
-  // Steps 3 & 4: recompute the scheduler sets and the variable layout, then
-  // rebuild the zone carrying surviving clocks over from `fired`.
-  recompute_sets(successor);
-  build_layout(successor);
-  build_successor_zone(successor, fired, elapsed, t);
+  // Step 2: discrete token shuffle (branch-independent).
+  const petri::Marking marking =
+      petri::PTPN::fire(elapsed.marking, net_, petri::TransitionId{t});
+  const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, marking);
+  const std::vector<TransitionSet> branches =
+      Scheduling::priority_branches(struct_enabled, net_, tie_break_mode_);
 
   const int h_lower = -elapsed.zone.get_constraint(0, idx);
   const int firing_instant = std::max(lower, h_lower);
-  successor.elapsed_time = elapsed.elapsed_time + std::max(0, firing_instant);
 
+  result.reserve(branches.size());
+  for (const TransitionSet& active : branches) {
+    // Steps 3 & 4: scheduler sets and variable layout for this target branch,
+    // then rebuild the zone carrying surviving clocks over from `fired`.
+    StateClass successor;
+    successor.marking = marking;
+    recompute_sets(successor, active);
+    build_layout(successor);
+    build_successor_zone(successor, fired, elapsed, t);
+    successor.elapsed_time = elapsed.elapsed_time + std::max(0, firing_instant);
+    result.push_back(std::move(successor));
+  }
+
+  return result;
+}
+
+bool StateClassReachabilityGraph::fire(const StateClass& elapsed, size_t t,
+                                       StateClass& successor) const {
+  std::vector<StateClass> successors = fire_all(elapsed, t);
+  if (successors.empty()) {
+    return false;
+  }
+  successor = std::move(successors.front());
   return true;
 }
 

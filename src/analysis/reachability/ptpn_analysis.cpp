@@ -13,6 +13,10 @@ void StateClassReachabilityGraph::set_canonicalization_mode(CanonicalizationMode
   mode_ = mode;
 }
 
+void StateClassReachabilityGraph::set_tie_break_mode(TieBreakMode mode) {
+  tie_break_mode_ = mode;
+}
+
 void StateClassReachabilityGraph::set_extrapolation(bool enabled) {
   extrapolation_enabled_ = enabled;
   if (!enabled) {
@@ -88,14 +92,23 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
   reset_dbm_instrumentation();
   petri::reset_overflow_recording();
 
-  StateClass initial = compute_initial_class();
-  if (extrapolation_enabled_) {
-    initial.zone.extrapolate(extrapolation_k_);
+  std::vector<StateClass> initial_states = compute_initial_classes();
+  if (initial_states.empty()) {
+    return 0;
   }
-  initial_vertex_ = add_state(std::move(initial));
-  stats_.total_states = 1;
-
-  std::vector<SCVertex> frontier{initial_vertex_};
+  std::vector<SCVertex> frontier;
+  frontier.reserve(initial_states.size());
+  for (StateClass& initial : initial_states) {
+    if (extrapolation_enabled_) {
+      initial.zone.extrapolate(extrapolation_k_);
+    }
+    SCVertex v = add_state(std::move(initial));
+    if (frontier.empty()) {
+      initial_vertex_ = v;
+    }
+    frontier.push_back(v);
+    stats_.total_states++;
+  }
 
   while (!frontier.empty()) {
     std::vector<SCVertex> next_frontier;
@@ -142,14 +155,6 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
           continue;
         }
 
-        StateClass successor;
-        if (!fire(elapsed, t, successor)) {
-          continue;
-        }
-        if (extrapolation_enabled_) {
-          successor.zone.extrapolate(extrapolation_k_);
-        }
-
         // The real firing window of h_t: intersect its feasible range in the
         // time-elapsed zone with the static interval [downSI, upSI].
         const size_t hidx = static_cast<size_t>(elapsed.exec_index(t));
@@ -178,24 +183,33 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
         edge.dwell_min = dwell_min;
         edge.dwell_max = dwell_max;
 
-        SCVertex v;
-        if (find_match(successor, v)) {
-          stats_.dedup_hits++;
+        // In ALL_BRANCHES mode one firing yields one successor per admissible
+        // target active set; the edge weight is identical for all of them.
+        std::vector<StateClass> successors = fire_all(elapsed, t);
+        for (StateClass& successor : successors) {
+          if (extrapolation_enabled_) {
+            successor.zone.extrapolate(extrapolation_k_);
+          }
+
+          SCVertex v;
+          if (find_match(successor, v)) {
+            stats_.dedup_hits++;
+            boost::add_edge(u, v, edge, graph_);
+            stats_.total_transitions++;
+            continue;
+          }
+
+          if (stats_.total_states >= max_states) {
+            stats_.truncated = true;
+            continue;
+          }
+
+          v = add_state(std::move(successor));
+          stats_.total_states++;
           boost::add_edge(u, v, edge, graph_);
           stats_.total_transitions++;
-          continue;
+          next_frontier.push_back(v);
         }
-
-        if (stats_.total_states >= max_states) {
-          stats_.truncated = true;
-          continue;
-        }
-
-        v = add_state(std::move(successor));
-        stats_.total_states++;
-        boost::add_edge(u, v, edge, graph_);
-        stats_.total_transitions++;
-        next_frontier.push_back(v);
       }
 
       if (stats_.truncated) {

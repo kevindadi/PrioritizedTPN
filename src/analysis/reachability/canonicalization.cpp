@@ -6,10 +6,13 @@ namespace state_class {
 
 namespace {
 // Two classes share a variable layout iff they have the same marking (the
-// layout is fully determined by the marking), so comparing markings and the
-// clock-variable vector is enough to know the DBMs are dimension-compatible.
+// layout is fully determined by the marking) and the same selected active set
+// (which decides which clocks run and which suspension clocks exist). The
+// suspended set is derivable from those two and the net, but it is compared as
+// well so that the identity stays explicit and robust.
 bool same_layout(const StateClass& a, const StateClass& b) {
-  return a.marking == b.marking && a.clock_vars == b.clock_vars;
+  return a.marking == b.marking && a.clock_vars == b.clock_vars &&
+         a.priority_enabled == b.priority_enabled && a.suspended == b.suspended;
 }
 }  // namespace
 

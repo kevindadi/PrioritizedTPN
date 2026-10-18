@@ -83,6 +83,7 @@ void add_periodic_release_bindings(petri::PTPN& ptpn, const tdg::TDG& tdg) {
     ptpn.set_pre_arc(period_place, fire, 1);
     ptpn.set_post_arc(fire, period_place, 1);
     ptpn.set_post_arc(fire, node_it->second.first.as_place(), 1);
+    ptpn.set_periodic_transition(periodic_task.task, fire);
   }
 }
 
