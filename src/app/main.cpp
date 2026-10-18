@@ -45,6 +45,10 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
                 "Enable k-extrapolation of clock zones: merges behaviorally "
                 "equivalent state classes, preserving the reachable marking "
                 "set (default: off)");
+  cmd->add_option("--reduction", opts.reduction,
+                  "Partial-order reduction: none (exhaustive, default) or por "
+                  "(on-the-fly persistent sets)")
+      ->check(CLI::IsMember({"none", "por"}));
   add_export_target_options(cmd, opts.exports);
 }
 

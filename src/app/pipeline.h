@@ -25,6 +25,8 @@ struct PipelineOptions {
   bool debug_mode = false;
   std::string canonicalization_mode = "equality";
   bool extrapolation = false;
+  // Partial-order reduction: "none" (exhaustive, default) or "por".
+  std::string reduction = "none";
   bool skip_analysis = false;
   std::optional<SchedulePolicy> policy_override;
   std::string romeo_format = "scheduling-net";

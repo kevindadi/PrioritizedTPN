@@ -271,6 +271,10 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       spdlog::info("[SCG] k-extrapolation enabled (k={})",
                    reachability_graph.extrapolation_bound());
     }
+    if (opts.reduction == "por") {
+      reachability_graph.set_por_enabled(true);
+      spdlog::info("[SCG] Partial-order reduction enabled (persistent sets)");
+    }
     const auto scg_start = PipelineClock::now();
     const size_t state_count = reachability_graph.build(opts.max_states);
     const auto& reachability_stats = reachability_graph.get_statistics();

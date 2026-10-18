@@ -278,6 +278,7 @@ add_library(ptpn_reachability STATIC
     src/analysis/reachability/state_class_firing.cpp
     src/analysis/reachability/canonicalization.cpp
     src/analysis/reachability/scheduling.cpp
+    src/analysis/reachability/persistent_sets.cpp
 )
 target_link_libraries(ptpn_reachability
     PUBLIC

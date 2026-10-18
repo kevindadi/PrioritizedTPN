@@ -1,13 +1,17 @@
 #include "analysis/reachability/ptpn_analysis.h"
 
 #include <algorithm>
+#include <sstream>
 #include <spdlog/spdlog.h>
 
 #include "analysis/dbm/clock_state.h"
 
 namespace state_class {
 
-StateClassReachabilityGraph::StateClassReachabilityGraph(const petri::PTPN& net) : net_(net) {}
+StateClassReachabilityGraph::StateClassReachabilityGraph(const petri::PTPN& net) : net_(net) {
+  build_dependency_relation();
+  build_task_chain_places();
+}
 
 void StateClassReachabilityGraph::set_canonicalization_mode(CanonicalizationMode mode) {
   mode_ = mode;
@@ -128,10 +132,14 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
       std::vector<size_t> enabled;
       std::vector<EntryBounds> entry_bounds;
       StateClass elapsed;
+      TransitionSet persistent;
       {
         const StateClass& current = boost::get(boost::vertex_name, graph_, u);
         elapsed = time_elapse(current);
         enabled.assign(current.priority_enabled.begin(), current.priority_enabled.end());
+        if (por_enabled_) {
+          persistent = persistent_set_for(current, elapsed, enabled);
+        }
         entry_bounds.resize(enabled.size());
         // The entry range of h_t comes from the pre-elapse zone (same layout,
         // same index as the elapsed zone).
@@ -145,7 +153,37 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
         }
       }
 
+      // Partial-order reduction: explore only the persistent set of this
+      // class. When POR is disabled every enabled transition is explored,
+      // which is the exhaustive path used by all existing callers.
+      std::vector<unsigned char> explore(enabled.size(), 1);
+      if (por_enabled_) {
+        stats_.persistent_set_calls++;
+        stats_.persistent_transitions_explored += persistent.size();
+        stats_.persistent_transitions_skipped += enabled.size() - persistent.size();
+        stats_.max_persistent_set_size =
+            std::max(stats_.max_persistent_set_size, persistent.size());
+        for (size_t k = 0; k < enabled.size(); ++k) {
+          explore[k] = contains(persistent, enabled[k]) ? 1 : 0;
+        }
+        if (spdlog::should_log(spdlog::level::debug)) {
+          std::ostringstream enabled_text;
+          std::ostringstream persistent_text;
+          for (size_t t : enabled) {
+            enabled_text << " T" << t << "(up=" << effective_latest(t) << ")";
+          }
+          for (size_t t : persistent) {
+            persistent_text << " T" << t;
+          }
+          spdlog::debug("[POR] state={} enabled:{} | persistent:{}", stats_.total_states,
+                        enabled_text.str(), persistent_text.str());
+        }
+      }
+
       for (size_t k = 0; k < enabled.size(); ++k) {
+        if (explore[k] == 0) {
+          continue;
+        }
         const size_t t = enabled[k];
         if (!is_firable(elapsed, t)) {
           continue;
@@ -224,6 +262,14 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
       "truncated={}, dbm_minimize_calls={}",
       stats_.total_states, stats_.total_transitions, stats_.dedup_hits,
       stats_.truncated ? "true" : "false", get_dbm_instrumentation().minimize_calls);
+  if (por_enabled_) {
+    spdlog::info(
+        "[SCG] POR: persistent_set_calls={}, transitions_explored={}, "
+        "transitions_skipped={}, max_persistent_set_size={}, states={}, edges={}",
+        stats_.persistent_set_calls, stats_.persistent_transitions_explored,
+        stats_.persistent_transitions_skipped, stats_.max_persistent_set_size,
+        stats_.total_states, stats_.total_transitions);
+  }
 
   return stats_.total_states;
 }
