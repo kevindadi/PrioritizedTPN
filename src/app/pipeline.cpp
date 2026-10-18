@@ -307,6 +307,10 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
             opts.canonicalization_mode);
       }
     }
+    if (opts.reduction_mode == "por") {
+      reachability_graph.set_por_enabled(true);
+      spdlog::info("[SCG] Partial-order reduction enabled (persistent sets)");
+    }
     const auto scg_start = PipelineClock::now();
     const size_t state_count = reachability_graph.build(opts.max_states);
     const auto& reachability_stats = reachability_graph.get_statistics();

@@ -16,6 +16,7 @@ add_executable(ptpn_test
   test_extrapolation.cpp
   test_zone_merging.cpp
   test_metrics.cpp
+  test_por.cpp
   test_saturation.cpp
   test_tdg2romeo.cpp
   test_tdg2pn_lowering.cpp
