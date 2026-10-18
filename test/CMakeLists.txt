@@ -14,6 +14,7 @@ add_executable(ptpn_test
   test_ptpn_parser.cpp
   test_analysis_semantics.cpp
   test_extrapolation.cpp
+  test_zone_merging.cpp
   test_metrics.cpp
   test_saturation.cpp
   test_tdg2romeo.cpp

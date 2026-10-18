@@ -21,6 +21,7 @@ bool MetricsAnalyzer::save_to_json(const MetricsReport& report, const std::strin
 
   out << "{\n";
   out << "  \"exact\": " << (report.exact ? "true" : "false") << ",\n";
+  out << "  \"wcrt_lb_valid\": " << (report.wcrt_lb_valid ? "true" : "false") << ",\n";
   out << "  \"states\": " << report.states << ",\n";
   out << "  \"transitions\": " << report.transitions << ",\n";
   out << "  \"bounded\": " << (report.bounded ? "true" : "false") << ",\n";
@@ -51,9 +52,10 @@ bool MetricsAnalyzer::save_to_json(const MetricsReport& report, const std::strin
     out << "      \"observed\": " << (t.observed ? "true" : "false") << ",\n";
     out << "      \"activations\": " << t.activations << ",\n";
     out << "      \"wcrt\": " << time_json(t.wcrt) << ",\n";
-    out << "      \"wcrt_lb\": " << time_json(t.wcrt_lb) << ",\n";
-    out << "      \"wcrt_interval_tight\": " << (t.wcrt_interval_tight ? "true" : "false")
-        << ",\n";
+    out << "      \"wcrt_lb\": "
+        << (report.wcrt_lb_valid ? time_json(t.wcrt_lb) : std::string("null")) << ",\n";
+    out << "      \"wcrt_interval_tight\": "
+        << ((report.wcrt_lb_valid && t.wcrt_interval_tight) ? "true" : "false") << ",\n";
     out << "      \"bcrt\": " << time_json(t.bcrt) << ",\n";
     out << "      \"jitter\": " << time_json(t.jitter) << ",\n";
     out << "      \"worst_interference\": " << time_json(t.worst_interference) << ",\n";

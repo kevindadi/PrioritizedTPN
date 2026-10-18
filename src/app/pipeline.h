@@ -24,6 +24,7 @@ struct PipelineOptions {
   size_t max_states = 10000;
   bool debug_mode = false;
   std::string canonicalization_mode = "equality";
+  std::string reduction_mode = "none";
   bool extrapolation = false;
   // Keep the suspension clocks w_t in the state-class DBM. Off by default: the
   // exact projection preserves reachability and every metric while using a

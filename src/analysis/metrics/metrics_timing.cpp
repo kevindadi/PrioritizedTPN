@@ -189,9 +189,14 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
       // Certified lower bound for the same worst case: every edge's dwell is at
       // least (fire_min - entry_high)^+, so the longest such path is a sound
       // lower bound on the true WCRT. [wcrt_lb, wcrt] brackets the exact value.
-      tm.wcrt_lb = to_time(run_dp(task, w_dwell_min, true, release_states));
-      tm.wcrt_interval_tight =
-          !tm.wcrt.infinite && !tm.wcrt_lb.infinite && tm.wcrt.value == tm.wcrt_lb.value;
+      // With a state-merging reduction, the candidate classes that carried the
+      // tighter dwell bounds are gone, so this bound is not certified for the
+      // original graph and is left unavailable instead of being misreported.
+      if (wcrt_lb_valid_) {
+        tm.wcrt_lb = to_time(run_dp(task, w_dwell_min, true, release_states));
+        tm.wcrt_interval_tight =
+            !tm.wcrt.infinite && !tm.wcrt_lb.infinite && tm.wcrt.value == tm.wcrt_lb.value;
+      }
       tm.bcrt = to_time(run_dp(task, w_dwell_min, false, release_states));
       // The per-edge dwell_min sum ignores cross-state DBM correlation and can
       // dip below the execution demand. BCET is an independent, sound lower

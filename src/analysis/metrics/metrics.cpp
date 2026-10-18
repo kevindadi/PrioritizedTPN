@@ -9,8 +9,12 @@ std::string TimeValue::to_string() const {
 }
 
 MetricsAnalyzer::MetricsAnalyzer(const SCGraph& graph, const petri::PTPN& net, SCVertex initial,
-                                 bool exact)
-    : graph_(graph), net_(net), initial_(initial), exact_(exact) {
+                                 bool exact, bool wcrt_lb_valid)
+    : graph_(graph),
+      net_(net),
+      initial_(initial),
+      exact_(exact),
+      wcrt_lb_valid_(wcrt_lb_valid) {
   flatten_graph();
   build_topology();
 }
@@ -178,6 +182,7 @@ bool MetricsAnalyzer::task_blocked_by_lower(const TaskTopology& task, size_t v) 
 MetricsReport MetricsAnalyzer::analyze() {
   MetricsReport report;
   report.exact = exact_;
+  report.wcrt_lb_valid = wcrt_lb_valid_;
   report.states = num_vertices_;
   size_t edge_count = 0;
   for (const auto& edges : out_edges_) {
