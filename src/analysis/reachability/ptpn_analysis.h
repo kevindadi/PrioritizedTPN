@@ -46,7 +46,7 @@ class StateClassReachabilityGraph {
   explicit StateClassReachabilityGraph(const petri::PTPN& net);
 
   // Replaces the policy rule. The constructor installs
-  // make_firing_rule(net_.schedule_policy()), so ordinary callers never need to
+  // make_firing_rule(net.schedule_policy(), net), so ordinary callers never need to
   // touch this; it exists for tests and future dynamic policies.
   void set_firing_rule(std::unique_ptr<FiringRule> rule);
 

@@ -34,14 +34,16 @@ inline petri::TimeInterval immediate_interval() {
 }
 
 // The resume policies (the legacy "fixed" alias, fixed_prior_with_resume,
-// and RM/DM whose priorities are computed during lowering) no longer rely on the
+// RM/DM whose priorities are computed during lowering, and PIP whose effective
+// priorities are dynamic) no longer rely on the
 // structural CPU-resource place or the preempt/suspended/resume sub-net.
 // Preemption is expressed natively by the analysis engine (per-core priority
 // filtering + execution-clock freeze), so their execution segments are marked
 // suspendable. The restart policy keeps the structural encoding untouched.
 inline bool is_resume_policy(SchedulePolicy policy) {
   return policy == SchedulePolicy::FIXED || policy == SchedulePolicy::FIXED_PRIOR_WITH_RESUME ||
-         policy == SchedulePolicy::RM || policy == SchedulePolicy::DM;
+         policy == SchedulePolicy::RM || policy == SchedulePolicy::DM ||
+         policy == SchedulePolicy::PIP;
 }
 
 inline petri::TransitionId add_control_transition(

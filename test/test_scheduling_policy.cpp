@@ -185,6 +185,143 @@ const char* kDmEquivalentFixedJson = R"({
   "edges": []
 })";
 
+// Priority-inversion scenario. L starts at t=0 and acquires mutex1 during its
+// long critical section; H and M are released every 15 time units. H (highest
+// base priority) needs the same mutex; M is ready on the same core.
+//
+//   fixed: M preempts L's critical section -> H's response time is inflated.
+//   pip:   L inherits H's priority while H waits -> M cannot preempt, and the
+//          lock is released earlier.
+std::string pip_inversion_json(const std::string& policy) {
+  return R"({
+    "graph": {"name": "PipInversion"},
+    "configuration": {
+      "num_cpus": 1,
+      "cores_per_cpu": 1,
+      "policy": ")" + policy + R"(",
+      "shared_locks": ["mutex1"],
+      "start": [{"task": "L", "tokens": 1}],
+      "periodic": [
+        {"task": "H", "period": 15},
+        {"task": "M", "period": 15}
+      ]
+    },
+    "nodes": [
+      {"id": "H", "type": "task", "priority": 3, "core": 0,
+       "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]},
+      {"id": "M", "type": "task", "priority": 2, "core": 0,
+       "time": [[2, 2]], "locks": []},
+      {"id": "L", "type": "task", "priority": 1, "core": 0,
+       "time": [[10, 10], [10, 10], [10, 10]], "locks": ["mutex1"]}
+    ],
+    "edges": []
+  })";
+}
+
+// H (priority 3) and L (priority 1) share mutex1.
+const char* kPipDirectJson = R"({
+  "graph": {"name": "PipDirect"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "pip",
+    "shared_locks": ["mutex1"]
+  },
+  "nodes": [
+    {"id": "H", "type": "task", "priority": 3, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]},
+    {"id": "L", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]}
+  ],
+  "edges": []
+})";
+
+// Nested locks: L holds lock1, M holds lock2 and waits for lock1, H waits for
+// lock2. M's locks list is the acquisition order (lock2 first).
+const char* kPipNestedJson = R"({
+  "graph": {"name": "PipNested"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "pip",
+    "shared_locks": ["lock1", "lock2"]
+  },
+  "nodes": [
+    {"id": "H", "type": "task", "priority": 3, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["lock2"]},
+    {"id": "M", "type": "task", "priority": 2, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]],
+     "locks": ["lock2", "lock1"]},
+    {"id": "L", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["lock1"]}
+  ],
+  "edges": []
+})";
+
+// Two independent locks, each held by a low-priority task while an equal-
+// priority (5) high-priority task waits.
+const char* kPipTieJson = R"({
+  "graph": {"name": "PipTie"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "pip",
+    "shared_locks": ["m1", "m2"]
+  },
+  "nodes": [
+    {"id": "B1", "type": "task", "priority": 5, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["m1"]},
+    {"id": "B2", "type": "task", "priority": 5, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["m2"]},
+    {"id": "A1", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["m1"]},
+    {"id": "A2", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["m2"]}
+  ],
+  "edges": []
+})";
+
+// Two tasks hold the same lock in the same marking (impossible for a real
+// capacity-1 lock place, exercised to verify the conservative fallback).
+const char* kPipTwoHoldersJson = R"({
+  "graph": {"name": "PipTwoHolders"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "pip",
+    "shared_locks": ["mutex1"]
+  },
+  "nodes": [
+    {"id": "H", "type": "task", "priority": 3, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]},
+    {"id": "A", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]},
+    {"id": "B", "type": "task", "priority": 2, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]}
+  ],
+  "edges": []
+})";
+
+// PIP requires task_place_capacity == 1; queued job tokens would make the
+// chain-position ownership inference ambiguous.
+const char* kPipCapacityTwoJson = R"({
+  "graph": {"name": "PipCapacityTwo"},
+  "configuration": {
+    "num_cpus": 1,
+    "cores_per_cpu": 1,
+    "policy": "pip",
+    "task_place_capacity": 2,
+    "shared_locks": ["mutex1"]
+  },
+  "nodes": [
+    {"id": "H", "type": "task", "priority": 3, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]},
+    {"id": "L", "type": "task", "priority": 1, "core": 0,
+     "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]}
+  ],
+  "edges": []
+})";
+
 // Test double: drops one transition and overrides one transition's priority.
 class TestFiringRule : public FiringRule {
  public:
@@ -432,11 +569,19 @@ TEST(SchedulingPolicyTest, PolicyPreemptionModesMatchCurrentCoverage) {
                 ->preemption_mode(),
             PreemptionMode::RESTART);
 
-  // Dynamic lock protocols are not implemented in this phase; they fall back
-  // to the static rule and non-preemptive handling.
+  // PIP is analyzed dynamically and uses resume-style preemption.
+  auto pip_rule = state_class::make_firing_rule(SchedulePolicy::PIP);
+  ASSERT_NE(pip_rule, nullptr);
+  EXPECT_NE(dynamic_cast<state_class::PipFiringRule*>(pip_rule.get()), nullptr);
+  EXPECT_EQ(pip_rule->preemption_mode(), PreemptionMode::RESUME);
+  EXPECT_TRUE(pip_rule->admissible(context, 0));
+  EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::PIP));
+
+  // Unimplemented policies fall back to the static rule and non-preemptive
+  // handling.
   for (const SchedulePolicy policy :
-       {SchedulePolicy::PIP, SchedulePolicy::PCP, SchedulePolicy::SRP,
-        SchedulePolicy::EDF, SchedulePolicy::LLF, SchedulePolicy::FIFO}) {
+       {SchedulePolicy::PCP, SchedulePolicy::SRP, SchedulePolicy::EDF,
+        SchedulePolicy::LLF, SchedulePolicy::FIFO}) {
     auto rule = state_class::make_firing_rule(policy);
     EXPECT_EQ(rule->preemption_mode(), PreemptionMode::NON_PREEMPTIVE);
     EXPECT_TRUE(rule->admissible(context, 0));
@@ -565,6 +710,336 @@ TEST(SchedulingPolicyTest, DmLoweringUsesResumeResourcesAndComputedPriorities) {
   EXPECT_EQ(net.task_info().at("H").priority, 3);
   EXPECT_EQ(net.task_info().at("M").priority, 2);
   EXPECT_EQ(net.task_info().at("L").priority, 1);
+}
+
+// ---------------------------------------------------------------------------
+// 7. PIP: dynamic priority inheritance
+// ---------------------------------------------------------------------------
+
+TEST(PipPolicyTest, PriorityInheritanceReducesHighPriorityWcrt) {
+  const tdg::TDG fixed_tdg = parse_tdg(pip_inversion_json("fixed"));
+  const tdg::TDG pip_tdg = parse_tdg(pip_inversion_json("pip"));
+  const petri::PTPN fixed_net = lower(fixed_tdg);
+  const petri::PTPN pip_net = lower(pip_tdg);
+
+  ASSERT_EQ(fixed_net.schedule_policy(), SchedulePolicy::FIXED);
+  ASSERT_EQ(pip_net.schedule_policy(), SchedulePolicy::PIP);
+
+  const auto fixed_report = analyze(fixed_net);
+  const auto pip_report = analyze(pip_net);
+
+  const auto& fixed_h = task_metrics(fixed_report, "H");
+  const auto& pip_h = task_metrics(pip_report, "H");
+  EXPECT_TRUE(fixed_h.observed);
+  EXPECT_TRUE(pip_h.observed);
+  ASSERT_FALSE(fixed_h.wcrt.infinite);
+  ASSERT_FALSE(pip_h.wcrt.infinite);
+
+  // L inherits H's priority while H waits on the mutex, so M cannot preempt
+  // L's critical section and H finishes earlier.
+  EXPECT_GT(fixed_h.wcrt.value, pip_h.wcrt.value);
+  EXPECT_EQ(fixed_h.wcrt.value, 10);
+  EXPECT_EQ(pip_h.wcrt.value, 8);
+
+  // Both policies keep the medium-priority task schedulable and observed.
+  EXPECT_TRUE(task_metrics(fixed_report, "M").observed);
+  EXPECT_TRUE(task_metrics(pip_report, "M").observed);
+}
+
+TEST(PipPolicyTest, EffectivePriorityFollowsMarkingAndReverts) {
+  const petri::PTPN net = lower(parse_tdg(kPipDirectJson));
+  const state_class::PipFiringRule rule(net);
+
+  const size_t acquire = state_class::PipFiringRule::kLockAcquireBase;
+  const size_t l_hold = chain_place(net, "L", acquire + 1);
+  const size_t h_pre = chain_place(net, "H", acquire - 1);
+  const size_t l_crit = chain_transition(net, "L", acquire + 2);
+  const size_t h_acquire = chain_transition(net, "H", acquire);
+  const size_t l_consume = find_transition(net, "L_consume");
+  const size_t lock = net.lock_places().at("mutex1").index();
+  ASSERT_NE(l_hold, SIZE_MAX);
+  ASSERT_NE(h_pre, SIZE_MAX);
+  ASSERT_NE(l_crit, SIZE_MAX);
+  ASSERT_NE(h_acquire, SIZE_MAX);
+  ASSERT_NE(l_consume, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[l_hold] = 1;  // L holds mutex1
+  state.marking[h_pre] = 1;   // H waits on the (empty) lock place
+  const PolicyContext context{net, &state};
+
+  // H (base 3) waits for L's lock: L's inherited effective priority is 3.
+  EXPECT_EQ(rule.effective_priority(context, l_crit), 3);
+  EXPECT_EQ(rule.effective_priority(context, h_acquire), 3);
+
+  // Reversion: once the lock is free again, H is no longer blocked and L
+  // returns to its base priority.
+  state.marking[lock] = 1;
+  EXPECT_EQ(rule.effective_priority(context, l_crit), 1);
+
+  // No waiter at all: still the base priority.
+  state.marking[lock] = 0;
+  state.marking[h_pre] = 0;
+  EXPECT_EQ(rule.effective_priority(context, l_crit), 1);
+  EXPECT_EQ(rule.effective_priority(context, h_acquire), 3);
+
+  // Control transitions keep their static priority (0 for consume).
+  EXPECT_EQ(rule.effective_priority(context, l_consume), 0);
+}
+
+TEST(PipPolicyTest, TransitiveInheritancePropagatesThroughHolderChain) {
+  const petri::PTPN net = lower(parse_tdg(kPipNestedJson));
+  const state_class::PipFiringRule rule(net);
+
+  const size_t acquire = state_class::PipFiringRule::kLockAcquireBase;
+  const size_t stride = state_class::PipFiringRule::kLockStride;
+  const size_t l_hold1 = chain_place(net, "L", acquire + 1);
+  const size_t h_pre2 = chain_place(net, "H", acquire - 1);
+  const size_t m_hold2 = chain_place(net, "M", acquire + 1);
+  const size_t m_pre1 = chain_place(net, "M", acquire + stride - 1);
+  const size_t m_acquire1 = chain_transition(net, "M", acquire + stride);
+  const size_t l_crit = chain_transition(net, "L", acquire + 2);
+
+  ASSERT_NE(l_hold1, SIZE_MAX);
+  ASSERT_NE(h_pre2, SIZE_MAX);
+  ASSERT_NE(m_hold2, SIZE_MAX);
+  ASSERT_NE(m_pre1, SIZE_MAX);
+  ASSERT_NE(m_acquire1, SIZE_MAX);
+  ASSERT_NE(l_crit, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  // Reachable snapshot with exactly one token per task chain:
+  //   L: token at its first hold place -> holds lock1.
+  //   M: token past its first hold place, at the second acquire's pre-place.
+  //      Position-range ownership still sees lock2 as held.
+  //   H: token at the acquire pre-place of lock2 -> waits for lock2.
+  state.marking[l_hold1] = 1;
+  state.marking[m_pre1] = 1;
+  state.marking[h_pre2] = 1;
+  const PolicyContext context{net, &state};
+
+  // M's first hold place is empty; ownership comes from the token range.
+  EXPECT_EQ(state.marking[m_hold2], 0);
+
+  // H (3) waits for lock2 held by M -> M inherits 3; M waits for lock1
+  // held by L -> L inherits M's effective priority 3.
+  EXPECT_EQ(rule.effective_priority(context, m_acquire1), 3);
+  EXPECT_EQ(rule.effective_priority(context, l_crit), 3);
+
+  // With H no longer waiting, inheritance still propagates one hop:
+  // M waits for L, so L inherits M's base priority 2 (not H's 3).
+  state.marking[h_pre2] = 0;
+  EXPECT_EQ(rule.effective_priority(context, m_acquire1), 2);
+  EXPECT_EQ(rule.effective_priority(context, l_crit), 2);
+
+  // Move M's token back to its first hold place: M still owns lock2 but no
+  // longer waits, so L returns to its base priority.
+  state.marking[m_pre1] = 0;
+  state.marking[m_hold2] = 1;
+  EXPECT_EQ(rule.effective_priority(context, m_acquire1), 2);
+  EXPECT_EQ(rule.effective_priority(context, l_crit), 1);
+}
+
+TEST(PipPolicyTest, MultiLockRangeOwnershipCoversWholeCriticalSection) {
+  const petri::PTPN net = lower(parse_tdg(kPipNestedJson));
+  const state_class::PipFiringRule rule(net);
+
+  const size_t acquire = state_class::PipFiringRule::kLockAcquireBase;
+  const size_t stride = state_class::PipFiringRule::kLockStride;
+  const size_t m_chain_length = net.node_pn_map().at("M").size();
+  const size_t release0 =
+      m_chain_length - state_class::PipFiringRule::kLockReleaseSuffix;
+
+  const size_t h_pre2 = chain_place(net, "H", acquire - 1);
+  const size_t l_hold1 = chain_place(net, "L", acquire + 1);
+  const size_t m_hold2 = chain_place(net, "M", acquire + 1);
+  const size_t m_waiting1 = chain_place(net, "M", acquire + stride - 1);
+  const size_t m_before_release = chain_place(net, "M", release0 - 1);
+  const size_t m_after_release = chain_place(net, "M", release0 + 1);
+  const size_t m_probe = chain_transition(net, "M", acquire + 2);
+  const size_t l_probe = chain_transition(net, "L", acquire + 2);
+
+  ASSERT_NE(h_pre2, SIZE_MAX);
+  ASSERT_NE(l_hold1, SIZE_MAX);
+  ASSERT_NE(m_hold2, SIZE_MAX);
+  ASSERT_NE(m_waiting1, SIZE_MAX);
+  ASSERT_NE(m_before_release, SIZE_MAX);
+  ASSERT_NE(m_after_release, SIZE_MAX);
+  ASSERT_NE(m_probe, SIZE_MAX);
+  ASSERT_NE(l_probe, SIZE_MAX);
+
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[h_pre2] = 1;  // H waits for lock2
+  state.marking[l_hold1] = 1;  // L holds lock1
+
+  // M has already left its first hold place (position 6) and is at the
+  // second acquire pre-place (position 8), inside lock2's ownership range.
+  state.marking[m_waiting1] = 1;
+  EXPECT_EQ(state.marking[m_hold2], 0);
+  const PolicyContext context{net, &state};
+  EXPECT_EQ(rule.effective_priority(context, m_probe), 3);
+  EXPECT_EQ(rule.effective_priority(context, l_probe), 3);
+
+  // Position release-1 is the release transition's pre-place: still owned.
+  state.marking[m_waiting1] = 0;
+  state.marking[m_before_release] = 1;
+  EXPECT_EQ(rule.effective_priority(context, m_probe), 3);
+  // M no longer waits for lock1, so L keeps its base priority.
+  EXPECT_EQ(rule.effective_priority(context, l_probe), 1);
+
+  // Position release+1 is after the release transition: no longer owned.
+  // The lock place deliberately stays empty so H keeps waiting; this direct
+  // marking is inconsistent at the boundary and only exercises the range.
+  state.marking[m_before_release] = 0;
+  state.marking[m_after_release] = 1;
+  EXPECT_EQ(rule.effective_priority(context, m_probe), 2);
+  EXPECT_EQ(rule.effective_priority(context, l_probe), 1);
+}
+
+TEST(PipPolicyTest, LoweringRejectsPipWithTaskPlaceCapacityAboveOne) {
+  const tdg::TDG tdg = parse_tdg(kPipCapacityTwoJson);
+  try {
+    lower(tdg);
+    FAIL() << "expected lowering to reject task_place_capacity > 1 for pip";
+  } catch (const std::invalid_argument& error) {
+    EXPECT_NE(std::string(error.what()).find("task_place_capacity"),
+              std::string::npos);
+  }
+
+  // The default capacity of 1 remains accepted.
+  EXPECT_NO_THROW(lower(parse_tdg(kPipDirectJson)));
+}
+
+TEST(PipPolicyTest, LoweringRejectsMultipleInitialJobs) {
+  const std::string json = R"({
+    "graph": {"name": "PipStartTokens"},
+    "configuration": {
+      "num_cpus": 1,
+      "cores_per_cpu": 1,
+      "policy": "pip",
+      "start": [{"task": "H", "tokens": 2}],
+      "shared_locks": ["mutex1"]
+    },
+    "nodes": [
+      {"id": "H", "type": "task", "priority": 3, "core": 0,
+       "time": [[1, 1], [1, 1], [1, 1]], "locks": ["mutex1"]}
+    ],
+    "edges": []
+  })";
+  try {
+    lower(parse_tdg(json));
+    FAIL() << "expected lowering to reject multiple initial PIP jobs";
+  } catch (const std::invalid_argument& error) {
+    EXPECT_NE(std::string(error.what()).find("one initial job"),
+              std::string::npos);
+  }
+}
+
+TEST(PipPolicyTest, EqualInheritedPrioritiesEnumerateBothBranches) {
+  const petri::PTPN net = lower(parse_tdg(kPipTieJson));
+  const state_class::PipFiringRule rule(net);
+
+  const size_t acquire = state_class::PipFiringRule::kLockAcquireBase;
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  // A1/A2 each hold one lock; B1/B2 wait for the respective lock.
+  state.marking[chain_place(net, "A1", acquire + 1)] = 1;
+  state.marking[chain_place(net, "A2", acquire + 1)] = 1;
+  state.marking[chain_place(net, "B1", acquire - 1)] = 1;
+  state.marking[chain_place(net, "B2", acquire - 1)] = 1;
+  const PolicyContext context{net, &state};
+
+  const size_t a1_crit = chain_transition(net, "A1", acquire + 2);
+  const size_t a2_crit = chain_transition(net, "A2", acquire + 2);
+  ASSERT_NE(a1_crit, SIZE_MAX);
+  ASSERT_NE(a2_crit, SIZE_MAX);
+  EXPECT_EQ(rule.effective_priority(context, a1_crit), 5);
+  EXPECT_EQ(rule.effective_priority(context, a2_crit), 5);
+
+  // One core, capacity 1: both inherited-priority candidates are maximal and
+  // both tie resolutions must be present.
+  const auto branches =
+      Scheduling::priority_branches({a1_crit, a2_crit}, net, rule, context);
+  ASSERT_EQ(branches.size(), 2u);
+  // Branch order follows transition indices, which need not match task order.
+  EXPECT_EQ(branches[0],
+            (state_class::TransitionSet{std::min(a1_crit, a2_crit)}));
+  EXPECT_EQ(branches[1],
+            (state_class::TransitionSet{std::max(a1_crit, a2_crit)}));
+}
+
+TEST(PipPolicyTest, AmbiguousChainsAndMultipleHoldersFallBackToBase) {
+  // (a) Two job tokens in H's chain (a queued release): the chain position is
+  // ambiguous, so the state is unsupported for H and no inheritance is
+  // inferred; L stays at its base priority.
+  const petri::PTPN direct = lower(parse_tdg(kPipDirectJson));
+  const state_class::PipFiringRule direct_rule(direct);
+  const size_t acquire = state_class::PipFiringRule::kLockAcquireBase;
+  const size_t h_entry = chain_place(direct, "H", 0);
+  state_class::StateClass state;
+  state.marking.assign(direct.num_places(), 0);
+  state.marking[chain_place(direct, "L", acquire + 1)] = 1;
+  state.marking[chain_place(direct, "H", acquire - 1)] = 1;
+  state.marking[h_entry] = 1;  // second in-flight job token
+  const PolicyContext direct_context{direct, &state};
+  EXPECT_EQ(direct_rule.effective_priority(
+                direct_context, chain_transition(direct, "L", acquire + 2)),
+            1);
+  EXPECT_EQ(direct_rule.effective_priority(
+                direct_context, chain_transition(direct, "H", acquire)),
+            3);
+
+  // (b) Two holders for the same lock: propagation through that lock is
+  // disabled, so both holders keep their base priorities.
+  const petri::PTPN two = lower(parse_tdg(kPipTwoHoldersJson));
+  const state_class::PipFiringRule two_rule(two);
+  state_class::StateClass two_state;
+  two_state.marking.assign(two.num_places(), 0);
+  two_state.marking[chain_place(two, "A", acquire + 1)] = 1;
+  two_state.marking[chain_place(two, "B", acquire + 1)] = 1;
+  two_state.marking[chain_place(two, "H", acquire - 1)] = 1;
+  const PolicyContext two_context{two, &two_state};
+  EXPECT_EQ(two_rule.effective_priority(two_context, chain_transition(two, "A", acquire + 2)),
+            1);
+  EXPECT_EQ(two_rule.effective_priority(two_context, chain_transition(two, "B", acquire + 2)),
+            2);
+  EXPECT_EQ(two_rule.effective_priority(two_context, chain_transition(two, "H", acquire)), 3);
+}
+
+TEST(PipPolicyTest, PipUsesResumeLoweringAndNetAwareRule) {
+  EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::PIP));
+
+  const petri::PTPN net = lower(parse_tdg(kPipDirectJson));
+  ASSERT_EQ(net.schedule_policy(), SchedulePolicy::PIP);
+
+  // Resume-style lowering: no structural core place, suspendable execution
+  // segments.
+  EXPECT_EQ(find_place(net, "core0"), SIZE_MAX);
+  const size_t h_exec = find_transition(net, "H_exec_2");
+  ASSERT_NE(h_exec, SIZE_MAX);
+  EXPECT_TRUE(net.get_transition(petri::TransitionId{h_exec}).suspendable);
+
+  // The net-aware factory precomputes PIP's index. The policy-only factory
+  // builds it lazily from PolicyContext::net and behaves identically.
+  auto net_rule = state_class::make_firing_rule(SchedulePolicy::PIP, net);
+  auto lazy_rule = state_class::make_firing_rule(SchedulePolicy::PIP);
+  ASSERT_NE(dynamic_cast<state_class::PipFiringRule*>(net_rule.get()), nullptr);
+  ASSERT_NE(dynamic_cast<state_class::PipFiringRule*>(lazy_rule.get()), nullptr);
+  EXPECT_EQ(net_rule->preemption_mode(), PreemptionMode::RESUME);
+  EXPECT_EQ(lazy_rule->preemption_mode(), PreemptionMode::RESUME);
+
+  const size_t acquire = state_class::PipFiringRule::kLockAcquireBase;
+  state_class::StateClass state;
+  state.marking.assign(net.num_places(), 0);
+  state.marking[chain_place(net, "L", acquire + 1)] = 1;
+  state.marking[chain_place(net, "H", acquire - 1)] = 1;
+  const PolicyContext context{net, &state};
+  const size_t l_crit = chain_transition(net, "L", acquire + 2);
+  EXPECT_EQ(net_rule->effective_priority(context, l_crit), 3);
+  EXPECT_EQ(lazy_rule->effective_priority(context, l_crit), 3);
 }
 
 

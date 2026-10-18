@@ -18,7 +18,7 @@ void hash_combine(size_t& seed, size_t value) {
 }  // namespace
 
 StateClassReachabilityGraph::StateClassReachabilityGraph(const petri::PTPN& net) : net_(net) {
-  set_firing_rule(make_firing_rule(net.schedule_policy()));
+  set_firing_rule(make_firing_rule(net.schedule_policy(), net));
 }
 
 void StateClassReachabilityGraph::set_firing_rule(std::unique_ptr<FiringRule> rule) {
