@@ -45,6 +45,9 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
                 "Enable k-extrapolation of clock zones: merges behaviorally "
                 "equivalent state classes, preserving the reachable marking "
                 "set (default: off)");
+  cmd->add_flag("--keep-suspension-clocks", opts.keep_suspension_clocks,
+                "Keep suspension clocks w_t in the state-class zone (default: "
+                "project them out; exact for reachability and metrics)");
   add_export_target_options(cmd, opts.exports);
 }
 

@@ -25,6 +25,10 @@ struct PipelineOptions {
   bool debug_mode = false;
   std::string canonicalization_mode = "equality";
   bool extrapolation = false;
+  // Keep the suspension clocks w_t in the state-class DBM. Off by default: the
+  // exact projection preserves reachability and every metric while using a
+  // smaller DBM.
+  bool keep_suspension_clocks = false;
   bool skip_analysis = false;
   std::optional<SchedulePolicy> policy_override;
   std::string romeo_format = "scheduling-net";
