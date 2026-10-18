@@ -22,6 +22,7 @@ add_executable(ptpn_test
   test_invariants.cpp
   test_parser_robustness.cpp
   test_conversion.cpp
+  test_time_horizon.cpp
 )
 
 target_link_libraries(ptpn_test

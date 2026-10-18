@@ -34,6 +34,41 @@ void MetricsAnalyzer::compute_utilisation(MetricsReport& report) {
     }
   }
 
+  // Collect all real cores.
+  std::set<int> cores;
+  for (const auto& [name, info] : net_.task_info()) {
+    if (info.core >= 0) {
+      cores.insert(info.core);
+    }
+  }
+
+  if (!report.deadlock_analysis_certified) {
+    // The analytic utilisation interval depends only on task metadata and is
+    // still valid; SCC/recurrent-region statistics would be artifacts of the
+    // horizon cut and are reported as zero.
+    report.has_steady_cycle = false;
+    report.recurrent_scc_size = 0;
+    for (int core : cores) {
+      CoreMetrics cm;
+      cm.core = core;
+      double umin = 0.0;
+      double umax = 0.0;
+      for (const auto& [name, info] : net_.task_info()) {
+        if (info.core != core || info.period <= 0) {
+          continue;
+        }
+        umin += static_cast<double>(info.bcet) / info.period;
+        umax += static_cast<double>(info.wcet) / info.period;
+      }
+      cm.util_min = umin;
+      cm.util_max = umax;
+      report.cores.push_back(std::move(cm));
+    }
+    std::sort(report.cores.begin(), report.cores.end(),
+              [](const CoreMetrics& a, const CoreMetrics& b) { return a.core < b.core; });
+    return;
+  }
+
   // Tarjan SCC to find the recurrent steady region reachable from initial.
   std::vector<long long> index(num_vertices_, -1);
   std::vector<long long> lowlink(num_vertices_, 0);
@@ -107,14 +142,6 @@ void MetricsAnalyzer::compute_utilisation(MetricsReport& report) {
   for (size_t v = 0; v < num_vertices_; ++v) {
     if (best_scc < 0 || scc_id[v] == best_scc) {
       region.push_back(v);
-    }
-  }
-
-  // Collect all real cores.
-  std::set<int> cores;
-  for (const auto& [name, info] : net_.task_info()) {
-    if (info.core >= 0) {
-      cores.insert(info.core);
     }
   }
 

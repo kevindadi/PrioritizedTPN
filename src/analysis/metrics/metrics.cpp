@@ -15,6 +15,10 @@ MetricsAnalyzer::MetricsAnalyzer(const SCGraph& graph, const petri::PTPN& net, S
   build_topology();
 }
 
+void MetricsAnalyzer::set_horizon_info(HorizonInfo info) {
+  horizon_ = info;
+}
+
 void MetricsAnalyzer::flatten_graph() {
   num_vertices_ = boost::num_vertices(graph_);
   out_edges_.assign(num_vertices_, {});
@@ -177,7 +181,14 @@ bool MetricsAnalyzer::task_blocked_by_lower(const TaskTopology& task, size_t v) 
 
 MetricsReport MetricsAnalyzer::analyze() {
   MetricsReport report;
-  report.exact = exact_;
+  report.horizon = horizon_;
+  // A horizon-pruned graph is missing the successors of boundary classes.
+  // Deadlocks, schedulability, local deadlocks and SCC statistics computed on
+  // it would be artifacts of the cut, so they are skipped and flagged. WCRT
+  // values are still produced, but they are approximate unless the caller's
+  // horizon is a valid upper bound on the response time of interest.
+  report.deadlock_analysis_certified = !(horizon_.enabled && horizon_.truncated);
+  report.exact = exact_ && report.deadlock_analysis_certified;
   report.states = num_vertices_;
   size_t edge_count = 0;
   for (const auto& edges : out_edges_) {
@@ -187,8 +198,14 @@ MetricsReport MetricsAnalyzer::analyze() {
 
   compute_structural(report);
   compute_task_timing(report);
-  compute_local_deadlocks(report);
-  compute_schedulability(report);
+  if (report.deadlock_analysis_certified) {
+    compute_local_deadlocks(report);
+    compute_schedulability(report);
+  } else {
+    // Conservative: schedulability is not proven for the truncated graph.
+    // `deadlock_analysis_certified` tells consumers why this is false.
+    report.schedulable = false;
+  }
   compute_locks(report);
   compute_utilisation(report);
   return report;

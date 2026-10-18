@@ -72,11 +72,29 @@ struct CoreMetrics {
   double graph_busy_fraction = 0.0;
 };
 
+// Horizon metadata carried from the reachability builder. When the horizon
+// actually pruned expansions, every conclusion that needs the complete graph
+// (deadlocks, schedulability, SCCs, steady-cycle utilisation) is uncertified:
+// state classes at the horizon boundary intentionally have no outgoing edges,
+// so they must not be mistaken for deadlocks.
+struct HorizonInfo {
+  bool enabled = false;
+  long long bound = 0;
+  bool truncated = false;
+  size_t pruned_states = 0;
+};
+
 struct MetricsReport {
   bool exact = true;  // built under EQUALITY canonicalization
   size_t states = 0;
   size_t transitions = 0;
   bool truncated = false;
+
+  HorizonInfo horizon;
+  // False when horizon pruned expansions, so deadlock/schedulability/SCC
+  // results were not computed. WCRT bounds remain valid only under the
+  // documented assumption that the horizon is an upper bound on WCRT.
+  bool deadlock_analysis_certified = true;
 
   bool bounded = true;
   std::vector<int> max_tokens_per_place;     // index -> max tokens observed
@@ -101,6 +119,11 @@ struct MetricsReport {
 class MetricsAnalyzer {
  public:
   MetricsAnalyzer(const SCGraph& graph, const petri::PTPN& net, SCVertex initial, bool exact);
+
+  // Records the reachability builder's horizon configuration. Call before
+  // analyze(). The analyzer will refuse to certify deadlock/SCC results when
+  // the horizon truncated expansion.
+  void set_horizon_info(HorizonInfo info);
 
   [[nodiscard]] MetricsReport analyze();
 
@@ -132,6 +155,7 @@ class MetricsAnalyzer {
   const petri::PTPN& net_;
   SCVertex initial_;
   bool exact_;
+  HorizonInfo horizon_;
 
   size_t num_vertices_ = 0;
   std::vector<std::vector<Edge>> out_edges_;  // per vertex

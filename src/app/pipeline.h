@@ -26,6 +26,13 @@ struct PipelineOptions {
   std::string canonicalization_mode = "equality";
   bool extrapolation = false;
   bool skip_analysis = false;
+  // WCRT time-horizon reduction: when set, the SCG is only expanded from state
+  // classes whose accumulated *lower-bound* dwell is <= the horizon. States
+  // beyond the horizon are still recorded (with their incoming edges) but are
+  // not expanded. This is sound for WCRT bounds when the horizon is a valid
+  // upper bound on the response time of interest; deadlock/SCC results are not
+  // certified once pruning occurs. Disabled by default.
+  std::optional<int> time_horizon;
   std::optional<SchedulePolicy> policy_override;
   std::string romeo_format = "scheduling-net";
   bool romeo_explicit_core_places = true;

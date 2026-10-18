@@ -49,6 +49,27 @@ class StateClassReachabilityGraph {
     return extrapolation_k_;
   }
 
+  // WCRT time-horizon reduction (opt-in, default off).
+  //
+  // When enabled, exploration tracks the minimum accumulated lower-bound dwell
+  // of every state class (sum of FiringEdge::dwell_min along the best path).
+  // Classes whose minimum exceeds `horizon` are still discovered and keep their
+  // incoming edges, but are not expanded further. Since dwell_min is a sound
+  // lower bound on the wall-clock time spent reaching a class, no path that
+  // fits within the horizon is lost. This is sound for WCRT bounds only when
+  // `horizon` is an upper bound on the response time of interest; pruning
+  // invalidates deadlock/SCC conclusions, which the statistics flag via
+  // `horizon_truncated`.
+  void set_time_horizon(int horizon);
+
+  [[nodiscard]] bool has_time_horizon() const {
+    return horizon_enabled_;
+  }
+
+  [[nodiscard]] int time_horizon() const {
+    return horizon_;
+  }
+
   // Explores the reachability graph, stopping once `max_states` classes exist.
   // Returns the number of state classes discovered.
   size_t build(size_t max_states = std::numeric_limits<size_t>::max());
@@ -91,7 +112,12 @@ class StateClassReachabilityGraph {
     size_t total_states = 0;
     size_t total_transitions = 0;
     size_t dedup_hits = 0;
-    bool truncated = false;
+    bool truncated = false;  // stopped at the max_states cap
+    // Horizon reduction bookkeeping. `horizon_pruned_states` counts discovered
+    // classes that were not expanded because their minimum accumulated
+    // lower-bound dwell exceeded the horizon.
+    size_t horizon_pruned_states = 0;
+    bool horizon_truncated = false;
   };
 
   [[nodiscard]] const Statistics& get_statistics() const {
@@ -106,6 +132,8 @@ class StateClassReachabilityGraph {
   CanonicalizationMode mode_ = CanonicalizationMode::EQUALITY;
   bool extrapolation_enabled_ = false;
   int extrapolation_k_ = -1;  // computed lazily from the net's static intervals
+  bool horizon_enabled_ = false;
+  int horizon_ = 0;
   size_t next_id_ = 0;
 
   std::unordered_map<std::vector<int>, std::vector<SCVertex>, MarkingHash> vertices_by_marking_;
@@ -129,6 +157,19 @@ class StateClassReachabilityGraph {
   // Returns the vertex matching `state` under the current mode, or npos.
   [[nodiscard]] bool find_match(const StateClass& state, SCVertex& match) const;
   SCVertex add_state(StateClass state);
+
+  // One successor produced while expanding a vertex. `is_new` distinguishes
+  // freshly inserted classes from deduplicated targets so callers can seed the
+  // per-vertex time label exactly once.
+  struct ExpansionRecord {
+    SCVertex target;
+    FiringEdge edge;
+    bool is_new;
+  };
+
+  // Fires every enabled transition of `source`, adds the resulting edges (and
+  // new vertices) to the graph, and returns one record per successor edge.
+  std::vector<ExpansionRecord> expand_vertex(SCVertex source, size_t max_states);
 };
 
 }  // namespace state_class

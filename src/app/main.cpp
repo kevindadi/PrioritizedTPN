@@ -45,6 +45,13 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
                 "Enable k-extrapolation of clock zones: merges behaviorally "
                 "equivalent state classes, preserving the reachable marking "
                 "set (default: off)");
+  cmd->add_option("--horizon", opts.time_horizon,
+                  "Bound SCG exploration by a WCRT time horizon N: state classes "
+                  "whose accumulated lower-bound dwell exceeds N are recorded but "
+                  "not expanded (default: off). Sound for WCRT when N is an upper "
+                  "bound on the response time of interest; deadlock/SCC results "
+                  "are not certified when pruning occurs")
+      ->check(CLI::NonNegativeNumber);
   add_export_target_options(cmd, opts.exports);
 }
 

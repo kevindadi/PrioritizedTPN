@@ -24,10 +24,30 @@ bool MetricsAnalyzer::save_to_json(const MetricsReport& report, const std::strin
   out << "  \"states\": " << report.states << ",\n";
   out << "  \"transitions\": " << report.transitions << ",\n";
   out << "  \"bounded\": " << (report.bounded ? "true" : "false") << ",\n";
-  out << "  \"schedulable\": " << (report.schedulable ? "true" : "false") << ",\n";
+  // Under horizon truncation the graph is incomplete, so schedulability is
+  // neither proven nor refuted; null makes that explicit instead of emitting a
+  // misleading boolean.
+  out << "  \"schedulable\": ";
+  if (!report.deadlock_analysis_certified) {
+    out << "null";
+  } else {
+    out << (report.schedulable ? "true" : "false");
+  }
+  out << ",\n";
   out << "  \"has_steady_cycle\": " << (report.has_steady_cycle ? "true" : "false") << ",\n";
   out << "  \"recurrent_scc_size\": " << report.recurrent_scc_size << ",\n";
   out << "  \"hyperperiod\": " << report.hyperperiod << ",\n";
+  // Horizon fields are emitted only when the reduction is active so that
+  // exhaustive-output goldens remain stable.
+  if (report.horizon.enabled) {
+    out << "  \"horizon\": {\n";
+    out << "    \"bound\": " << report.horizon.bound << ",\n";
+    out << "    \"truncated\": " << (report.horizon.truncated ? "true" : "false") << ",\n";
+    out << "    \"pruned_states\": " << report.horizon.pruned_states << ",\n";
+    out << "    \"deadlock_analysis_certified\": "
+        << (report.deadlock_analysis_certified ? "true" : "false") << "\n";
+    out << "  },\n";
+  }
 
   out << "  \"deadlock_states\": [";
   for (size_t i = 0; i < report.deadlock_states.size(); ++i) {
