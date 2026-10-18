@@ -424,15 +424,17 @@ class PTPN {
     return task_info_;
   }
 
-  // How many transitions may run simultaneously on `core_id`. Returns 0 to mean
-  // "no bound": the control core (-1) is never resource-limited, and cores
-  // without a registered parallelism keep the legacy highest-priority behaviour.
+  // How many transitions may run simultaneously on `core_id`. The control core
+  // (-1) is never resource-limited and returns 0. A real core without an
+  // explicit registration defaults to 1, matching the paper's single-server
+  // fixed-priority semantics (one active transition per core); callers that
+  // model several slots must register the bound explicitly.
   [[nodiscard]] int parallelism_of_core(int core_id) const {
     if (core_id < 0) {
       return 0;
     }
     auto it = core_parallelism_.find(core_id);
-    return it == core_parallelism_.end() ? 0 : it->second;
+    return it == core_parallelism_.end() ? 1 : it->second;
   }
 
   // --- Semantics ---------------------------------------------------------

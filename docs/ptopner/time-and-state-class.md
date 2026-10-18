@@ -105,12 +105,12 @@ This project does not hide all scheduling consequences inside anonymous timing c
 - `active` means enabled and currently ticking
 - `suspended` means enabled but frozen by higher-priority competition on the same core
 
-In `--tie-break all` mode the selected active set (`priority_enabled`) is part of
-the state identity as well: two classes can share the marking, variable layout
-and DBM matrix but run different clocks. The implementation therefore includes
-`priority_enabled` (and the derived `suspended` set) in both the state hash and
-the equality test, so they are never merged. In the default `index` mode the set
-is a function of the marking and adds no distinctions.
+The selected active set (`priority_enabled`) is part of the state identity:
+two classes can share the marking, variable layout and DBM matrix but run
+different clocks. The implementation therefore includes `priority_enabled` (and
+the derived `suspended` set) in both the state hash and the equality test, so
+they are never merged. This matters because equal-priority candidates are all
+kept as separate scheduling choices.
 
 That is why state identity in `StateKey` (`src/analysis/state.h:107`) includes `enabled`, `active`, `suspended`, and DBM frozen-clock information, not just the marking and a raw matrix.
 

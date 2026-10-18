@@ -24,9 +24,6 @@ struct PipelineOptions {
   size_t max_states = 10000;
   bool debug_mode = false;
   std::string canonicalization_mode = "equality";
-  // "index" (deterministic fixed-priority tie-break) or "all" (explore every
-  // admissible same-priority active set).
-  std::string tie_break_mode = "index";
   bool extrapolation = false;
   bool skip_analysis = false;
   std::optional<SchedulePolicy> policy_override;

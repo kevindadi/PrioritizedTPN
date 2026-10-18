@@ -69,7 +69,7 @@ const PipelineCase kPipelineCases[] = {
     {"example/s-bench/b.json", 20, 21, 84, 113, 30},
     {"example/motivating-examples/hw.json", 10, 10, 17, 17, 1},
     {"example/p-bench/initial.json", 20, 21, 80, 106, 27},
-    {"example/p-bench/same-core.json", 20, 21, 631, 811, 181},
+    {"example/p-bench/same-priority.json", 20, 21, 134, 187, 54},
     {"example/p-bench/no-period.json", 18, 19, 44, 60, 17},
 };
 
@@ -91,6 +91,18 @@ TEST(PipelineGolden, PlaceTransitionAndStateCounts) {
     EXPECT_EQ(stats.dedup_hits, test_case.dedup_hits);
     EXPECT_FALSE(stats.truncated);
   }
+}
+
+TEST(PipelineGolden, TieHeavyModelTruncatesAtCap) {
+  // Preserving every equal-priority tie resolution is expensive: this model
+  // has duplicate priorities on one core and exceeds a 5,000-class budget.
+  // The truncated flag must be reported so metrics are not labelled exact.
+  const petri::PTPN ptpn = lower_to_ptpn("example/p-bench/same-core.json");
+  state_class::StateClassReachabilityGraph graph(ptpn);
+  const size_t states = graph.build(5000);
+  const auto& stats = graph.get_statistics();
+  EXPECT_EQ(states, 5000u);
+  EXPECT_TRUE(stats.truncated);
 }
 
 TEST(PipelineGolden, PtpnDotMatchesGolden) {

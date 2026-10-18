@@ -58,7 +58,7 @@ reachability_graph.build(opts.max_states);
 `src/analysis/reachability/scheduling.h` and `src/analysis/reachability/scheduling.cpp` define `Scheduling`:
 
 - `structural_enabled()` — E_struct(M): transitions whose input places hold enough tokens
-- `filter_priority_per_core()` — E_pri(M): per-core maximal-priority filter, bounded by the core's parallelism when declared
+- `priority_branches()` — every admissible selected active set E_pri-hat(M): equal-priority candidates per core yield one branch each
 
 ## PToPNer export
 
@@ -78,7 +78,7 @@ Validation and export live in `src/lower/tdg2ptopner/validate.cpp` and `src/lowe
 | `src/model/petri.h` | PTPN net model: Place, Transition, Marking, is_enabled, fire |
 | `src/analysis/reachability/ptpn_analysis.h/.cpp` | StateClassReachabilityGraph: build, time_elapse, fire, recompute_sets |
 | `src/analysis/reachability/state_class.h` | StateClass: marking, clocks, zone, enabled/active/suspended sets |
-| `src/analysis/reachability/scheduling.h/.cpp` | Scheduling: structural_enabled, filter_priority_per_core |
+| `src/analysis/reachability/scheduling.h/.cpp` | Scheduling: structural_enabled, priority_branches |
 | `src/analysis/metrics/metrics.h` | MetricsAnalyzer: schedulability, task/lock/core metrics |
 | `src/analysis/metrics/metrics*.cpp` | Metrics implementation split by concern (core, structural, timing, locks, utilisation, JSON) |
 | `src/lower/tdg2pn/tdg2pn.h/.cpp` | TDG → PTPN lowering |

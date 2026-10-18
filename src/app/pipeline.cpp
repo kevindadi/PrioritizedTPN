@@ -125,11 +125,6 @@ state_class::CanonicalizationMode parse_canonicalization(const string& mode) {
   return state_class::CanonicalizationMode::EQUALITY;
 }
 
-state_class::TieBreakMode parse_tie_break(const string& mode) {
-  return mode == "all" ? state_class::TieBreakMode::ALL_BRANCHES
-                       : state_class::TieBreakMode::INDEX;
-}
-
 romeo::RomeoFormat romeo_format_from_string(const string& format) {
   if (format == "inhibitor-arc" || format == "inhibitor_arc") {
     return romeo::RomeoFormat::InhibitorArc;
@@ -261,10 +256,8 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
 
   if (should_run_analysis(opts)) {
     const auto canonicalization = parse_canonicalization(opts.canonicalization_mode);
-    const auto tie_break = parse_tie_break(opts.tie_break_mode);
     state_class::StateClassReachabilityGraph reachability_graph(ptpn);
     reachability_graph.set_canonicalization_mode(canonicalization);
-    reachability_graph.set_tie_break_mode(tie_break);
     spdlog::info("[SCG] Canonicalization mode: {}", opts.canonicalization_mode);
     if (canonicalization != state_class::CanonicalizationMode::EQUALITY) {
       spdlog::warn(
@@ -272,8 +265,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
           "max-lower and intersection are currently aliases",
           opts.canonicalization_mode);
     }
-    spdlog::info("[SCG] Tie-break mode: {}",
-                 tie_break == state_class::TieBreakMode::ALL_BRANCHES ? "all" : "index");
+    spdlog::info("[SCG] Priority semantics: enumerate all admissible active sets");
     if (opts.extrapolation) {
       reachability_graph.set_extrapolation(true);
       spdlog::info("[SCG] k-extrapolation enabled (k={})",

@@ -1,6 +1,7 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <gtest/gtest.h>
 #include <set>
+#include <stdexcept>
 #include <vector>
 
 #include "analysis/dbm/clock_state.h"
@@ -278,39 +279,15 @@ petri::PTPN make_same_core_equal_priority_net() {
   return ptpn;
 }
 
-TEST(PtpnAnalysisTest, CoreCapacityOneEnforcesMutualExclusion) {
-  // Equal priority on the same core would tie; with a capacity of one only a
-  // single transition stays active (the lower index wins the deterministic
-  // tie-break) and the other is suspended.
+TEST(PtpnAnalysisTest, CoreCapacityOneEnumeratesEveryTieResolution) {
+  // Equal priority on the same core with one slot: both transitions are
+  // possible scheduling choices, so the semantics must keep both active sets.
+  // Their union is the set of all possible transitions; there is no
+  // deterministic "smallest index wins" shortcut.
   petri::PTPN ptpn = make_same_core_equal_priority_net();
   ptpn.set_core_parallelism(0, 1);
 
   StateClassReachabilityGraph graph(ptpn);
-  const StateClass initial = graph.compute_initial_class();
-  EXPECT_EQ(initial.priority_enabled, (state_class::TransitionSet{0}));
-  EXPECT_EQ(initial.suspended, (state_class::TransitionSet{1}));
-}
-
-TEST(PtpnAnalysisTest, CoreCapacityTwoAllowsParallelExecution) {
-  // The same core declared with two slots lets both equal-priority tasks run
-  // in parallel, so both are active and neither is suspended.
-  petri::PTPN ptpn = make_same_core_equal_priority_net();
-  ptpn.set_core_parallelism(0, 2);
-
-  StateClassReachabilityGraph graph(ptpn);
-  const StateClass initial = graph.compute_initial_class();
-  EXPECT_EQ(initial.priority_enabled, (state_class::TransitionSet{0, 1}));
-  EXPECT_TRUE(initial.suspended.empty());
-}
-
-TEST(PtpnAnalysisTest, AllBranchesEnumeratesEveryEqualPriorityChoice) {
-  // ALL_BRANCHES must yield both admissible selected active sets; the choice
-  // is part of the state identity because it decides which clock runs.
-  petri::PTPN ptpn = make_same_core_equal_priority_net();
-  ptpn.set_core_parallelism(0, 1);
-
-  StateClassReachabilityGraph graph(ptpn);
-  graph.set_tie_break_mode(state_class::TieBreakMode::ALL_BRANCHES);
   const std::vector<StateClass> initials = graph.compute_initial_classes();
 
   ASSERT_EQ(initials.size(), 2u);
@@ -324,7 +301,39 @@ TEST(PtpnAnalysisTest, AllBranchesEnumeratesEveryEqualPriorityChoice) {
   EXPECT_EQ(branches.count(state_class::TransitionSet{0}), 1u);
   EXPECT_EQ(branches.count(state_class::TransitionSet{1}), 1u);
 
-  // Building the graph must keep both initial branches, not merge them.
+  // A singular query must refuse to pick one branch silently.
+  EXPECT_THROW(graph.compute_initial_class(), std::runtime_error);
+}
+
+TEST(PtpnAnalysisTest, CoreCapacityTwoAllowsParallelExecution) {
+  // The same core declared with two slots lets both equal-priority tasks run
+  // in parallel, so there is a single active set containing both transitions.
+  petri::PTPN ptpn = make_same_core_equal_priority_net();
+  ptpn.set_core_parallelism(0, 2);
+
+  StateClassReachabilityGraph graph(ptpn);
+  const StateClass initial = graph.compute_initial_class();
+  EXPECT_EQ(initial.priority_enabled, (state_class::TransitionSet{0, 1}));
+  EXPECT_TRUE(initial.suspended.empty());
+}
+
+TEST(PtpnAnalysisTest, CoreCapacityTwoFillsSecondSlotWithLowerPriority) {
+  // With two slots, the highest-priority transition takes one and the next
+  // priority fills the second; only ties at the cutoff create branches.
+  petri::PTPN ptpn = make_same_core_priority_net();
+  ptpn.set_core_parallelism(0, 2);
+
+  StateClassReachabilityGraph graph(ptpn);
+  const StateClass initial = graph.compute_initial_class();
+  EXPECT_EQ(initial.priority_enabled, (state_class::TransitionSet{0, 1}));
+  EXPECT_TRUE(initial.suspended.empty());
+}
+
+TEST(PtpnAnalysisTest, BuildKeepsEveryInitialTieResolution) {
+  petri::PTPN ptpn = make_same_core_equal_priority_net();
+  ptpn.set_core_parallelism(0, 1);
+
+  StateClassReachabilityGraph graph(ptpn);
   graph.build(256);
   EXPECT_GE(graph.get_statistics().total_states, 2u);
 }

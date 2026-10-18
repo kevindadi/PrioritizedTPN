@@ -13,10 +13,6 @@ void StateClassReachabilityGraph::set_canonicalization_mode(CanonicalizationMode
   mode_ = mode;
 }
 
-void StateClassReachabilityGraph::set_tie_break_mode(TieBreakMode mode) {
-  tie_break_mode_ = mode;
-}
-
 void StateClassReachabilityGraph::set_extrapolation(bool enabled) {
   extrapolation_enabled_ = enabled;
   if (!enabled) {
@@ -183,8 +179,8 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
         edge.dwell_min = dwell_min;
         edge.dwell_max = dwell_max;
 
-        // In ALL_BRANCHES mode one firing yields one successor per admissible
-        // target active set; the edge weight is identical for all of them.
+        // One firing yields one successor per admissible target active set;
+        // the edge weight is identical for all of them.
         std::vector<StateClass> successors = fire_all(elapsed, t);
         for (StateClass& successor : successors) {
           if (extrapolation_enabled_) {

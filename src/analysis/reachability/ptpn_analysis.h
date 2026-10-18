@@ -35,15 +35,6 @@ class StateClassReachabilityGraph {
   void set_canonicalization_mode(CanonicalizationMode mode);
   [[nodiscard]] CanonicalizationMode get_canonicalization_mode() const;
 
-  // Selects how equal-priority transitions on one core are resolved. INDEX is
-  // the deterministic fixed-priority policy (smallest transition index wins);
-  // ALL_BRANCHES explores every admissible tie resolution and makes the
-  // selected active set part of the state-class identity.
-  void set_tie_break_mode(TieBreakMode mode);
-  [[nodiscard]] TieBreakMode get_tie_break_mode() const {
-    return tie_break_mode_;
-  }
-
   // Enables k-extrapolation of successor zones (opt-in). The bound k is the
   // largest finite constant of any transition's static interval; zone bounds
   // beyond k are relaxed, which merges behaviorally equivalent state classes
@@ -74,11 +65,14 @@ class StateClassReachabilityGraph {
     return initial_vertex_;
   }
 
-  // The initial state class C0 = (M0, Omega0) with every clock pinned to zero.
-  // In INDEX mode there is exactly one; ALL_BRANCHES yields one initial class
-  // per admissible selected active set.
-  StateClass compute_initial_class();
+  // The initial state classes C0 = (M0, Omega0) with every clock pinned to
+  // zero, one per admissible selected active set. There is deliberately no
+  // deterministic single-branch variant: equal-priority candidates are all
+  // reachable scheduling choices and must be preserved. `compute_initial_class`
+  // returns the unique class and throws when the initial marking admits more
+  // than one active set.
   std::vector<StateClass> compute_initial_classes();
+  StateClass compute_initial_class();
 
   // TimeElapse operator: returns a copy of `state` whose zone has had time
   // pushed forward (running clocks released and re-capped at their deadlines).
@@ -87,11 +81,9 @@ class StateClassReachabilityGraph {
   // True when transition `t` admits a valuation h_t >= downSI(t) in `elapsed`.
   bool is_firable(const StateClass& elapsed, size_t t) const;
 
-  // Discrete firing: from the time-elapsed class, fire `t` and produce the
-  // successor class (marking, sets, layout and zone). Returns false if the
-  // firing domain is empty. This wrapper resolves the target branch with the
-  // configured tie-break mode and returns the first successor; `fire_all`
-  // returns one successor per admissible target active set.
+  // Discrete firing: from the time-elapsed class, fire `t` and produce every
+  // successor class, one per admissible target active set. `fire` is a
+  // single-successor convenience that throws when the firing is ambiguous.
   bool fire(const StateClass& elapsed, size_t t, StateClass& successor) const;
   std::vector<StateClass> fire_all(const StateClass& elapsed, size_t t) const;
 
@@ -112,7 +104,6 @@ class StateClassReachabilityGraph {
   SCVertex initial_vertex_ = 0;
   Statistics stats_;
   CanonicalizationMode mode_ = CanonicalizationMode::EQUALITY;
-  TieBreakMode tie_break_mode_ = TieBreakMode::INDEX;
   bool extrapolation_enabled_ = false;
   int extrapolation_k_ = -1;  // computed lazily from the net's static intervals
   size_t next_id_ = 0;

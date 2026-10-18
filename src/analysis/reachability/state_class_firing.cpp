@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <stdexcept>
 
 #include "analysis/dbm/clock_state.h"
 #include "analysis/reachability/ptpn_analysis.h"
@@ -148,8 +149,7 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
   const petri::Marking marking =
       petri::PTPN::fire(elapsed.marking, net_, petri::TransitionId{t});
   const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, marking);
-  const std::vector<TransitionSet> branches =
-      Scheduling::priority_branches(struct_enabled, net_, tie_break_mode_);
+  const std::vector<TransitionSet> branches = Scheduling::priority_branches(struct_enabled, net_);
 
   const int h_lower = -elapsed.zone.get_constraint(0, idx);
   const int firing_instant = std::max(lower, h_lower);
@@ -175,6 +175,10 @@ bool StateClassReachabilityGraph::fire(const StateClass& elapsed, size_t t,
   std::vector<StateClass> successors = fire_all(elapsed, t);
   if (successors.empty()) {
     return false;
+  }
+  if (successors.size() != 1) {
+    throw std::runtime_error(
+        "firing has multiple admissible target active sets; use fire_all()");
   }
   successor = std::move(successors.front());
   return true;

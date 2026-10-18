@@ -178,10 +178,9 @@ is `-1` when unbounded.
   flag is false.
 - Task-level metrics require TDG-sourced `task_info`; a direct `.ptpn` model
   produces structural and net-level metrics only.
-- `--tie-break index` (default) reports the deterministic fixed-priority policy;
-  `--tie-break all` explores all same-priority tie resolutions and can be
-  exponentially larger. Results from the two modes answer different questions
-  and should not be mixed in one table.
+- The SCG enumerates every admissible equal-priority active set; worst-case
+  WCRT is therefore taken over all tie resolutions. Tie-heavy models can be
+  much larger than models with unique priorities per core.
 - Response-style metrics are scoped to a **single activation** so periodic cycles
   do not produce spurious unbounded longest paths; a genuine in-flight cycle is
   reported as unbounded.

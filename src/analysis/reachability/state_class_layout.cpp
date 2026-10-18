@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <stdexcept>
 
 #include "analysis/dbm/clock_state.h"
 #include "analysis/reachability/ptpn_analysis.h"
@@ -57,6 +58,11 @@ void StateClassReachabilityGraph::build_layout(StateClass& state) const {
 
 StateClass StateClassReachabilityGraph::compute_initial_class() {
   std::vector<StateClass> initials = compute_initial_classes();
+  if (initials.size() != 1) {
+    throw std::runtime_error(
+        "initial marking has multiple admissible active sets; use "
+        "compute_initial_classes()");
+  }
   return std::move(initials.front());
 }
 
@@ -66,8 +72,7 @@ std::vector<StateClass> StateClassReachabilityGraph::compute_initial_classes() {
   base.elapsed_time = 0.0;
 
   const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, base.marking);
-  const std::vector<TransitionSet> branches =
-      Scheduling::priority_branches(struct_enabled, net_, tie_break_mode_);
+  const std::vector<TransitionSet> branches = Scheduling::priority_branches(struct_enabled, net_);
 
   std::vector<StateClass> out;
   out.reserve(branches.size());

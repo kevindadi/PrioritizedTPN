@@ -259,10 +259,10 @@ preemption sub-net, and it does not create the CPU-resource place. Preemption is
 expressed entirely by the analysis engine:
 
 - The lowering registers a parallelism bound of `1` for every real core in
-  `PTPN::core_parallelism`. `Scheduling::filter_priority_per_core` then keeps at
-  most one transition per core — the highest-priority structurally enabled one,
-  breaking ties by the smallest transition index — which provides both CPU mutual
-  exclusion (one task per core) and fixed-priority arbitration. Multi-core
+  `PTPN::core_parallelism`. `Scheduling::priority_branches` then produces one
+  branch per admissible equal-priority choice (exactly one active transition per
+  core per branch), which provides CPU mutual exclusion (one task per core) and
+  fixed-priority arbitration while preserving every tie resolution. Multi-core
   parallelism per CPU (`cores_per_cpu` > 1) is intentionally not modeled.
 - A preempted (lower-priority) execution segment is marked `suspendable`, so it
   enters the suspended set. The engine freezes its execution clock during
