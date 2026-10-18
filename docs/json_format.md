@@ -85,6 +85,11 @@ lock-hold, and exit places) use **saturating** capacity semantics:
   while the job is mid-chain is rejected as an ambiguous job layout; a release
   while the job waits at the entry merges without resetting its arrival clock.
   See the policy list below.
+- `llf` likewise supports only `task_place_capacity == 1`, at most one start
+  token per task, and at most one in-flight job per task. A release that fires
+  while the job is mid-chain is rejected as an ambiguous job layout; a release
+  while the job waits at the entry merges without resetting its urgency clock.
+  See the policy list below.
 
 Resource places are **not** saturating: core places (capacity =
 `cores_per_cpu`), lock places (capacity 1), and the periodic control place
@@ -194,46 +199,57 @@ Analysis coverage in this phase:
   previous job is mid-chain is rejected with `std::invalid_argument` (no queued
   jobs); a release while the job waits at the entry is a conservative merge
   that does not reset its deadline. `k-extrapolation` and symmetry reduction
-  are rejected for EDF states. FIFO and LLF remain single-core. See
+  are rejected for EDF states. FIFO and LLF are statically partitioned
+  multi-core policies in the same way; see below. See
   `docs/ptopner/scheduling-semantics.md` for the full supported class and
   semantics.
-- `fifo` implements First In First Out for a deliberately restricted class,
-  **not** as a static priority and **not** as a preemptive policy. Lowering
-  accepts only: `num_cpus == 1` (all tasks on core `0`), `cores_per_cpu == 1`,
-  no locks, no fork/join, no task-to-task dependency edges (all task edges must
-  be self or dashed), `task_place_capacity == 1`, at most one start token per
-  task, and every task either periodic with a positive period released by
-  `_fire` or a one-shot task started at time 0. No deadline is required. The
-  state class adds a per-task release clock and an arrival-order constraint to
-  the DBM zone: dispatching a pending candidate `X` on the core requires
-  `r_other - r_X <= 0` for every other pending job, and every feasible earliest
-  candidate (ties included) yields its own branch. FIFO is strictly
-  non-preemptive: the structural `core0` place keeps at most one job running,
-  execution segments are not suspendable, and a job that has started keeps the
-  core (and its own chain transitions) active until it reaches the exit
-  place. If a periodic release fires while the previous job is mid-chain, the
-  resulting two-token chain is rejected with `std::invalid_argument`; there is
-  at most one in-flight job per task. A release while the job waits at the
-  entry merges without resetting its arrival clock. `k-extrapolation` is
-  rejected for FIFO states, and symmetry reduction is not applied to them.
-  Multi-core is not supported beyond the lowering guard (the parser accepts
-  `num_cpus > 1`, lowering rejects it for FIFO). See
+- `fifo` implements First In First Out for a deliberately restricted,
+  statically partitioned class, **not** as a static priority and **not** as a
+  preemptive policy. Each real core runs its own independent FIFO order: a
+  branch dispatches one earliest-arrived pending job per free core, and release
+  clocks are never compared across cores. There is no migration. Lowering
+  accepts only: `num_cpus >= 1`, `cores_per_cpu == 1`, every task bound to a
+  core in `[0, num_cpus)` via `nodes[].core`, no locks, no fork/join, no
+  task-to-task dependency edges (all task edges must be self or dashed),
+  `task_place_capacity == 1`, at most one start token per task, and every task
+  either periodic with a positive period released by `_fire` or a one-shot task
+  started at time 0. No deadline is required. The state class adds a per-task
+  release clock and per-core arrival-order constraints to the DBM zone:
+  dispatching a pending candidate `X` on its core requires
+  `r_other - r_X <= 0` for every other pending job on that core, and every
+  feasible earliest candidate (ties included) yields its own branch. Independent
+  ties on different cores produce the Cartesian product of the per-core
+  choices. FIFO is strictly non-preemptive per core: one structural `coreN`
+  place per real core keeps at most one job running there, execution segments
+  are not suspendable, and a job that has started keeps its core (and its own
+  chain transitions) active until it reaches the exit place; pending jobs on
+  that core wait while other cores continue independently. If a periodic
+  release fires while the previous job is mid-chain, the resulting two-token
+  chain is rejected with `std::invalid_argument`; there is at most one
+  in-flight job per task. A release while the job waits at the entry merges
+  without resetting its arrival clock. `k-extrapolation` is rejected for FIFO
+  states, and symmetry reduction is not applied to them. See
   `docs/ptopner/scheduling-semantics.md` for the full supported class and
   semantics.
 - `llf` implements Event-driven Least Laxity First for a deliberately
-  restricted class, **not** classical continuous-time LLF and **not** a static
-  priority. Lowering accepts only: `num_cpus == 1` (all tasks on core `0`),
-  `cores_per_cpu == 1`, no locks, no fork/join, no task-to-task dependency
-  edges, `task_place_capacity == 1`, at most one start token per task, and
-  every task either periodic with a positive period released by `_fire` or a
-  one-shot task started at time 0; every task needs a positive absolute
-  deadline or period. Execution segments must be deterministic
-  (`earliest == latest`, non-negative), and `TaskInfo::wcet` must equal their
-  sum. The state class adds a laxity clock per in-flight job,
+  restricted, statically partitioned class, **not** classical continuous-time
+  LLF and **not** a static priority. Each real core chooses its own
+  maximum-urgency in-flight job; urgency clocks are never compared across cores.
+  There is no migration. Lowering accepts only: `num_cpus >= 1`,
+  `cores_per_cpu == 1`, every task bound to a core in `[0, num_cpus)` via
+  `nodes[].core`, no locks, no fork/join, no task-to-task dependency edges,
+  `task_place_capacity == 1`, at most one start token per task, and every task
+  either periodic with a positive period released by `_fire` or a one-shot task
+  started at time 0; every task needs a positive absolute deadline or period.
+  Execution segments must be deterministic (`earliest == latest`,
+  non-negative), and `TaskInfo::wcet` must equal their sum. The state class adds
+  a laxity clock per in-flight job,
   `chi = age + remaining_budget - deadline`, initially `wcet - deadline`
-  (possibly negative), and an urgency-order constraint to the DBM zone:
-  dispatching candidate `X` requires `chi_other - chi_X <= 0`, and every
-  feasible maximum-urgency candidate (ties included) yields its own branch.
+  (possibly negative), and per-core urgency-order constraints to the DBM zone:
+  dispatching candidate `X` on its core requires `chi_other - chi_X <= 0` for
+  every other in-flight job on that core, and every feasible maximum-urgency
+  candidate (ties included) yields its own branch. Independent ties on
+  different cores produce the Cartesian product of the per-core choices.
   While a job is actively executing its next segment `chi` is frozen;
   otherwise it advances at rate 1 (preempted work keeps accumulating urgency).
   `chi` is continuous across deterministic segment firings and is never reset
@@ -242,8 +258,9 @@ Analysis coverage in this phase:
   with `std::invalid_argument` (no queued jobs); a release while the job waits
   at the entry merges without resetting `chi`. The choice is made only at
   discrete state-class events: the engine does not preempt inside
-  `time_elapse` at a laxity crossing. `k-extrapolation` and symmetry reduction
-  (when it would actually be applied) are rejected for LLF states. See
+  `time_elapse` at a laxity crossing, and a preemption on one core does not
+  delay another core. `k-extrapolation` and symmetry reduction (when it would
+  actually be applied) are rejected for LLF states. See
   `docs/ptopner/scheduling-semantics.md` for the full supported class and
   semantics.
 

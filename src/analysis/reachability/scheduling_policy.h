@@ -387,32 +387,45 @@ class EdfFiringRule : public FiringRule {
 // First-In First-Out scheduling under the release-clock state extension.
 //
 // Supported class (enforced by lowering and re-checked when the rule indexes a
-// net): TDG2PN-lowered nets with `num_cpus == 1`, `cores_per_cpu == 1`, all
-// tasks on core 0, `task_place_capacity == 1`, no locks, no fork/join, no
-// task-to-task dependency edges, at most one start token per task, and every
-// task either periodic with a positive period or started once at time 0. Each
-// task chain carries at most one in-flight job. FIFO is strictly
-// non-preemptive: once a job leaves the entry it runs until its final
-// execution segment places a token in the exit place.
+// net): TDG2PN-lowered nets with `num_cpus >= 1`, `cores_per_cpu == 1`,
+// statically partitioned tasks on cores `0 .. num_cpus-1`, every task chain
+// transition on the task's own core, `task_place_capacity == 1`, no locks, no
+// fork/join, no task-to-task dependency edges, at most one start token per
+// task, and every task either periodic with a positive period or started once
+// at time 0. Each task chain carries at most one in-flight job. Tasks never
+// migrate between cores. FIFO is strictly non-preemptive: once a job leaves the
+// entry it runs until its final execution segment places a token in the exit
+// place.
 //
 // A job is pending while its token is at the task entry and running while its
-// token is in any other non-exit chain place. At most one job runs on the
-// single real core (the structural `core0` place in the standard lowering, and
-// the marking-derived running set here for nets without a CPU place):
-//   - If a job is already running, every branch contains only the control
-//     transitions plus that job's enabled chain transitions.
-//   - Otherwise, for each pending job whose start is structurally enabled the
-//     rule emits one branch containing the control transitions plus that
-//     candidate's chain transitions. The candidate is the earliest arrival:
+// token is in any other non-exit chain place. At most one job runs per real
+// core (the structural `coreN` place in the standard lowering, and the
+// marking-derived running set here for nets without a CPU place):
+//   - If a job is already running on a core, that core contributes only the
+//     control transitions plus that job's enabled chain transitions. No pending
+//     job on the same core may dispatch.
+//   - Otherwise the core is free, and for each pending job on it whose start
+//     is structurally enabled the rule emits one per-core choice containing
+//     that candidate's chain transitions. The candidate is the earliest
+//     arrival on its core:
 //
 //       r_candidate >= r_other  <=>  r_other - r_candidate <= 0
 //                                      (BranchConstraint{candidate, other, 0})
 //
 //     where `r` is the per-task release clock (larger value = earlier arrival;
-//     every in-flight job's release clock advances at rate 1). A branch whose
+//     every in-flight job's release clock advances at rate 1). A choice whose
 //     constraint set is inconsistent with the current zone is dropped. Ties
 //     (equal release values) admit every tied candidate, so both dispatch
-//     orders are enumerated rather than chosen by task index.
+//     orders are enumerated rather than chosen by task index. A core with no
+//     in-flight job contributes no choice. If a free core has pending jobs but
+//     no feasible candidate, the rule raises an error.
+//
+// The per-core choices are Cartesian-producted with the global control
+// transitions by combine_core_choices(), which includes each control transition
+// once and concatenates the per-core constraint lists in ascending core order.
+// Independent ties on different cores therefore produce the full product, and
+// a busy core never blocks dispatch on another core. Release clocks of
+// different cores are never compared.
 //
 // Release-clock lifecycle (shared with EDF):
 //   - A release that fires while the task has no job creates a job whose
@@ -429,12 +442,10 @@ class EdfFiringRule : public FiringRule {
 //
 // FIFO has no scalar priority; `effective_priority()` throws so no code path
 // can silently fall back to static priorities. Preemption is disabled
-// structurally: lowering uses the non-resume encoding (a `core0` place and
-// non-suspendable execution segments), and `preemption_mode()` is
-// NON_PREEMPTIVE.
-//
-// Multi-core scope: not supported. The supported class has exactly one real
-// core, so there is no cross-core ordering to model.
+// structurally: lowering uses the non-resume encoding (one `coreN` place per
+// real core, capacity 1, and non-suspendable execution segments), and
+// `preemption_mode()` is NON_PREEMPTIVE. The CPU places of different cores are
+// independent; there is no migration.
 class FifoFiringRule : public FiringRule {
  public:
   FifoFiringRule() = default;
@@ -508,32 +519,39 @@ class FifoFiringRule : public FiringRule {
 // is continuous across a deterministic segment firing; the clock is carried
 // unchanged rather than reset. It is never capped.
 //
-// Dispatch and branch enumeration. At a dispatch event the rule emits one
-// branch per feasible maximum-chi in-flight candidate i. Each branch activates
-// the control transitions plus i's structurally enabled chain transitions, and
-// every other in-flight candidate j contributes
+// Dispatch and branch enumeration. Tasks are statically partitioned, so LLF-ED
+// is applied independently on every real core. On each core the rule emits one
+// per-core choice per feasible maximum-chi in-flight candidate i on that core.
+// Each choice activates i's structurally enabled chain transitions, and every
+// other in-flight candidate j *on the same core* contributes
 //
 //   chi_j - chi_i <= 0        (BranchConstraint{i, j, 0, ClockKind::Laxity})
 //
-// Branches inconsistent with the current zone are dropped. Equal chi admits
+// Choices inconsistent with the current zone are dropped. Equal chi admits
 // every tied candidate (non-strict constraint), so ties are enumerated rather
-// than broken by task index. A job that is not selected is preempted (its
-// execution clock freezes) and resumes later; `preemption_mode()` is RESUME.
+// than broken by task index. Laxity clocks of different cores are never
+// compared. A core with no in-flight job contributes no choice; if an
+// in-flight core has no feasible candidate the rule raises an error.
+// combine_core_choices() takes the Cartesian product of the per-core choices
+// and includes the global control transitions once. A job that is not selected
+// on its core is preempted (its execution clock freezes) and resumes later;
+// `preemption_mode()` is RESUME. Tasks never migrate between cores.
 //
 // Supported class (enforced by lowering and re-checked when the rule indexes a
-// net): TDG2PN-lowered LLF nets with `num_cpus == 1`, `cores_per_cpu == 1`,
-// every task on core 0, `task_place_capacity == 1`, no locks, no fork/join, no
-// task-to-task dependency edges, at most one start token per task, every task
-// either periodic with a positive period or started once at time 0, a positive
-// absolute deadline (or a positive period supplying the implicit deadline),
-// at most one in-flight job per task, and deterministic execution segments
-// (`earliest == latest`). Interval execution times are rejected because then
-// the executed work would not be determined by elapsed time and chi could not
-// be carried exactly across a segment firing. Overlapping releases are
-// rejected as unsupported when the release fires while the task is mid-chain;
-// a release saturating a still-pending entry token starts no new job, so the
-// pending job keeps its original release age and laxity clock, matching the
-// net's capacity-one merge semantics. Completed jobs drop their laxity clock.
+// net): TDG2PN-lowered LLF nets with `num_cpus >= 1`, `cores_per_cpu == 1`,
+// statically partitioned tasks on cores `0 .. num_cpus-1`, `task_place_capacity
+// == 1`, no locks, no fork/join, no task-to-task dependency edges, at most one
+// start token per task, every task either periodic with a positive period or
+// started once at time 0, a positive absolute deadline (or a positive period
+// supplying the implicit deadline), at most one in-flight job per task, and
+// deterministic execution segments (`earliest == latest`). Interval execution
+// times are rejected because then the executed work would not be determined by
+// elapsed time and chi could not be carried exactly across a segment firing.
+// Overlapping releases are rejected as unsupported when the release fires while
+// the task is mid-chain; a release saturating a still-pending entry token
+// starts no new job, so the pending job keeps its original release age and
+// laxity clock, matching the net's capacity-one merge semantics. Completed jobs
+// drop their laxity clock.
 //
 // LLF-ED has no scalar priority; `effective_priority()` throws so the analysis
 // can never silently fall back to static priorities.

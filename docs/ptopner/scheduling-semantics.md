@@ -79,8 +79,8 @@ Current coverage:
 | `pcp` | base `priority` + static lock ceilings + dynamic admission/inheritance, see below | `RESUME` | analyzed |
 | `srp` | base `priority` as preemption level + dynamic global system-ceiling start gate, see below | `RESUME` | analyzed |
 | `edf` | absolute deadlines from per-task release clocks, see below | `RESUME` | analyzed for the restricted statically partitioned multi-core class |
-| `fifo` | arrival order from per-task release clocks (no scalar priority), see below | `NON_PREEMPTIVE` | analyzed for the restricted single-core class |
-| `llf` | event-driven urgency `chi = age + remaining budget - deadline` from per-task laxity clocks, see below | `RESUME` | analyzed for the restricted single-core deterministic class (Event-driven LLF, not classical LLF) |
+| `fifo` | arrival order from per-task release clocks (no scalar priority), see below | `NON_PREEMPTIVE` | analyzed for the restricted statically partitioned multi-core class |
+| `llf` | event-driven urgency `chi = age + remaining budget - deadline` from per-task laxity clocks, see below | `RESUME` | analyzed for the restricted statically partitioned multi-core deterministic class (Event-driven LLF, not classical LLF) |
 
 EDF, FIFO, and LLF are not static-priority policies; their supported classes and
 restrictions are documented in the EDF, FIFO, and Event-driven LLF sections
@@ -418,11 +418,11 @@ their absolute deadlines `r_i + D_i`, which depend on when each job was
 released. The analysis therefore represents a per-job release clock in the
 state and splits each symbolic zone by deadline order.
 
-Multi-core EDF is statically partitioned: every task is bound to one real core
-and EDF is applied independently on each core. A branch selects one earliest
-job per non-idle core, and release clocks of different cores are never
-compared. There is no migration. FIFO and LLF remain single-core; their
-multi-core scheduling is a separate follow-up.
+Multi-core EDF, FIFO, and LLF are statically partitioned: every task is bound
+to one real core and the policy is applied independently on each core. A
+branch selects its scheduling choice per non-idle core, and job clocks of
+different cores are never compared. There is no migration and no global
+cross-core queue or priority order.
 
 ### Supported class
 
@@ -569,14 +569,18 @@ exit place.
 
 ### Supported class
 
-The supported class is the EDF class minus deadlines, plus an explicit
-single-core CPU. TDG lowering (`validate_fifo_supported_class` in
+The supported class is the EDF class minus deadlines, plus one structural CPU
+place per real core. TDG lowering (`validate_fifo_supported_class` in
 `src/lower/tdg2pn/tdg2pn.cpp`) rejects the whole model when any of these does
 not hold, and `FifoFiringRule::ensure_index` re-checks the lowered net:
 
-- `num_cpus == 1` and `cores_per_cpu == 1`; every task bound to core `0`.
+- `num_cpus >= 1` and `cores_per_cpu == 1`. Every task is statically bound to a
+  core in `[0, num_cpus)`; an out-of-range `TaskInfo.core` is rejected. Tasks
+  never migrate, and each core has its own independent non-preemptive FIFO
+  order.
 - No locks (`shared_locks` / task `locks` must be empty), no fork/join (every
   real-core transition belongs to exactly one task chain).
+- Every chain transition of a task runs on that task's `TaskInfo.core`.
 - `task_place_capacity == 1`; all task places saturate.
 - At most one start token per task (`configuration.start[].tokens <= 1`).
 - Every task is either periodic with a positive period released by `_fire`, or
@@ -589,8 +593,9 @@ not hold, and `FifoFiringRule::ensure_index` re-checks the lowered net:
 - No periodic release may fire while the same task's job is between core
   acquisition and completion (see "Periodic releases and the one-job class"
   below).
-- Multi-core is not supported. There is no per-core independent FIFO variant:
-  the rule models exactly one real core.
+
+The rule is applied per real core; there is no global arrival order across
+cores.
 
 Unsupported models raise `std::invalid_argument` during lowering or analysis;
 they are never approximated by static priorities or silent merging.
@@ -609,45 +614,56 @@ A task's chain carries at most one in-flight job:
   end-of-task consumer), or no token after it has been consumed. A completion
   token is a notification, not a job.
 
-At most one running job is allowed per real core. The standard lowering also
-enforces this structurally with a `core0` place of capacity 1: `get_core`
-consumes the core token and the final execution segment returns it, while all
-execution segments are non-suspendable. The rule derives the running set from
-the marking as well, so nets/hand-built variants without a CPU place cannot
-dispatch a second job while one is running.
+At most one running job is allowed per real core. The standard lowering
+enforces this structurally with one `coreN` place of capacity 1 per core:
+`get_core` consumes that core's token and the final execution segment returns
+it, while all execution segments are non-suspendable. Different cores hold
+different CPU places, so a job on one core never blocks another core. The rule
+derives the running set from the marking as well, so nets/hand-built variants
+without a CPU place cannot dispatch a second job on a core while one is
+running there.
 
 ### Arrival-order branches
 
-When the core is free, every pending job is a dispatch candidate. Release
-clocks `r_i` measure time since release and always advance at rate 1, so a
-larger value means an earlier arrival. Candidate `i` is earliest exactly when
+`FifoFiringRule::branches` groups in-flight jobs by `TaskChain::core`. On a
+core with no running job, every pending job there is a dispatch candidate.
+Release clocks `r_i` measure time since release and always advance at rate 1,
+so a larger value means an earlier arrival. Candidate `i` is earliest on its
+core exactly when
 
 ```
-r_i >= r_j  for every other pending job j
+r_i >= r_j  for every other pending job j on the same core
 <=>  r_j - r_i <= 0
 ```
 
-For each feasible candidate the rule emits one `PolicyBranch` whose active set
-is all control (`core < 0`) transitions plus that candidate's structurally
-enabled chain transitions; its `BranchConstraint{i, j, 0}` list records every
-order constraint. The branch is dropped if its constraint set is infeasible in
-the current zone. Equal release values make every tied candidate feasible, so
-all tie resolutions are emitted rather than selecting by task index. If no
-candidate is feasible, the analysis raises an error rather than emitting a
-partial schedule.
+For each feasible candidate on a core the rule emits one `CoreChoice` whose
+active set is that candidate's structurally enabled chain transitions; its
+`BranchConstraint{i, j, 0}` list records every local order constraint. The
+choice is dropped if its constraint set is infeasible in the current zone.
+Equal release values make every tied candidate on that core feasible, so all
+tie resolutions are emitted rather than selecting by task index. A core with
+no in-flight job is absent and contributes nothing.
+
+`combine_core_choices` takes the Cartesian product of the per-core choices and
+the global control (`core < 0`) transitions. Every resulting `PolicyBranch`
+contains each control transition once, the sorted union of the selected chain
+transitions, and the concatenation of the per-core constraint lists in
+ascending core order. Independent ties on different cores therefore produce
+the full product instead of one global tie-break. If a core has in-flight jobs
+but no feasible candidate, the rule raises an error rather than emitting a
+partial schedule; constraints never relate release clocks of jobs on different
+cores.
 
 The engine intersects the constraints with the successor zone **before**
 hashing/deduplication. States that differ only in arrival-order release-clock
 differences therefore remain distinct identities.
 
-While a job is running, the only active chain transitions are that job's own
-(plus independent control transitions). A pending job's `get_core` is excluded
-even in a structurally enabled hand-built net. There is no preemption branch:
-a high-priority periodic arrival waits until the running job exits.
-
-The supported class has one real core, so there is no cross-core ordering and
-no Cartesian product of per-core choices. `cores_per_cpu > 1`, `num_cpus > 1`,
-and tasks on another core are rejected.
+While a job is running on a core, the only active chain transitions there are
+that job's own; the core's pending jobs are excluded even when their
+`get_core` is structurally enabled in a hand-built net without a CPU place.
+Other cores still make their own dispatch choices in the same branch. There is
+no preemption branch: a high-urgency periodic arrival waits until the running
+job on its core exits.
 
 ### Periodic releases and the one-job class
 
@@ -677,16 +693,23 @@ for a task is rejected.
 - `k-extrapolation` is rejected for release-clock states
   (`set_extrapolation(true)` / enabling extrapolation before installing FIFO
   both throw). Relaxing arrival-order bounds would be unsound.
-- Task-symmetry reduction is not implemented for release-clock states. For the
-  single-core FIFO class the verified symmetry group is trivial (no distinct
+- Task-symmetry reduction is not implemented for release-clock states. For a
+  single-core FIFO net the verified symmetry group is trivial (no distinct
   cores to permute), so enabling the reduction is harmless and
-  `symmetry_applied()` stays false.
+  `symmetry_applied()` stays false. A symmetric multi-core FIFO net has a
+  non-trivial task permutation group; the job-clock guard rejects symmetry
+  instead of permuting release clocks.
 - The SCG DOT export labels release clocks `r(K<ordinal>)`; execution clocks
   remain `h(T<id>)`.
 - Tests: `test/test_fifo.cpp` covers FIFO vs fixed preemption/WCRT, tie
   enumeration, symbolic arrival ambiguity, timed one-order dispatch,
   non-preemption invariants, release-clock merge/dispatch/completion lifecycle,
-  state identity, and the rejection paths.
+  state identity, and the rejection paths. `test/test_fifo_multicore.cpp`
+  covers per-core response times with parallel long-running jobs and arrivals,
+  per-core tie Cartesian products, independent arrival orders across cores,
+  an idle core combined with a busy core's choice, per-core non-preemption
+  without a CPU place, cross-core constraint exclusion, and the multi-core
+  rejection paths.
 
 ## Event-driven LLF (restricted supported class)
 
@@ -736,29 +759,39 @@ Larger `chi` means higher urgency; at dispatch the rule chooses the maximum
 ### Urgency-order branches
 
 At each state, `LlfFiringRule::branches` collects the structurally enabled chain
-transitions of every in-flight task. Candidate `i` has maximum urgency exactly
-when
+transitions of every in-flight task and groups the candidates by
+`TaskChain::core`. On each core independently, candidate `i` has maximum
+urgency exactly when
 
 ```
-chi_i >= chi_j  for every other in-flight task j
+chi_i >= chi_j  for every other in-flight task j on the same core
 <=>  chi_j - chi_i <= 0
 ```
 
-For each feasible candidate the rule emits one `PolicyBranch` whose active set
-is all control (`core < 0`) transitions plus that candidate's chain transitions,
-and whose `BranchConstraint{candidate, j, 0, ClockKind::Laxity}` entries record
-the order. The engine validates the branch in the successor zone (tightening
-`chi_j - chi_i <= 0` before hashing/deduplication) and drops it when the order is
-impossible there. Equal urgency makes all tied candidates feasible, so every tie
-resolution is emitted rather than selecting by task index or deadline. A state
-with no candidate chain transition (for example a pending periodic release or a
-completion consumer) emits the control-only branch. If candidates exist but none
-is feasible, the analysis raises an error instead of emitting a partial schedule.
+For each feasible candidate on a core the rule emits one `CoreChoice` whose
+active set is that candidate's chain transitions and whose
+`BranchConstraint{candidate, j, 0, ClockKind::Laxity}` entries record the local
+order. A core with no in-flight job is absent and contributes nothing. The
+engine validates the branch in the successor zone (tightening
+`chi_j - chi_i <= 0` before hashing/deduplication) and drops it when the order
+is impossible there. Equal urgency makes all tied candidates on a core
+feasible, so every tie resolution is emitted rather than selecting by task
+index or deadline. If candidates exist on a core but none is feasible, the
+analysis raises an error instead of emitting a partial schedule.
+
+`combine_core_choices` takes the Cartesian product of the per-core choices and
+the global control (`core < 0`) transitions. Every resulting `PolicyBranch`
+contains each control transition once and the concatenation of the per-core
+constraint lists in ascending core order. Independent ties on different cores
+therefore produce the full product instead of one global tie-break, and
+constraints never compare urgency clocks of jobs on different cores. A state
+with no in-flight task emits the control-only branch.
 
 `LlfFiringRule::uses_laxity_clocks()` is true and its preemption mode is
-`RESUME`: the selected job's chain runs, the other in-flight jobs' chain
-transitions are suspended with frozen execution clocks, and their laxity clocks
-keep advancing.
+`RESUME`: on each core the selected job's chain runs, the other in-flight jobs
+on that core are suspended with frozen execution clocks, and their laxity
+clocks keep advancing. A preemption on one core does not delay jobs on another
+core.
 
 ### State extension: laxity clocks
 
@@ -791,9 +824,12 @@ TDG lowering (`validate_llf_supported_class` in `src/lower/tdg2pn/tdg2pn.cpp`)
 rejects the whole model when any condition does not hold, and
 `LlfFiringRule::ensure_index` re-checks the lowered net:
 
-- `num_cpus == 1` and `cores_per_cpu == 1`; every task bound to core `0`.
+- `num_cpus >= 1` and `cores_per_cpu == 1`. Every task is statically bound to a
+  core in `[0, num_cpus)`; an out-of-range `TaskInfo.core` is rejected. Tasks
+  never migrate, and each core's urgency order is independent.
 - No locks (`shared_locks` / task `locks` must be empty), no fork/join (every
   real-core transition belongs to exactly one task chain).
+- Every chain transition of a task runs on that task's `TaskInfo.core`.
 - `task_place_capacity == 1`; all task places saturate. At most one start token
   per task.
 - Every task has a positive absolute deadline or a positive period and is either
@@ -819,22 +855,28 @@ can silently use a scalar priority for LLF.
   (`set_extrapolation(true)` / installing the LLF rule before enabling
   extrapolation both throw). Relaxing urgency bounds would be unsound.
 - Task-symmetry reduction is rejected when it would actually be applied to a
-  laxity-clock build. For the supported single-core class the verified symmetry
-  group is trivial, so enabling the reduction is harmless and
-  `symmetry_applied()` stays false; a symmetric multi-core net that reaches the
-  LLF rule is rejected instead of silently permuting laxity clocks.
+  laxity-clock build. A single-core LLF net has a trivial permutation group, so
+  enabling the reduction is harmless and `symmetry_applied()` stays false; a
+  symmetric multi-core net that reaches the LLF rule is rejected instead of
+  silently permuting laxity clocks.
 - The SCG DOT export labels laxity clocks `l(K<ordinal>)` and shows negative
   lower bounds exactly; execution clocks remain `h(T<id>)`.
 - Semantics not provided: no preemption at a laxity crossing inside a
   `time_elapse` region, no clock reset at segment boundaries, no interval
-  execution times, no multi-core/parallel per-core LLF, and no classical
-  continuous-time LLF optimality claim. Selection happens only at the discrete
-  events enumerated by the state-class engine.
+  execution times, no migration or global cross-core urgency order, no
+  multicore blocking-bound claim, and no classical continuous-time LLF
+  optimality claim. Selection happens only at the discrete events enumerated by
+  the state-class engine, independently on each real core.
 - Tests: `test/test_llf.cpp` covers LLF vs EDF/RM/DM at release, release-
   triggered reordering and preemption, tie enumeration, multi-segment
   preemption, the rate law, reset/carry/drop lifecycle, layout/identity,
   lowering and hand-built rejection paths, and the symbolic maximum-urgency
-  invariant over stored states.
+  invariant over stored states. `test/test_llf_multicore.cpp` covers per-core
+  maximum-chi selection and parallel response times, per-core tie Cartesian
+  products, independent urgency orders across cores, cross-core constraint
+  exclusion, maximum-chi preemption on one core without delaying another, an
+  idle core combined with a busy core's choice, and the multi-core rejection
+  paths.
 
 ## When these sets are recomputed
 
@@ -869,10 +911,10 @@ to model preemption directly, instead of any structural encoding:
 
 The `fixed_prior_with_restart` policy and the PToPNer export path keep the
 structural CPU place and structural preemption sub-net unchanged. FIFO also
-keeps the structural CPU place, but no preemption sub-net: its execution
-segments are simply non-suspendable, so a dispatched job runs to exit. They
-register no parallelism bound, so the filter falls back to "keep every
-highest-priority transition" for them.
+keeps one structural CPU place per real core, but no preemption sub-net: its
+execution segments are simply non-suspendable, so a dispatched job runs to exit
+on its core. They register no parallelism bound, so the filter falls back to
+"keep every highest-priority transition" for them.
 
 Note: multi-core parallelism per CPU (`cores_per_cpu` > 1) is intentionally not
 modeled here -- the resume policy fixes the bound at one task per core. Spin-lock

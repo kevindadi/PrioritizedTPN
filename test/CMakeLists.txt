@@ -30,7 +30,9 @@ add_executable(ptpn_test
   test_edf.cpp
   test_edf_multicore.cpp
   test_fifo.cpp
+  test_fifo_multicore.cpp
   test_llf.cpp
+  test_llf_multicore.cpp
   test_allocation.cpp
   # Exposes write_wcet_json so the WCET export schema is covered directly.
   ${CMAKE_SOURCE_DIR}/src/app/pipeline.cpp

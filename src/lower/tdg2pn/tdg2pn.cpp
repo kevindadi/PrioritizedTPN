@@ -133,14 +133,15 @@ void validate_edf_supported_class(const tdg::TDG& tdg) {
   }
 }
 
-// FIFO is only analyzed for the same restricted, single-core, independent-task
-// class as EDF, with one in-flight job per task and a strictly non-preemptive
-// CPU. Reject everything else here with a lowering-time message instead of
-// letting the state-class rule approximate an unsupported model.
+// FIFO is analyzed for the same restricted, statically partitioned
+// independent-task class as EDF, with one in-flight job per task and a strictly
+// non-preemptive CPU per real core. Reject everything else here with a
+// lowering-time message instead of letting the state-class rule approximate an
+// unsupported model.
 void validate_fifo_supported_class(const tdg::TDG& tdg) {
   const std::string name = schedule_policy_to_string(SchedulePolicy::FIFO);
-  if (tdg.num_cpus != 1) {
-    throw std::invalid_argument(name + " supports exactly one CPU; configuration has num_cpus = " +
+  if (tdg.num_cpus < 1) {
+    throw std::invalid_argument(name + " requires num_cpus >= 1; configuration has num_cpus = " +
                                 std::to_string(tdg.num_cpus));
   }
   if (tdg.cores_per_cpu != 1) {
@@ -177,10 +178,10 @@ void validate_fifo_supported_class(const tdg::TDG& tdg) {
   }
 
   const auto check_task = [&](const std::string& task_name, const TaskNode& task) {
-    if (task.core != 0) {
-      throw std::invalid_argument(name + " supported class is single-core: task '" + task_name +
-                                  "' is bound to core " + std::to_string(task.core) +
-                                  " (expected core 0)");
+    if (task.core < 0 || task.core >= tdg.num_cpus) {
+      throw std::invalid_argument(name + " task '" + task_name + "' is bound to core " +
+                                  std::to_string(task.core) + " outside [0, " +
+                                  std::to_string(tdg.num_cpus) + ")");
     }
     if (!task.lock.empty()) {
       throw std::invalid_argument(name + " supported class does not include locks; task '" +
@@ -243,13 +244,14 @@ void validate_fifo_supported_class(const tdg::TDG& tdg) {
   }
 }
 
-// Event-driven LLF is analyzed for the same restricted single-core class as
-// EDF/FIFO, plus deterministic execution segments: chi is only carried exactly
-// across a segment when the executed work equals elapsed wall-clock time.
+// Event-driven LLF is analyzed for the same restricted, statically partitioned
+// independent-task class as EDF/FIFO, plus deterministic execution segments:
+// chi is only carried exactly across a segment when the executed work equals
+// elapsed wall-clock time.
 void validate_llf_supported_class(const tdg::TDG& tdg) {
   const std::string name = schedule_policy_to_string(SchedulePolicy::LLF);
-  if (tdg.num_cpus != 1) {
-    throw std::invalid_argument(name + " supports exactly one CPU; configuration has num_cpus = " +
+  if (tdg.num_cpus < 1) {
+    throw std::invalid_argument(name + " requires num_cpus >= 1; configuration has num_cpus = " +
                                 std::to_string(tdg.num_cpus));
   }
   if (tdg.cores_per_cpu != 1) {
@@ -286,10 +288,10 @@ void validate_llf_supported_class(const tdg::TDG& tdg) {
   }
 
   const auto check_task = [&](const std::string& task_name, const TaskNode& task) {
-    if (task.core != 0) {
-      throw std::invalid_argument(name + " supported class is single-core: task '" + task_name +
-                                  "' is bound to core " + std::to_string(task.core) +
-                                  " (expected core 0)");
+    if (task.core < 0 || task.core >= tdg.num_cpus) {
+      throw std::invalid_argument(name + " task '" + task_name + "' is bound to core " +
+                                  std::to_string(task.core) + " outside [0, " +
+                                  std::to_string(tdg.num_cpus) + ")");
     }
     if (!task.lock.empty()) {
       throw std::invalid_argument(name + " supported class does not include locks; task '" +

@@ -421,14 +421,14 @@ std::string task_name_or_ordinal(const std::vector<TaskChain>& tasks, size_t ord
 // Task-chain index shared by the per-job-clock policies (EDF, FIFO and
 // LLF-ED). They require the same one-job, no-lock lowering with statically
 // partitioned tasks: each task chain carries at most one in-flight job and all
-// of its transitions run on the task's declared real core.
+// of its transitions run on the task's declared real core. Every policy
+// schedules each real core independently; tasks never migrate.
 //
 // `options` selects the policy-specific extra requirements: EDF/LLF need a
 // positive deadline, LLF additionally needs deterministic execution segments
 // plus a TaskInfo::wcet equal to their sum, and FIFO derives the supported core
 // range from its structural CPU places (falling back to the TaskInfo cores for
-// nets without a CPU place). FIFO and LLF remain single-core until the
-// multi-core follow-up, enforced by `require_single_core`.
+// nets without a CPU place).
 struct ReleaseClassOptions {
   const char* label = "EDF";
   bool require_deadline = true;
@@ -462,11 +462,12 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
                "shared lock resources");
   }
 
-  // Supported core range. Resume policies (EDF/LLF) derive it from the
-  // statically partitioned TaskInfo cores: max(TaskInfo.core) + 1. FIFO has a
-  // structural CPU place per real core, so its range is the number of those
-  // places; a hand-built FIFO net without CPU places takes the marking-based
-  // path and uses the TaskInfo cores instead.
+  // Supported core range. All three job-clock policies are statically
+  // partitioned. Resume policies (EDF/LLF) derive the range from the TaskInfo
+  // cores: max(TaskInfo.core) + 1. FIFO has a structural CPU place per real
+  // core, so its range is the number of those places; a hand-built FIFO net
+  // without CPU places takes the marking-based path and uses the TaskInfo cores
+  // instead.
   size_t num_cores = 0;
   if (options.use_cpu_places && !net.cpu_places().empty()) {
     num_cores = net.cpu_places().size();
@@ -490,6 +491,10 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
   if (options.require_single_core && num_cores > 1) {
     throw std::invalid_argument(name + " supported class is single-core, but the net has " +
                                 std::to_string(num_cores) + " real cores");
+  }
+
+  if (num_cores < 1) {
+    throw std::invalid_argument(name + " requires num_cpus >= 1");
   }
 
   const std::vector<int>& initial = net.get_marking();
@@ -931,11 +936,10 @@ void LlfFiringRule::ensure_index(const petri::PTPN& net) const {
   ReleaseClassOptions options;
   options.label = "LLF";
   options.require_deadline = true;
-  // LLF stays single-core until the per-core multi-core follow-up. Structural
-  // CPU places, when present, define the core range; otherwise the TaskInfo
-  // cores do.
-  options.use_cpu_places = true;
-  options.require_single_core = true;
+  // LLF is a resume policy, so the lowerer installs no structural CPU place;
+  // the supported core range comes from the statically partitioned TaskInfo
+  // cores. Each core is scheduled independently below.
+  options.use_cpu_places = false;
   options.require_deterministic_segments = true;
   ReleaseTaskIndex index = build_release_task_index(net, options);
   tasks_ = std::move(index.tasks);
@@ -1006,7 +1010,11 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
   // A task without an in-flight job must not expose a chain transition; the
   // only chain token it can hold is a completed exit token consumed by a
   // control transition.
-  std::vector<size_t> candidates;
+  //
+  // Tasks are statically partitioned: LLF-ED ranks jobs only against the other
+  // in-flight jobs on their own core. Laxity clocks of different cores are
+  // never compared.
+  std::map<int, std::vector<size_t>> candidates_by_core;
   for (size_t ordinal = 0; ordinal < tasks_.size(); ++ordinal) {
     const size_t chain_tokens = task_chain_token_count(tasks_[ordinal], state.marking);
     if (chain_tokens > 1) {
@@ -1030,67 +1038,70 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
           "' has an enabled chain transition but no in-flight job/laxity clock");
     }
     if (in_flight) {
-      candidates.push_back(ordinal);
+      candidates_by_core[tasks_[ordinal].core].push_back(ordinal);
     }
   }
 
-  std::vector<PolicyBranch> result;
-  if (candidates.empty()) {
-    std::sort(control.begin(), control.end());
-    result.push_back(PolicyBranch{std::move(control), {}});
-    return result;
-  }
-
-  for (size_t candidate : candidates) {
-    const int candidate_clock = state.laxity_index(candidate);
-    if (candidate_clock <= 0) {
-      throw std::invalid_argument(
-          "LLF state is missing the laxity clock of in-flight task '" +
-          task_name_or_ordinal(tasks_, candidate) + "'");
-    }
-
-    // Candidate i is feasible when the zone admits a valuation in which its
-    // urgency is at least every other in-flight job's:
-    //   chi_i >= chi_j  <=>  chi_j - chi_i <= 0.
-    // Non-strict constraints keep every equal-urgency tie feasible.
-    DBM trial = state.zone;
-    std::vector<BranchConstraint> constraints;
-    bool feasible = true;
-    for (size_t other : candidates) {
-      if (other == candidate) {
-        continue;
-      }
-      const int other_clock = state.laxity_index(other);
-      if (other_clock <= 0) {
+  std::map<int, std::vector<CoreChoice>> choices_by_core;
+  for (const auto& [core, candidates] : candidates_by_core) {
+    std::vector<CoreChoice> choices;
+    choices.reserve(candidates.size());
+    for (size_t candidate : candidates) {
+      const int candidate_clock = state.laxity_index(candidate);
+      if (candidate_clock <= 0) {
         throw std::invalid_argument(
             "LLF state is missing the laxity clock of in-flight task '" +
-            task_name_or_ordinal(tasks_, other) + "'");
+            task_name_or_ordinal(tasks_, candidate) + "'");
       }
-      if (!trial.tighten(static_cast<size_t>(other_clock),
-                         static_cast<size_t>(candidate_clock), 0)) {
-        feasible = false;
-        break;
+
+      // Candidate i is feasible when the zone admits a valuation in which its
+      // urgency is at least every other in-flight job's *on the same core*:
+      //   chi_i >= chi_j  <=>  chi_j - chi_i <= 0.
+      // Non-strict constraints keep every equal-urgency tie feasible.
+      DBM trial = state.zone;
+      std::vector<BranchConstraint> constraints;
+      bool feasible = true;
+      for (size_t other : candidates) {
+        if (other == candidate) {
+          continue;
+        }
+        const int other_clock = state.laxity_index(other);
+        if (other_clock <= 0) {
+          throw std::invalid_argument(
+              "LLF state is missing the laxity clock of in-flight task '" +
+              task_name_or_ordinal(tasks_, other) + "'");
+        }
+        if (!trial.tighten(static_cast<size_t>(other_clock),
+                           static_cast<size_t>(candidate_clock), 0)) {
+          feasible = false;
+          break;
+        }
+        constraints.push_back(
+            BranchConstraint{candidate, other, 0, ClockKind::Laxity});
       }
-      constraints.push_back(
-          BranchConstraint{candidate, other, 0, ClockKind::Laxity});
-    }
-    if (!feasible) {
-      continue;
+      if (!feasible) {
+        continue;
+      }
+
+      CoreChoice choice;
+      choice.active = enabled_per_task[candidate];
+      std::sort(choice.active.begin(), choice.active.end());
+      choice.constraints = std::move(constraints);
+      choices.push_back(std::move(choice));
     }
 
-    TransitionSet active = control;
-    active.insert(active.end(), enabled_per_task[candidate].begin(),
-                  enabled_per_task[candidate].end());
-    std::sort(active.begin(), active.end());
-    result.push_back(PolicyBranch{std::move(active), std::move(constraints)});
+    if (choices.empty()) {
+      throw std::runtime_error(
+          "LLF urgency ordering is inconsistent with the state zone on core " +
+          std::to_string(core) + ": no candidate can have maximum chi");
+    }
+    choices_by_core.emplace(core, std::move(choices));
   }
 
-  if (result.empty()) {
-    throw std::runtime_error(
-        "LLF urgency ordering is inconsistent with the state zone: no candidate "
-        "can have maximum chi");
-  }
-  return result;
+  // One branch per Cartesian combination of the independent per-core choices,
+  // carrying the global control transitions once. A core with no in-flight
+  // task contributes no choice.
+  return combine_core_choices(control, choices_by_core);
 }
 
 // ---------------------------------------------------------------------------
@@ -1110,13 +1121,11 @@ void FifoFiringRule::ensure_index(const petri::PTPN& net) const {
   options.label = "FIFO";
   options.require_deadline = false;
   // FIFO is not a resume policy, so the lowerer must install the structural
-  // core places (capacity `cores_per_cpu`) and non-suspendable execution
-  // segments. The number of CPU places defines the supported core range. A
-  // hand-built net without a CPU place is still accepted: the rule derives the
-  // single running job from the marking and never admits a second one. FIFO
-  // stays single-core until the per-core multi-core follow-up.
+  // core places (capacity `cores_per_cpu`, and `cores_per_cpu == 1` is
+  // required) and non-suspendable execution segments. The number of CPU places
+  // defines the supported core range; a hand-built net without a CPU place is
+  // still accepted and derives the per-core running set from the marking.
   options.use_cpu_places = true;
-  options.require_single_core = true;
   ReleaseTaskIndex index = build_release_task_index(net, options);
   tasks_ = std::move(index.tasks);
   task_of_transition_ = std::move(index.task_of_transition);
@@ -1187,9 +1196,10 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
 
   // Classify every task from its marking: pending at the entry, running
   // somewhere else in the chain, or completed. The one-job supported class
-  // never has more than one token per chain.
-  std::vector<size_t> pending;
-  size_t running = NO_TASK;
+  // never has more than one token per chain. Tasks are statically partitioned,
+  // so the classification and every scheduling decision are per core.
+  std::map<int, std::vector<size_t>> pending_by_core;
+  std::map<int, size_t> running_by_core;
   for (size_t ordinal = 0; ordinal < tasks_.size(); ++ordinal) {
     const TaskChain& task = tasks_[ordinal];
     const size_t chain_tokens = task_chain_token_count(task, state.marking);
@@ -1215,109 +1225,122 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
     const bool at_entry =
         task.entry_place < state.marking.size() && state.marking[task.entry_place] > 0;
     if (at_entry) {
-      // While another job runs, the structural core place disables this
-      // pending job's get_core transition. That is the expected non-preemptive
-      // state, so an empty enabled set is checked only once the core is free.
-      pending.push_back(ordinal);
+      // While another job runs on this core the structural core place disables
+      // this pending job's get_core transition. That is the expected
+      // non-preemptive state, so an empty enabled set is checked only once the
+      // core is free.
+      pending_by_core[task.core].push_back(ordinal);
       continue;
     }
 
     // Mid-chain token: the job has been dispatched and runs to completion.
-    if (running != NO_TASK) {
+    const auto [it, inserted] = running_by_core.emplace(task.core, ordinal);
+    if (!inserted) {
       throw std::invalid_argument(
           "FIFO supported class allows at most one running job per real core; tasks '" +
-          tasks_[running].name + "' and '" + task.name +
-          "' both have a job past the task entry");
+          tasks_[it->second].name + "' and '" + task.name +
+          "' both have a job past the task entry on core " +
+          std::to_string(task.core));
     }
-    running = ordinal;
   }
 
-  std::vector<PolicyBranch> result;
+  // Per-core choices. A core with no in-flight job is absent and contributes
+  // nothing; control transitions are added once by combine_core_choices().
+  std::map<int, std::vector<CoreChoice>> choices_by_core;
 
-  // Non-preemption: while a job is running, only its own chain transitions
-  // (plus independent control transitions) may be active.
-  if (running != NO_TASK) {
-    if (enabled_per_task[running].empty()) {
-      throw std::invalid_argument(
-          "FIFO job layout is ambiguous: running task '" + tasks_[running].name +
-          "' has no structurally enabled chain transition");
-    }
-    TransitionSet active = control;
-    active.insert(active.end(), enabled_per_task[running].begin(),
-                  enabled_per_task[running].end());
-    std::sort(active.begin(), active.end());
-    result.push_back(PolicyBranch{std::move(active), {}});
-    return result;
-  }
-
-  if (pending.empty()) {
-    // Only control (environment) transitions can fire.
-    std::sort(control.begin(), control.end());
-    result.push_back(PolicyBranch{std::move(control), {}});
-    return result;
-  }
-
-  // The core is free: every pending job must be able to start. A pending job
-  // without an enabled start cannot be dispatched and would make the FIFO
-  // order unrepresentable.
-  for (size_t ordinal : pending) {
+  // Non-preemption: while a job runs on a core, only its own chain transitions
+  // may be active on that core. A pending job on the same core cannot dispatch,
+  // even in a hand-built net without a structural CPU place. Independent cores
+  // still dispatch concurrently through the Cartesian product below.
+  for (const auto& [core, ordinal] : running_by_core) {
     if (enabled_per_task[ordinal].empty()) {
       throw std::invalid_argument(
-          "FIFO job layout is ambiguous: pending task '" + tasks_[ordinal].name +
-          "' has no structurally enabled start transition while the core is free");
+          "FIFO job layout is ambiguous: running task '" + tasks_[ordinal].name +
+          "' has no structurally enabled chain transition on core " +
+          std::to_string(core));
     }
+    CoreChoice choice;
+    choice.active = enabled_per_task[ordinal];
+    std::sort(choice.active.begin(), choice.active.end());
+    choices_by_core[core].push_back(std::move(choice));
   }
 
-  // The core is free. Pick an earliest pending arrival. A release clock is the
-  // time since release and always advances at rate 1, so the largest value is
-  // the earliest arrival. Candidate i is feasible iff
-  //   r_i >= r_j  <=>  r_j - r_i <= 0  for every other pending job j,
-  // represented as BranchConstraint{i, j, 0}.
-  for (size_t candidate : pending) {
-    const int candidate_clock = state.release_index(candidate);
-    if (candidate_clock <= 0) {
-      throw std::invalid_argument(
-          "FIFO state is missing the release clock of pending task '" +
-          task_name_or_ordinal(tasks_, candidate) + "'");
+  // Cores with no running job are free: every pending job on such a core is a
+  // dispatch candidate. Arrival order is local to the core. A release clock is
+  // the time since release and always advances at rate 1, so the largest value
+  // is the earliest arrival. Candidate i is feasible iff
+  //   r_i >= r_j  <=>  r_j - r_i <= 0  for every other pending job j
+  // on the same core, represented as BranchConstraint{i, j, 0}. Ties keep every
+  // tied candidate, so independent ties on different cores produce the full
+  // Cartesian product.
+  for (const auto& [core, pending] : pending_by_core) {
+    if (running_by_core.count(core) != 0) {
+      continue;  // pending jobs wait behind the running job on this core
     }
 
-    DBM trial = state.zone;
-    std::vector<BranchConstraint> constraints;
-    bool feasible = true;
-    for (size_t other : pending) {
-      if (other == candidate) {
-        continue;
+    // The core is free: every pending job must be able to start. A pending job
+    // without an enabled start cannot be dispatched and would make the FIFO
+    // order unrepresentable.
+    for (size_t ordinal : pending) {
+      if (enabled_per_task[ordinal].empty()) {
+        throw std::invalid_argument(
+            "FIFO job layout is ambiguous: pending task '" + tasks_[ordinal].name +
+            "' has no structurally enabled start transition while its core is free");
       }
-      const int other_clock = state.release_index(other);
-      if (other_clock <= 0) {
+    }
+
+    std::vector<CoreChoice> choices;
+    choices.reserve(pending.size());
+    for (size_t candidate : pending) {
+      const int candidate_clock = state.release_index(candidate);
+      if (candidate_clock <= 0) {
         throw std::invalid_argument(
             "FIFO state is missing the release clock of pending task '" +
-            task_name_or_ordinal(tasks_, other) + "'");
+            task_name_or_ordinal(tasks_, candidate) + "'");
       }
-      if (!trial.tighten(static_cast<size_t>(other_clock),
-                         static_cast<size_t>(candidate_clock), 0)) {
-        feasible = false;
-        break;
+
+      DBM trial = state.zone;
+      std::vector<BranchConstraint> constraints;
+      bool feasible = true;
+      for (size_t other : pending) {
+        if (other == candidate) {
+          continue;
+        }
+        const int other_clock = state.release_index(other);
+        if (other_clock <= 0) {
+          throw std::invalid_argument(
+              "FIFO state is missing the release clock of pending task '" +
+              task_name_or_ordinal(tasks_, other) + "'");
+        }
+        if (!trial.tighten(static_cast<size_t>(other_clock),
+                           static_cast<size_t>(candidate_clock), 0)) {
+          feasible = false;
+          break;
+        }
+        constraints.push_back(BranchConstraint{candidate, other, 0});
       }
-      constraints.push_back(BranchConstraint{candidate, other, 0});
-    }
-    if (!feasible) {
-      continue;
+      if (!feasible) {
+        continue;
+      }
+
+      CoreChoice choice;
+      choice.active = enabled_per_task[candidate];
+      std::sort(choice.active.begin(), choice.active.end());
+      choice.constraints = std::move(constraints);
+      choices.push_back(std::move(choice));
     }
 
-    TransitionSet active = control;
-    active.insert(active.end(), enabled_per_task[candidate].begin(),
-                  enabled_per_task[candidate].end());
-    std::sort(active.begin(), active.end());
-    result.push_back(PolicyBranch{std::move(active), std::move(constraints)});
+    if (choices.empty()) {
+      throw std::runtime_error(
+          "FIFO arrival ordering is inconsistent with the state zone on core " +
+          std::to_string(core) + ": no pending job can be earliest");
+    }
+    choices_by_core.emplace(core, std::move(choices));
   }
 
-  if (result.empty()) {
-    throw std::runtime_error(
-        "FIFO arrival ordering is inconsistent with the state zone: no pending "
-        "job can be earliest");
-  }
-  return result;
+  // One branch per Cartesian combination of the independent per-core choices,
+  // carrying the global control transitions once.
+  return combine_core_choices(control, choices_by_core);
 }
 
 // ---------------------------------------------------------------------------

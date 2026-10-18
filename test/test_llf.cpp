@@ -226,8 +226,8 @@ petri::PTPN make_multi_segment_net(SchedulePolicy policy) {
 
 // Two identical tasks on distinct real cores (plus identical completion
 // consumers). Used only to exercise the symmetry guard: the verified task
-// permutation group is non-trivial even though LLF itself does not support
-// multi-core nets. The guard fires before the rule ever indexes this net.
+// permutation group is non-trivial, so symmetry would actually be applied, and
+// the guard fires before the rule ever indexes this net.
 petri::PTPN make_symmetric_net() {
   petri::PTPN net;
   for (int core = 0; core < 2; ++core) {
@@ -973,16 +973,16 @@ TEST(LlfTest, LaxityLayoutAndStateIdentity) {
 // ---------------------------------------------------------------------------
 
 TEST(LlfTest, RejectsUnsupportedLoweredModels) {
-  // Multi-core.
+  // No real core at all.
   expect_rejected(R"({
-    "graph": {"name": "LlfMultiCpu"},
-    "configuration": {"num_cpus": 2, "cores_per_cpu": 1, "policy": "llf",
+    "graph": {"name": "LlfNoCpu"},
+    "configuration": {"num_cpus": 0, "cores_per_cpu": 1, "policy": "llf",
                       "start": [{"task": "A", "tokens": 1}]},
     "nodes": [{"id": "A", "type": "task", "priority": 0, "core": 0,
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "one CPU");
+                 "num_cpus >= 1");
 
   // More than one core per CPU.
   expect_rejected(R"({
@@ -995,7 +995,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
   })",
                  "cores_per_cpu == 1");
 
-  // Task on a real core other than 0.
+  // Task on a core outside the declared range.
   expect_rejected(R"({
     "graph": {"name": "LlfCoreOne"},
     "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "llf",
@@ -1004,7 +1004,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "single-core");
+                 "outside [0, 1)");
 
   // Capacity above one (queued jobs are outside the supported class).
   expect_rejected(R"({
@@ -1196,18 +1196,15 @@ TEST(LlfTest, RejectsHandBuiltNetsWithMissingOrInconsistentMetadata) {
         << "unexpected message: " << error.what();
   }
 
-  // A hand-built task bound to a real core other than 0 is outside the
-  // single-core class even if the lowering validators are bypassed.
+  // A hand-built task bound to any real core is accepted: LLF indexes tasks by
+  // their declared core and the scheduling rule compares urgency only within a
+  // core.
   petri::PTPN off_core;
   (void)add_hand_task(off_core, "A", {1}, 5, 0, /*start_at_zero=*/true, /*core=*/1);
   off_core.set_schedule_policy(SchedulePolicy::LLF);
-  try {
-    LlfFiringRule rule(off_core);
-    FAIL() << "expected LLF to reject a task on core 1";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string(error.what()).find("single-core"), std::string::npos)
-        << "unexpected message: " << error.what();
-  }
+  LlfFiringRule off_core_rule(off_core);
+  ASSERT_EQ(off_core_rule.tasks().size(), 1U);
+  EXPECT_EQ(off_core_rule.tasks()[0].core, 1);
 }
 
 // ---------------------------------------------------------------------------

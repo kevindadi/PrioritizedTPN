@@ -761,16 +761,16 @@ TEST(FifoTest, ArrivalOrderZoneDifferencesDoNotMerge) {
 // ---------------------------------------------------------------------------
 
 TEST(FifoTest, RejectsUnsupportedLoweredModels) {
-  // Multi-core.
+  // No real core at all.
   expect_rejected(R"({
-    "graph": {"name": "FifoMultiCpu"},
-    "configuration": {"num_cpus": 2, "cores_per_cpu": 1, "policy": "fifo",
+    "graph": {"name": "FifoNoCpu"},
+    "configuration": {"num_cpus": 0, "cores_per_cpu": 1, "policy": "fifo",
                       "start": [{"task": "A", "tokens": 1}]},
     "nodes": [{"id": "A", "type": "task", "priority": 0, "core": 0,
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "one CPU");
+                 "num_cpus >= 1");
 
   // More than one running job per core.
   expect_rejected(R"({
@@ -834,7 +834,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
   })",
                  "dependency-driven releases");
 
-  // A task on another core.
+  // A task on a core outside the declared range.
   expect_rejected(R"({
     "graph": {"name": "FifoCoreOne"},
     "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "fifo",
@@ -843,7 +843,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "single-core");
+                 "outside [0, 1)");
 
   // Fork/join.
   expect_rejected(R"({
