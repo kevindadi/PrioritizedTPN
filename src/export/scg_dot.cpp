@@ -11,15 +11,17 @@ namespace scg_export {
 
 namespace {
 
-// Human-readable name of one DBM variable. Release clocks have no transition;
-// they are labelled with the task ordinal (the same ordinal used by
-// StateClass::release_clock_of_task).
+// Human-readable name of one DBM variable. Job clocks have no transition; they
+// are labelled with the task ordinal (the same ordinal used by
+// StateClass::release_clock_of_task / laxity_clock_of_task).
 std::string clock_label(const state_class::ClockVar& var) {
   switch (var.kind) {
     case state_class::ClockKind::Zero:
       return "x0";
     case state_class::ClockKind::Release:
       return "r(K" + std::to_string(var.task) + ")";
+    case state_class::ClockKind::Laxity:
+      return "l(K" + std::to_string(var.task) + ")";
     case state_class::ClockKind::Suspension:
       return "w(T" + std::to_string(var.transition) + ")";
     case state_class::ClockKind::Execution:
@@ -197,12 +199,24 @@ std::vector<std::string> ScgFormatter::format_zone_constraints(const state_class
   const std::string minus = html ? "&minus;" : "-";
 
   auto clock_name = [&](size_t i) { return clock_label(state.clock_vars[i]); };
+  // Release/execution/suspension clocks are non-negative, so their display is
+  // clamped at zero. Laxity clocks are genuine DBM variables and may be
+  // negative (chi = wcet - deadline at release), so their lower bound is shown
+  // exactly.
+  auto lower_bound = [&](size_t i) {
+    const int raw = state.zone.get_constraint(0, i);
+    if (raw == state_class::INF_TIME) {
+      return 0;
+    }
+    return state.clock_vars[i].kind == state_class::ClockKind::Laxity
+               ? -raw
+               : std::max(0, -raw);
+  };
 
   // Per-clock bounds: -D[0][i] <= x_i <= D[i][0].
   for (size_t i = 1; i < n && i < state.clock_vars.size(); ++i) {
     const int upper = state.zone.get_constraint(i, 0);
-    const int lower_raw = state.zone.get_constraint(0, i);
-    const int lower = lower_raw == state_class::INF_TIME ? 0 : std::max(0, -lower_raw);
+    const int lower = lower_bound(i);
     const std::string name = clock_name(i);
     std::string body;
     if (upper != state_class::INF_TIME && upper == lower) {
@@ -227,8 +241,7 @@ std::vector<std::string> ScgFormatter::format_zone_constraints(const state_class
         continue;
       }
       const int upper_i = state.zone.get_constraint(i, 0);
-      const int lower_j_raw = state.zone.get_constraint(0, j);
-      const int lower_j = lower_j_raw == state_class::INF_TIME ? 0 : std::max(0, -lower_j_raw);
+      const int lower_j = lower_bound(j);
       const int implied =
           upper_i == state_class::INF_TIME ? state_class::INF_TIME : upper_i - lower_j;
       if (implied != state_class::INF_TIME && dij >= implied) {

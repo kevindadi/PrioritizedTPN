@@ -215,9 +215,32 @@ Analysis coverage in this phase:
   `num_cpus > 1`, lowering rejects it for FIFO). See
   `docs/ptopner/scheduling-semantics.md` for the full supported class and
   semantics.
-- `llf` is accepted by the parser but is **not implemented** as scheduling
-  semantics. It falls back to the static transition priorities with
-  non-preemptive handling and must not be treated as analyzed.
+- `llf` implements Event-driven Least Laxity First for a deliberately
+  restricted class, **not** classical continuous-time LLF and **not** a static
+  priority. Lowering accepts only: `num_cpus == 1` (all tasks on core `0`),
+  `cores_per_cpu == 1`, no locks, no fork/join, no task-to-task dependency
+  edges, `task_place_capacity == 1`, at most one start token per task, and
+  every task either periodic with a positive period released by `_fire` or a
+  one-shot task started at time 0; every task needs a positive absolute
+  deadline or period. Execution segments must be deterministic
+  (`earliest == latest`, non-negative), and `TaskInfo::wcet` must equal their
+  sum. The state class adds a laxity clock per in-flight job,
+  `chi = age + remaining_budget - deadline`, initially `wcet - deadline`
+  (possibly negative), and an urgency-order constraint to the DBM zone:
+  dispatching candidate `X` requires `chi_other - chi_X <= 0`, and every
+  feasible maximum-urgency candidate (ties included) yields its own branch.
+  While a job is actively executing its next segment `chi` is frozen;
+  otherwise it advances at rate 1 (preempted work keeps accumulating urgency).
+  `chi` is continuous across deterministic segment firings and is never reset
+  at a segment boundary; a fresh release resets it and completion drops it. A
+  periodic release that fires while the previous job is mid-chain is rejected
+  with `std::invalid_argument` (no queued jobs); a release while the job waits
+  at the entry merges without resetting `chi`. The choice is made only at
+  discrete state-class events: the engine does not preempt inside
+  `time_elapse` at a laxity crossing. `k-extrapolation` and symmetry reduction
+  (when it would actually be applied) are rejected for LLF states. See
+  `docs/ptopner/scheduling-semantics.md` for the full supported class and
+  semantics.
 
 ## `nodes`
 

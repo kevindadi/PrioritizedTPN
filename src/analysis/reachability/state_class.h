@@ -28,6 +28,7 @@ inline bool contains(const TransitionSet& set, size_t value) {
 enum class ClockKind {
   Zero,        // the reference variable x0 (always lives at index 0)
   Release,     // r_i: time since the current job of task i was released
+  Laxity,      // chi_i: urgency (-laxity) of the current job of task i
   Execution,   // h_t: how long transition t has effectively been running
   Suspension,  // w_t: how long suspendable transition t has been suspended
 };
@@ -35,7 +36,7 @@ enum class ClockKind {
 // Maps a DBM column index back to the variable it represents.
 //
 // `transition` identifies Execution/Suspension clocks; `task` identifies
-// Release clocks (an ordinal into the name-sorted task list produced by
+// Release/Laxity clocks (an ordinal into the name-sorted task list produced by
 // build_task_chains). Exactly one of the two is meaningful for a non-Zero
 // clock; the unused field is NO_TRANSITION/NO_TASK.
 struct ClockVar {
@@ -64,6 +65,9 @@ struct TaskChain {
   std::string name;
   int deadline = 0;
   int period = 0;
+  // Worst-case execution time from TaskInfo: the sum of the execution-segment
+  // upper bounds. Used by Event-driven LLF to reset chi = wcet - deadline.
+  int wcet = 0;
   size_t entry_place = NO_TRANSITION;
   size_t exit_place = NO_TRANSITION;
   size_t periodic_transition = NO_TRANSITION;
@@ -137,6 +141,10 @@ struct StateClass {
   // Present only when release-clock tracking is enabled (EDF/FIFO). A task has
   // a release clock exactly while it has an in-flight job.
   std::vector<int> release_clock_of_task;
+  // Task ordinal -> chi_task index or -1. Present only when laxity-clock
+  // tracking is enabled (Event-driven LLF). A task has a laxity clock exactly
+  // while it has an in-flight job.
+  std::vector<int> laxity_clock_of_task;
 
   TransitionSet struct_enabled;    // E_struct(M)
   TransitionSet priority_enabled;  // E_pri-hat(M): selected active transitions
@@ -168,25 +176,56 @@ struct StateClass {
   [[nodiscard]] bool has_release_clock(size_t task) const {
     return release_index(task) > 0;
   }
+
+  [[nodiscard]] int laxity_index(size_t task) const {
+    return task < laxity_clock_of_task.size() ? laxity_clock_of_task[task] : -1;
+  }
+
+  [[nodiscard]] bool has_laxity_clock(size_t task) const {
+    return laxity_index(task) > 0;
+  }
 };
+
+// True iff the active rule tracks per-job clocks (release clocks and/or laxity
+// clocks). Such states reject extrapolation and symmetry reduction, whose
+// quotient/extrapolation arguments are only sound for the transition-indexed
+// clock layouts of static/PIP/PCP/SRP rules.
+bool uses_job_clock_kind(ClockKind kind);
+
+// Column index of the per-job clock of `kind` for `task`, or -1 when absent.
+inline int job_clock_index(const StateClass& state, ClockKind kind, size_t task) {
+  switch (kind) {
+    case ClockKind::Release:
+      return state.release_index(task);
+    case ClockKind::Laxity:
+      return state.laxity_index(task);
+    default:
+      return -1;
+  }
+}
+
+// Human-readable single-letter name used in diagnostics and DOT labels.
+const char* clock_kind_label(ClockKind kind);
 
 // Rebuilds clock_vars and the per-transition/per-task clock index maps from
 // struct_enabled/suspended/marking. The layout is canonical:
 //
 //   x0,
-//   one release clock per in-flight task (ascending task ordinal, only when
-//   `include_release_clocks` is set),
+//   one job clock per in-flight task (ascending task ordinal, only when
+//   `include_release_clocks` or `include_laxity_clocks` is set; the two kinds
+//   are mutually exclusive),
 //   one execution clock per structurally enabled transition in ascending
 //   order, followed by its suspension clock when the transition is suspended
 //   and `keep_suspension_clocks` is set.
 //
-// Release clocks live immediately after x0, so their indices are independent
-// of the selected active set (and of whether suspension clocks are projected).
+// Job clocks live immediately after x0, so their indices are independent of
+// the selected active set (and of whether suspension clocks are projected).
 // Shared by the symbolic construction and the symmetry canonicalizer so both
 // agree bit for bit.
 void build_clock_layout(StateClass& state, const petri::PTPN& net,
                         bool keep_suspension_clocks = false,
-                        bool include_release_clocks = false);
+                        bool include_release_clocks = false,
+                        bool include_laxity_clocks = false);
 
 // Hashes the marking alone so candidates that might merge land in one bucket.
 struct MarkingHash {

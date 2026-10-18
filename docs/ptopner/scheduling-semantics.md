@@ -80,12 +80,11 @@ Current coverage:
 | `srp` | base `priority` as preemption level + dynamic global system-ceiling start gate, see below | `RESUME` | analyzed |
 | `edf` | absolute deadlines from per-task release clocks, see below | `RESUME` | analyzed for the restricted single-core class |
 | `fifo` | arrival order from per-task release clocks (no scalar priority), see below | `NON_PREEMPTIVE` | analyzed for the restricted single-core class |
-| `llf` | static | `NON_PREEMPTIVE` | **not implemented**; only the static rule applies |
+| `llf` | event-driven urgency `chi = age + remaining budget - deadline` from per-task laxity clocks, see below | `RESUME` | analyzed for the restricted single-core deterministic class (Event-driven LLF, not classical LLF) |
 
-LLF is accepted by the parser but must not be described as analyzed: it
-currently falls back to its static transition priorities and non-preemptive
-handling. EDF and FIFO are not static-priority policies; their supported
-classes and restrictions are documented in the EDF and FIFO sections below.
+EDF, FIFO, and LLF are not static-priority policies; their supported classes and
+restrictions are documented in the EDF, FIFO, and Event-driven LLF sections
+below.
 
 ### Priority Inheritance Protocol (`pip`)
 
@@ -664,6 +663,154 @@ for a task is rejected.
   non-preemption invariants, release-clock merge/dispatch/completion lifecycle,
   state identity, and the rejection paths.
 
+## Event-driven LLF (restricted supported class)
+
+`llf` is implemented by `LlfFiringRule` and is **not** classical continuous-time
+Least Laxity First. It is **event-driven LLF** (LLF-ED): the maximum-urgency
+choice is made only at the discrete state-class events where the engine
+enumerates branches. Laxity is tracked exactly symbolically, but the engine
+never splits a `time_elapse` region at the instant two laxities cross and never
+preempts inside such a region. A less urgent job that is running when a crossing
+occurs keeps the CPU until the next event (a release, a segment completion, or a
+zero-time control step). Do not describe this policy as classical LLF, and do
+not claim the classical optimality properties of continuous-time LLF.
+
+### Urgency and rate law
+
+For every in-flight job `j` the state carries the urgency clock
+
+```
+chi_j(t) = -laxity_j(t) = age_j(t) + rem_budget_j(t) - d_j
+rem_budget_j(t) = C_j - executed_j(t)
+```
+
+where `C_j` is `TaskInfo::wcet` (the sum of the task's deterministic execution
+segments), `d_j` is `TaskInfo::deadline` for that job, `age_j` is the time since
+the job was released, and `executed_j` is the work already executed by the job.
+Larger `chi` means higher urgency; at dispatch the rule chooses the maximum
+`chi`.
+
+- At release, `age = 0` and `rem_budget = C_j`, so `chi_j = C_j - d_j`. This
+  value may be negative (e.g. `C=1, d=5` gives `-4`); laxity clocks are genuine
+  DBM variables and are not clamped at zero.
+- The rate law is `d chi_j / dt = 0` while job `j` is actively executing the next
+  execution segment (that segment's transition is in `priority_enabled`), and
+  `1` otherwise: waiting at the entry place, ready but filtered out of the
+  active set, suspended/preempted, between deterministic segments, and during
+  zero-time control steps. Preempted work therefore keeps its urgency growing
+  while its frozen execution clock retains the completed work.
+- Because a deterministic segment executes exactly elapsed wall-clock time,
+  `chi_j` is continuous across a segment firing: the consumed budget and the
+  age advance cancel. `chi_j` is **never reset at a segment boundary**; it is
+  reset to `C_j - d_j` only when a fresh job is released, and dropped when the
+  job completes.
+- A periodic release that merges into a job already waiting at the entry is the
+  one-job-class conservative merge: the pending job's `chi` is carried, not
+  reset.
+
+### Urgency-order branches
+
+At each state, `LlfFiringRule::branches` collects the structurally enabled chain
+transitions of every in-flight task. Candidate `i` has maximum urgency exactly
+when
+
+```
+chi_i >= chi_j  for every other in-flight task j
+<=>  chi_j - chi_i <= 0
+```
+
+For each feasible candidate the rule emits one `PolicyBranch` whose active set
+is all control (`core < 0`) transitions plus that candidate's chain transitions,
+and whose `BranchConstraint{candidate, j, 0, ClockKind::Laxity}` entries record
+the order. The engine validates the branch in the successor zone (tightening
+`chi_j - chi_i <= 0` before hashing/deduplication) and drops it when the order is
+impossible there. Equal urgency makes all tied candidates feasible, so every tie
+resolution is emitted rather than selecting by task index or deadline. A state
+with no candidate chain transition (for example a pending periodic release or a
+completion consumer) emits the control-only branch. If candidates exist but none
+is feasible, the analysis raises an error instead of emitting a partial schedule.
+
+`LlfFiringRule::uses_laxity_clocks()` is true and its preemption mode is
+`RESUME`: the selected job's chain runs, the other in-flight jobs' chain
+transitions are suspended with frozen execution clocks, and their laxity clocks
+keep advancing.
+
+### State extension: laxity clocks
+
+`ClockKind::Laxity` extends the DBM layout with one clock per in-flight job:
+
+- The layout is `x0`, then the job clocks in ascending task ordinal order
+  (release clocks for EDF/FIFO or laxity clocks for LLF, never both), then for
+  each structurally enabled transition in ascending id an execution clock,
+  followed by its suspension clock when projection is disabled.
+- `StateClass::laxity_clock_of_task` maps task ordinal to DBM column (or `-1`);
+  `laxity_index(ordinal)` and `has_laxity_clock(ordinal)` are the lookup helpers.
+  The map and the `ClockVar` layout are part of the state identity (compared and
+  hashed).
+- The initial zone pins each laxity clock to `C_j - d_j` with the two difference
+  constraints `x0 - chi_j <= -(C_j - d_j)` and `chi_j - x0 <= C_j - d_j`. The
+  all-zero initial zone is not reused for this, because overwriting an
+  already-closed all-zero DBM would leave stale cross-clock bounds.
+- A successor carries `chi_j` by task ordinal while the job stays in flight,
+  pins a freshly released job's clock to `C_j - d_j`, and drops it when the job
+  completes. The successor DBM is rebuilt, so carried clocks keep their joint
+  constraints with the surviving execution/suspension clocks.
+- `time_elapse` freezes the executing job's laxity clock (relative to the
+  stationary clocks) and lets every non-executing job's clock advance at rate 1
+  with `x0`. The elapsed zone remains symbolic: a waiting job's `chi` gets a
+  range whose upper bound is the next active event, not necessarily `+inf`.
+
+### Supported class
+
+TDG lowering (`validate_llf_supported_class` in `src/lower/tdg2pn/tdg2pn.cpp`)
+rejects the whole model when any condition does not hold, and
+`LlfFiringRule::ensure_index` re-checks the lowered net:
+
+- `num_cpus == 1` and `cores_per_cpu == 1`; every task bound to core `0`.
+- No locks (`shared_locks` / task `locks` must be empty), no fork/join (every
+  real-core transition belongs to exactly one task chain).
+- `task_place_capacity == 1`; all task places saturate. At most one start token
+  per task.
+- Every task has a positive absolute deadline or a positive period and is either
+  periodic (released by `_fire`) or one-shot (started once at time 0).
+- No task-to-task TDG edge (dependency-driven release). Self-loops and dashed
+  periodic-release edges are not dependency releases.
+- The standard TDG2PN no-lock task chain: `entry/get_core/ready/first-exec/.../
+  exit`, at least 5 nodes.
+- Every execution segment is deterministic: `earliest == latest`, non-negative,
+  and the task has at least one segment. `TaskInfo::wcet` must equal the sum of
+  its segment durations. Interval execution times are rejected: without a known
+  executed-work-to-elapsed-time relation, `chi` could not be carried exactly.
+- No periodic release may fire while the same task's job is between core
+  acquisition and completion (the one-job rule below).
+
+Unsupported models raise `std::invalid_argument` during lowering or analysis.
+`LlfFiringRule::effective_priority` raises `std::logic_error`, so no code path
+can silently use a scalar priority for LLF.
+
+### Restrictions and diagnostics
+
+- `k-extrapolation` is rejected for laxity-clock states
+  (`set_extrapolation(true)` / installing the LLF rule before enabling
+  extrapolation both throw). Relaxing urgency bounds would be unsound.
+- Task-symmetry reduction is rejected when it would actually be applied to a
+  laxity-clock build. For the supported single-core class the verified symmetry
+  group is trivial, so enabling the reduction is harmless and
+  `symmetry_applied()` stays false; a symmetric multi-core net that reaches the
+  LLF rule is rejected instead of silently permuting laxity clocks.
+- The SCG DOT export labels laxity clocks `l(K<ordinal>)` and shows negative
+  lower bounds exactly; execution clocks remain `h(T<id>)`.
+- Semantics not provided: no preemption at a laxity crossing inside a
+  `time_elapse` region, no clock reset at segment boundaries, no interval
+  execution times, no multi-core/parallel per-core LLF, and no classical
+  continuous-time LLF optimality claim. Selection happens only at the discrete
+  events enumerated by the state-class engine.
+- Tests: `test/test_llf.cpp` covers LLF vs EDF/RM/DM at release, release-
+  triggered reordering and preemption, tie enumeration, multi-segment
+  preemption, the rate law, reset/carry/drop lifecycle, layout/identity,
+  lowering and hand-built rejection paths, and the symbolic maximum-urgency
+  invariant over stored states.
+
 ## When these sets are recomputed
 
 `StateClassReachabilityGraph::recompute_sets` (`src/analysis/reachability/state_class_layout.cpp`)
@@ -681,8 +828,8 @@ forward. Suspension state is recomputed only when the marking changes.
 ## Resume policies: engine-native preemption
 
 The `fixed_prior_with_resume` policy, the legacy `fixed` alias, `rm`/`dm`, the
-dynamic `pip`/`pcp`/`srp` rules, and EDF rely on the sets above to model
-preemption directly, instead of any structural encoding:
+dynamic `pip`/`pcp`/`srp` rules, EDF, and Event-driven LLF rely on the sets above
+to model preemption directly, instead of any structural encoding:
 - It does NOT create the CPU-resource place. Instead it registers a parallelism
   bound of **1 for every real core** (`PTPN::core_parallelism`), so each branch
   keeps exactly one active transition per core. This enforces CPU mutual
@@ -710,15 +857,18 @@ segments non-suspendable.
 ## Key files
 
 - `src/analysis/reachability/scheduling_policy.h` / `.cpp` — `FiringRule`,
-  `StaticPriorityRule`, `EdfFiringRule`, `FifoFiringRule`, `PipFiringRule`,
-  `PcpFiringRule`, `SrpFiringRule`, `PolicyBranch`/`BranchConstraint`,
-  `detail::TaskLockTopology`, `PolicyContext`, `make_firing_rule`
+  `StaticPriorityRule`, `EdfFiringRule`, `FifoFiringRule`, `LlfFiringRule`,
+  `PipFiringRule`, `PcpFiringRule`, `SrpFiringRule`,
+  `PolicyBranch`/`BranchConstraint`, `detail::TaskLockTopology`, `PolicyContext`,
+  `make_firing_rule`
 - `src/analysis/reachability/state_class.h` / `.cpp` — `ClockKind::Release`,
-  `TaskChain`, `build_task_chains`, `task_in_flight`, `release_clock_of_task`
+  `ClockKind::Laxity`, `TaskChain`, `build_task_chains`, `task_in_flight`,
+  `release_clock_of_task`, `laxity_clock_of_task`
 - `src/analysis/reachability/scheduling.cpp` — `structural_enabled`, `priority_branches`
 - `src/analysis/reachability/state_class_layout.cpp` / `state_class_firing.cpp` —
-  initial and successor branch enumeration with `PolicyContext`, release-clock
-  layout/transfer, and branch-constraint intersection before hashing
+  initial and successor branch enumeration with `PolicyContext`, release/laxity
+  clock layout and transfer, the LLF rate law in `time_elapse`, and
+  branch-constraint intersection before hashing
 - `src/analysis/reachability/ptpn_analysis.cpp` — `recompute_sets`, `time_elapse`, `is_firable`, `fire`, `build`, `build_successor_zone`, `set_firing_rule`
 - `src/lower/tdg2pn/tdg2pn.cpp` — policy metadata on the PTPN, local TDG copy
 - `src/lower/tdg2pn/policy_priorities.cpp` — RM/DM priority computation

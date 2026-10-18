@@ -46,7 +46,8 @@ inline bool is_resume_policy(SchedulePolicy policy) {
   return policy == SchedulePolicy::FIXED || policy == SchedulePolicy::FIXED_PRIOR_WITH_RESUME ||
          policy == SchedulePolicy::RM || policy == SchedulePolicy::DM ||
          policy == SchedulePolicy::PIP || policy == SchedulePolicy::PCP ||
-         policy == SchedulePolicy::SRP || policy == SchedulePolicy::EDF;
+         policy == SchedulePolicy::SRP || policy == SchedulePolicy::EDF ||
+         policy == SchedulePolicy::LLF;
 }
 
 inline petri::TransitionId add_control_transition(

@@ -25,9 +25,9 @@ void StateClassReachabilityGraph::set_firing_rule(std::unique_ptr<FiringRule> ru
   if (!rule) {
     throw std::invalid_argument("firing rule must not be null");
   }
-  if (extrapolation_enabled_ && rule->uses_release_clocks()) {
+  if (extrapolation_enabled_ && rule->uses_job_clocks()) {
     throw std::invalid_argument(
-        "k-extrapolation is not sound for release-clock (EDF/FIFO) states; disable "
+        "k-extrapolation is not sound for job-clock (EDF/FIFO/LLF) states; disable "
         "extrapolation before installing this rule");
   }
   firing_rule_ = std::move(rule);
@@ -60,10 +60,10 @@ size_t StateClassReachabilityGraph::MarkingActiveHash::operator()(
 }
 
 void StateClassReachabilityGraph::set_extrapolation(bool enabled) {
-  if (enabled && firing_rule_ && firing_rule_->uses_release_clocks()) {
+  if (enabled && firing_rule_ && firing_rule_->uses_job_clocks()) {
     throw std::invalid_argument(
-        "k-extrapolation is not sound for release-clock (EDF/FIFO) states: relaxing "
-        "release-clock bounds can merge different deadline orderings");
+        "k-extrapolation is not sound for job-clock (EDF/FIFO/LLF) states: relaxing "
+        "job-clock bounds can merge different scheduling orderings");
   }
   extrapolation_enabled_ = enabled;
   if (!enabled) {
@@ -312,18 +312,19 @@ StateClassReachabilityGraph::expand_vertex(SCVertex u, size_t max_states) {
 }
 
 size_t StateClassReachabilityGraph::build(size_t max_states) {
-  // Release-clock states carry absolute job deadlines in the DBM. Neither
+  // Job-clock states carry per-job deadlines/laxities in the DBM. Neither
   // k-extrapolation (which would relax those bounds) nor the task-symmetry
-  // quotient (which would have to permute release clocks and tasks) is
+  // quotient (which would have to permute release/laxity clocks and tasks) is
   // implemented for them; reject rather than silently approximate.
-  if (firing_rule_->uses_release_clocks()) {
+  if (firing_rule_->uses_job_clocks()) {
     if (extrapolation_enabled_) {
       throw std::invalid_argument(
-          "k-extrapolation is not sound for release-clock (EDF/FIFO) states");
+          "k-extrapolation is not sound for job-clock (EDF/FIFO/LLF) states");
     }
     if (symmetry_applied()) {
       throw std::invalid_argument(
-          "task-symmetry reduction is not implemented for release-clock (EDF/FIFO) states");
+          "task-symmetry reduction is not implemented for job-clock "
+          "(EDF/FIFO/LLF) states");
     }
   }
   graph_.clear();

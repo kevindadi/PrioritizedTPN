@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <stdexcept>
+#include <string>
 
 #include "analysis/dbm/clock_state.h"
 #include "analysis/reachability/ptpn_analysis.h"
@@ -9,19 +10,23 @@ namespace state_class {
 
 namespace {
 
-// Intersects the release-clock scheduling constraints with the successor
-// zone.
+// Intersects the job-clock scheduling constraints with the successor zone.
 // Returns false when the branch is infeasible and must be dropped.
 bool apply_branch_constraints(StateClass& state,
                               const std::vector<BranchConstraint>& constraints) {
   for (const BranchConstraint& constraint : constraints) {
-    const int left = state.release_index(constraint.left_task);
-    const int right = state.release_index(constraint.right_task);
+    if (!uses_job_clock_kind(constraint.domain)) {
+      throw std::invalid_argument(
+          "branch constraint must use the release or laxity clock domain");
+    }
+    const int left = job_clock_index(state, constraint.domain, constraint.left_task);
+    const int right = job_clock_index(state, constraint.domain, constraint.right_task);
     if (left <= 0 || right <= 0) {
       throw std::invalid_argument(
-          "release-clock constraint references a task without an in-flight job");
+          std::string(clock_kind_label(constraint.domain)) +
+          "-clock constraint references a task without an in-flight job");
     }
-    // release[right] - release[left] <= bound.
+    // job_clock[right] - job_clock[left] <= bound.
     if (!state.zone.tighten(static_cast<size_t>(right), static_cast<size_t>(left),
                             constraint.bound)) {
       return false;
@@ -41,8 +46,34 @@ StateClass StateClassReachabilityGraph::time_elapse(const StateClass& state) con
 
   // Running clocks advance at rate 1; everything else (x0 and the frozen
   // execution clocks of priority-filtered-out transitions) stays put.
-  // V_run = { r_i : i in flight } U { h_t : t in E_pri }
+  // V_run = { r_i : i in flight }
+  //         U { chi_i : task i is not actively executing a segment }
+  //         U { h_t : t in E_pri }
   //         U { w_t : t in suspended }.
+  //
+  // LLF rate law: chi = age + remaining_budget - deadline. While a job executes
+  // a deterministic segment, age grows at rate 1 and remaining budget falls at
+  // rate 1, so chi is frozen. Otherwise chi advances at rate 1. Because the
+  // rate is zero for the whole time the task's execution transition is active,
+  // chi is also continuous across deterministic segment boundaries.
+  bool has_laxity = false;
+  for (size_t i = 1; i < n && i < out.clock_vars.size(); ++i) {
+    if (out.clock_vars[i].kind == ClockKind::Laxity) {
+      has_laxity = true;
+      break;
+    }
+  }
+  std::vector<bool> executing_task;
+  if (has_laxity) {
+    const std::vector<int>& exec_task = execution_task_of_transition();
+    executing_task.assign(task_chains().size(), false);
+    for (size_t t : out.priority_enabled) {
+      if (t < exec_task.size() && exec_task[t] >= 0) {
+        executing_task[static_cast<size_t>(exec_task[t])] = true;
+      }
+    }
+  }
+
   std::vector<bool> running(n, false);
   for (size_t i = 1; i < n && i < out.clock_vars.size(); ++i) {
     const ClockVar& var = out.clock_vars[i];
@@ -56,7 +87,14 @@ StateClass StateClassReachabilityGraph::time_elapse(const StateClass& state) con
       // preempted. This is what keeps the remaining deadline D_i - r_i
       // comparable across a preemption.
       running[i] = true;
-    } else if (var.kind == ClockKind::Execution && contains(out.priority_enabled, var.transition)) {
+    } else if (var.kind == ClockKind::Laxity) {
+      // Rate 0 while this task is actively executing its next deterministic
+      // segment; rate 1 while waiting, filtered out/preempted, suspended,
+      // between segments, or during a zero-time control step.
+      running[i] =
+          var.task >= executing_task.size() || !executing_task[var.task];
+    } else if (var.kind == ClockKind::Execution &&
+               contains(out.priority_enabled, var.transition)) {
       running[i] = true;  // active execution clocks advance
     }
   }
@@ -117,9 +155,10 @@ void StateClassReachabilityGraph::build_successor_zone(StateClass& successor, co
 
   // For each successor variable, find the matching column in `fired` if the
   // clock survives the firing (a persistent execution clock keeps its value; a
-  // still-in-flight release clock keeps the job age; a still-suspended clock
-  // inherits its suspension clock). Everything else is freshly created and
-  // starts at zero.
+  // still-in-flight release/laxity clock keeps its job value; a still-suspended
+  // clock inherits its suspension clock). Everything else is freshly created:
+  // transition clocks start at zero and a fresh laxity clock starts at the
+  // exact release value chi = wcet - deadline.
   std::vector<int> source_index(n, -1);
   source_index[0] = 0;  // x0 maps to x0
   for (size_t i = 1; i < n; ++i) {
@@ -133,6 +172,12 @@ void StateClassReachabilityGraph::build_successor_zone(StateClass& successor, co
       // zero, which is exactly the release instant. Completed jobs have no
       // successor release clock, so their column is simply dropped.
       source_index[i] = source.release_index(var.task);
+    } else if (var.kind == ClockKind::Laxity) {
+      // Laxity is carried continuously across every firing. A newly in-flight
+      // job resets to chi = wcet - deadline below. A merged release creates no
+      // new job, so the pending job's clock is carried unchanged. Completed
+      // jobs have no successor laxity clock and their column is dropped.
+      source_index[i] = source.laxity_index(var.task);
     } else if (var.kind == ClockKind::Execution) {
       if (t != fired_transition && source.has_exec_clock(t)) {
         source_index[i] = source.exec_index(t);
@@ -159,11 +204,19 @@ void StateClassReachabilityGraph::build_successor_zone(StateClass& successor, co
     }
   }
 
-  // Pin every freshly created clock to zero (equal to x0).
+  // Transition clocks and fresh release clocks start at zero. A fresh laxity
+  // clock is pinned exactly to chi = wcet - deadline with two difference
+  // constraints; it is never pinned to x0 and is never capped.
   for (size_t i = 1; i < n; ++i) {
     if (source_index[i] < 0) {
-      zone.set_constraint(0, i, 0);
-      zone.set_constraint(i, 0, 0);
+      if (successor.clock_vars[i].kind == ClockKind::Laxity) {
+        const int chi = laxity_reset_value(successor.clock_vars[i].task);
+        zone.set_constraint(0, i, -chi);
+        zone.set_constraint(i, 0, chi);
+      } else {
+        zone.set_constraint(0, i, 0);
+        zone.set_constraint(i, 0, 0);
+      }
     }
   }
 
@@ -193,15 +246,16 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
       petri::PTPN::fire(elapsed.marking, net_, petri::TransitionId{t});
   const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, marking);
 
-  // Rules that read release clocks need a prepared successor state: the
-  // release-clock prefix depends only on the successor marking, so a probe
-  // built with the full structural set has the same release indices as every
-  // final branch. Its zone is the unsplit successor zone (surviving clocks
-  // carried over, fresh clocks zero); EDF/FIFO test each candidate ordering
-  // against it and emits the selected difference constraints.
+  // Rules that read job clocks need a prepared successor state: the job-clock
+  // prefix depends only on the successor marking, so a probe built with the
+  // full structural set has the same clock indices as every final branch. Its
+  // zone is the unsplit successor zone (surviving clocks carried over, fresh
+  // clocks zero except fresh laxity clocks at chi = wcet - deadline);
+  // EDF/FIFO/LLF test each candidate ordering against it and emit the selected
+  // difference constraints.
   StateClass prepared;
   prepared.marking = marking;
-  if (firing_rule_->uses_release_clocks()) {
+  if (firing_rule_->uses_job_clocks()) {
     recompute_sets(prepared, struct_enabled);
     build_layout(prepared);
     build_successor_zone(prepared, fired, elapsed, t);

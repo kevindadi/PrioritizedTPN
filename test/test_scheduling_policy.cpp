@@ -996,12 +996,18 @@ TEST(SchedulingPolicyTest, PolicyPreemptionModesMatchCurrentCoverage) {
   EXPECT_THROW(fifo_rule->effective_priority(context, 0), std::logic_error);
   EXPECT_FALSE(converter::detail::is_resume_policy(SchedulePolicy::FIFO));
 
-  // LLF remains unimplemented: it falls back to the static rule and is
-  // explicitly non-preemptive.
+  // LLF is implemented as Event-driven LLF: explicit laxity clocks and
+  // maximum-chi branches, with resume preemption. It has no scalar priority.
   auto llf_rule = state_class::make_firing_rule(SchedulePolicy::LLF);
-  EXPECT_EQ(llf_rule->preemption_mode(), PreemptionMode::NON_PREEMPTIVE);
+  ASSERT_NE(llf_rule, nullptr);
+  EXPECT_NE(dynamic_cast<state_class::LlfFiringRule*>(llf_rule.get()), nullptr);
+  EXPECT_EQ(llf_rule->preemption_mode(), PreemptionMode::RESUME);
   EXPECT_TRUE(llf_rule->admissible(context, 0));
+  EXPECT_TRUE(llf_rule->uses_laxity_clocks());
   EXPECT_FALSE(llf_rule->uses_release_clocks());
+  EXPECT_TRUE(llf_rule->uses_job_clocks());
+  EXPECT_THROW(llf_rule->effective_priority(context, 0), std::logic_error);
+  EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::LLF));
 }
 
 // ---------------------------------------------------------------------------

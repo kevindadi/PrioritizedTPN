@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
+#include <string>
 
 #include "analysis/dbm/clock_state.h"
 #include "analysis/reachability/ptpn_analysis.h"
@@ -20,19 +22,70 @@ DBM all_clock_zeros(size_t clock_count) {
   return zone;
 }
 
-// Intersects the release-clock scheduling constraints with the state
-// zone. Returns
-// false when the branch is infeasible and must be dropped.
+// Initial DBM for a fresh state class. Execution, suspension, and release
+// clocks start pinned to x0 (= 0). A laxity clock starts at
+// chi = wcet - deadline, which may be negative; it is therefore pinned with two
+// difference constraints rather than to x0.
+DBM initial_zone(const StateClass& state, const petri::PTPN& net) {
+  bool has_laxity = false;
+  for (const ClockVar& var : state.clock_vars) {
+    if (var.kind == ClockKind::Laxity) {
+      has_laxity = true;
+      break;
+    }
+  }
+  if (!has_laxity) {
+    return all_clock_zeros(state.clock_vars.size());
+  }
+
+  // Build from a raw DBM instead of overwriting entries of an
+  // all-clock-zeros zone: the latter is already closed, so changing a pin with
+  // set_constraint alone leaves the cross-clock entries stale (they can no
+  // longer be relaxed upward by minimize) and can manufacture a spurious
+  // negative cycle.
+  DBM zone(state.clock_vars.size());
+  const std::vector<TaskChain> tasks = build_task_chains(net);
+  for (size_t index = 1; index < state.clock_vars.size(); ++index) {
+    const ClockVar& var = state.clock_vars[index];
+    int chi = 0;
+    if (var.kind == ClockKind::Laxity) {
+      if (var.task >= tasks.size()) {
+        throw std::invalid_argument("laxity clock references an unknown task");
+      }
+      const long long value =
+          static_cast<long long>(tasks[var.task].wcet) - tasks[var.task].deadline;
+      if (value < std::numeric_limits<int>::min() ||
+          value > std::numeric_limits<int>::max()) {
+        throw std::invalid_argument("laxity initial value does not fit in int");
+      }
+      chi = static_cast<int>(value);
+    }
+    // clock - x0 <= chi and x0 - clock <= -chi. Non-laxity clocks are pinned
+    // to zero, which is the same pair of constraints with chi == 0.
+    zone.set_constraint(0, index, -chi);
+    zone.set_constraint(index, 0, chi);
+  }
+  zone.minimize();
+  return zone;
+}
+
+// Intersects the job-clock scheduling constraints with the state zone.
+// Returns false when the branch is infeasible and must be dropped.
 bool apply_branch_constraints(StateClass& state,
                               const std::vector<BranchConstraint>& constraints) {
   for (const BranchConstraint& constraint : constraints) {
-    const int left = state.release_index(constraint.left_task);
-    const int right = state.release_index(constraint.right_task);
+    if (!uses_job_clock_kind(constraint.domain)) {
+      throw std::invalid_argument(
+          "branch constraint must use the release or laxity clock domain");
+    }
+    const int left = job_clock_index(state, constraint.domain, constraint.left_task);
+    const int right = job_clock_index(state, constraint.domain, constraint.right_task);
     if (left <= 0 || right <= 0) {
       throw std::invalid_argument(
-          "release-clock constraint references a task without an in-flight job");
+          std::string(clock_kind_label(constraint.domain)) +
+          "-clock constraint references a task without an in-flight job");
     }
-    // release[right] - release[left] <= bound.
+    // job_clock[right] - job_clock[left] <= bound.
     if (!state.zone.tighten(static_cast<size_t>(right), static_cast<size_t>(left),
                             constraint.bound)) {
       return false;
@@ -51,6 +104,57 @@ int StateClassReachabilityGraph::effective_latest(size_t transition) const {
   const int latest =
       net_.get_transition(petri::TransitionId{transition}).time_interval.effective_latest();
   return latest == petri::INF ? INF_TIME : latest;
+}
+
+const std::vector<TaskChain>& StateClassReachabilityGraph::task_chains() const {
+  if (!task_chains_valid_) {
+    task_chains_cache_ = build_task_chains(net_);
+    task_chains_valid_ = true;
+  }
+  return task_chains_cache_;
+}
+
+const std::vector<int>& StateClassReachabilityGraph::execution_task_of_transition() const {
+  if (!execution_task_valid_) {
+    execution_task_of_transition_.assign(net_.num_transitions(), -1);
+    const std::vector<TaskChain>& tasks = task_chains();
+    for (size_t ordinal = 0; ordinal < tasks.size(); ++ordinal) {
+      const TaskChain& task = tasks[ordinal];
+      // The standard no-lock chain has get_core at transition position 0 and
+      // execution segments after it. Locks are outside the LLF supported class,
+      // so positions 1.. are exactly the execution segments there.
+      for (size_t position = 1; position < task.transitions.size(); ++position) {
+        const size_t transition = task.transitions[position];
+        if (transition >= net_.num_transitions()) {
+          throw std::invalid_argument("task '" + task.name +
+                                      "' references an out-of-range transition");
+        }
+        if (execution_task_of_transition_[transition] >= 0) {
+          throw std::invalid_argument(
+              "task chains share transition T" + std::to_string(transition) +
+              "; the laxity rate law requires disjoint execution segments");
+        }
+        execution_task_of_transition_[transition] = static_cast<int>(ordinal);
+      }
+    }
+    execution_task_valid_ = true;
+  }
+  return execution_task_of_transition_;
+}
+
+int StateClassReachabilityGraph::laxity_reset_value(size_t task) const {
+  const std::vector<TaskChain>& tasks = task_chains();
+  if (task >= tasks.size()) {
+    throw std::invalid_argument("laxity clock references an unknown task ordinal");
+  }
+  const long long value =
+      static_cast<long long>(tasks[task].wcet) - tasks[task].deadline;
+  if (value < std::numeric_limits<int>::min() ||
+      value > std::numeric_limits<int>::max()) {
+    throw std::invalid_argument("laxity initial value does not fit in int for task '" +
+                                tasks[task].name + "'");
+  }
+  return static_cast<int>(value);
 }
 
 void StateClassReachabilityGraph::recompute_sets(StateClass& state,
@@ -72,27 +176,37 @@ void StateClassReachabilityGraph::recompute_sets(StateClass& state,
 }
 
 void build_clock_layout(StateClass& state, const petri::PTPN& net,
-                        bool keep_suspension_clocks, bool include_release_clocks) {
+                        bool keep_suspension_clocks, bool include_release_clocks,
+                        bool include_laxity_clocks) {
+  if (include_release_clocks && include_laxity_clocks) {
+    throw std::invalid_argument(
+        "a state class cannot track release and laxity clocks simultaneously");
+  }
   state.clock_vars.clear();
   state.clock_vars.push_back({ClockKind::Zero, NO_TRANSITION, NO_TASK});
   state.exec_clock_of_transition.assign(net.num_transitions(), -1);
   state.susp_clock_of_transition.assign(net.num_transitions(), -1);
   state.release_clock_of_task.clear();
+  state.laxity_clock_of_task.clear();
 
-  if (include_release_clocks) {
-    // Release clocks are placed immediately after x0, ordered by task ordinal.
+  if (include_release_clocks || include_laxity_clocks) {
+    // Job clocks are placed immediately after x0, ordered by task ordinal.
     // Their indices therefore do not depend on the active set, which keeps the
-    // release-clock branch constraints stable across branch layouts.
+    // job-clock branch constraints stable across branch layouts.
+    const ClockKind kind =
+        include_laxity_clocks ? ClockKind::Laxity : ClockKind::Release;
     const std::vector<TaskChain> tasks = build_task_chains(net);
-    state.release_clock_of_task.assign(tasks.size(), -1);
+    std::vector<int>& clock_of_task = include_laxity_clocks
+                                          ? state.laxity_clock_of_task
+                                          : state.release_clock_of_task;
+    clock_of_task.assign(tasks.size(), -1);
     for (size_t ordinal = 0; ordinal < tasks.size(); ++ordinal) {
       if (!task_in_flight(tasks[ordinal], state.marking)) {
         continue;
       }
-      const int release_idx = static_cast<int>(state.clock_vars.size());
-      state.clock_vars.push_back(
-          {ClockKind::Release, NO_TRANSITION, ordinal});
-      state.release_clock_of_task[ordinal] = release_idx;
+      const int clock_idx = static_cast<int>(state.clock_vars.size());
+      state.clock_vars.push_back({kind, NO_TRANSITION, ordinal});
+      clock_of_task[ordinal] = clock_idx;
     }
   }
 
@@ -114,7 +228,8 @@ void build_clock_layout(StateClass& state, const petri::PTPN& net,
 
 void StateClassReachabilityGraph::build_layout(StateClass& state) const {
   build_clock_layout(state, net_, !suspension_clock_projection_,
-                     firing_rule_->uses_release_clocks());
+                     firing_rule_->uses_release_clocks(),
+                     firing_rule_->uses_laxity_clocks());
 }
 
 StateClass StateClassReachabilityGraph::compute_initial_class() {
@@ -134,18 +249,19 @@ std::vector<StateClass> StateClassReachabilityGraph::compute_initial_classes() {
 
   const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, base.marking);
 
-  // Rules that use release clocks need a prepared layout/zone to derive the
-  // deadline ordering. The release-clock prefix depends only on the marking,
-  // so a probe built with the full structural set has the same release indices
-  // as every final branch.
+  // Rules that use job clocks need a prepared layout/zone to derive the
+  // job ordering. The job-clock prefix depends only on the marking, so a probe
+  // built with the full structural set has the same clock indices as every
+  // final branch.
   StateClass prepared = base;
   prepared.struct_enabled = struct_enabled;
   prepared.priority_enabled = struct_enabled;
-  if (firing_rule_->uses_release_clocks()) {
+  if (firing_rule_->uses_job_clocks()) {
     build_layout(prepared);
-    prepared.zone = all_clock_zeros(prepared.clock_vars.size());
+    prepared.zone = initial_zone(prepared, net_);
   }
-  const PolicyContext context{net_, firing_rule_->uses_release_clocks() ? &prepared : &base};
+  const PolicyContext context{net_,
+                              firing_rule_->uses_job_clocks() ? &prepared : &base};
   const std::vector<PolicyBranch> branches = firing_rule_->branches(struct_enabled, net_, context);
 
   std::vector<StateClass> out;
@@ -155,10 +271,11 @@ std::vector<StateClass> StateClassReachabilityGraph::compute_initial_classes() {
     recompute_sets(state, branch.active);
     build_layout(state);
 
-    // Every clock starts at zero, i.e. pinned to the reference variable x0.
-    state.zone = all_clock_zeros(state.clock_vars.size());
+    // Transition clocks start at zero. Release clocks start at zero too;
+    // laxity clocks start at chi = wcet - deadline.
+    state.zone = initial_zone(state, net_);
     if (!apply_branch_constraints(state, branch.constraints)) {
-      continue;  // ordering impossible in the all-zero initial zone
+      continue;  // ordering impossible in the initial zone
     }
 
     out.push_back(std::move(state));

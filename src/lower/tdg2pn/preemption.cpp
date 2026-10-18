@@ -235,15 +235,17 @@ class NoPreemptionStrategy : public PreemptionStrategy {
 
 std::unique_ptr<PreemptionStrategy> make_preemption_strategy(SchedulePolicy policy) {
   // RM/DM derive their static priorities during lowering, PIP/PCP/SRP derive
-  // their effective priorities or admission from the marking, and EDF derives
-  // its deadline ordering from the analysis release clocks, but their runtime
+  // their effective priorities or admission from the marking, EDF derives its
+  // deadline ordering from the analysis release clocks, and Event-driven LLF
+  // derives its ordering from the analysis laxity clocks, but their runtime
   // preemption semantics are exactly the resume strategy used by `fixed`.
   // FIFO is intentionally absent: it is non-preemptive and uses the structural
   // CPU place instead.
   if (policy == SchedulePolicy::FIXED || policy == SchedulePolicy::FIXED_PRIOR_WITH_RESUME ||
       policy == SchedulePolicy::RM || policy == SchedulePolicy::DM ||
       policy == SchedulePolicy::PIP || policy == SchedulePolicy::PCP ||
-      policy == SchedulePolicy::SRP || policy == SchedulePolicy::EDF) {
+      policy == SchedulePolicy::SRP || policy == SchedulePolicy::EDF ||
+      policy == SchedulePolicy::LLF) {
     return std::make_unique<ResumePreemptionStrategy>();
   }
   if (policy == SchedulePolicy::FIXED_PRIOR_WITH_RESTART) {

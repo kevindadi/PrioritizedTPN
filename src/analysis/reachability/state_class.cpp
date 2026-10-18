@@ -43,6 +43,7 @@ std::vector<TaskChain> build_task_chains(const petri::PTPN& net) {
     task.chain = chain_it->second;
     task.period = info_it->second.period;
     task.deadline = info_it->second.deadline;
+    task.wcet = info_it->second.wcet;
 
     for (const petri::NodeRef& node : task.chain) {
       if (node.is_place()) {
@@ -84,6 +85,26 @@ bool task_in_flight(const TaskChain& task, const std::vector<int>& marking) {
     }
   }
   return false;
+}
+
+bool uses_job_clock_kind(ClockKind kind) {
+  return kind == ClockKind::Release || kind == ClockKind::Laxity;
+}
+
+const char* clock_kind_label(ClockKind kind) {
+  switch (kind) {
+    case ClockKind::Zero:
+      return "0";
+    case ClockKind::Release:
+      return "r";
+    case ClockKind::Laxity:
+      return "l";
+    case ClockKind::Execution:
+      return "h";
+    case ClockKind::Suspension:
+      return "w";
+  }
+  return "?";
 }
 
 std::string FiringEdge::to_string() const {
@@ -132,6 +153,10 @@ size_t hash_state_class(const StateClass& state) {
   // change can make two different release/scheduling states collide.
   hash_combine(seed, state.release_clock_of_task.size());
   for (int index : state.release_clock_of_task) {
+    hash_combine(seed, static_cast<size_t>(static_cast<long long>(index) + 1));
+  }
+  hash_combine(seed, state.laxity_clock_of_task.size());
+  for (int index : state.laxity_clock_of_task) {
     hash_combine(seed, static_cast<size_t>(static_cast<long long>(index) + 1));
   }
   for (int value : state.zone.raw_matrix()) {

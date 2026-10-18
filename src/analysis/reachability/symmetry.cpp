@@ -1118,19 +1118,27 @@ StateClass TaskSymmetry::apply(const StateClass& state,
                   [](const ClockVar& variable) {
                     return variable.kind == ClockKind::Release;
                   });
-  build_clock_layout(out, net_, keep_suspension_clocks, include_release_clocks);
+  const bool include_laxity_clocks =
+      std::any_of(state.clock_vars.begin(), state.clock_vars.end(),
+                  [](const ClockVar& variable) {
+                    return variable.kind == ClockKind::Laxity;
+                  });
+  // Job clocks are keyed by task ordinal, but NetPermutation does not carry a
+  // task permutation. The supported EDF/FIFO/LLF classes are single-core, so no
+  // non-identity task permutation can be generated; if one ever reaches here,
+  // returning the original state is the safe (non-reducing) fallback.
+  if (include_release_clocks || include_laxity_clocks) {
+    return state;
+  }
+  build_clock_layout(out, net_, keep_suspension_clocks, include_release_clocks,
+                     include_laxity_clocks);
 
   const size_t clock_count = out.clock_vars.size();
   DBM zone(clock_count);
   std::vector<size_t> source_index(clock_count, 0);
   for (size_t i = 1; i < clock_count; ++i) {
     const ClockVar& variable = out.clock_vars[i];
-    if (variable.kind == ClockKind::Release) {
-      // Release clocks are keyed by task ordinal, but NetPermutation does not
-      // carry a task permutation. The supported EDF/FIFO classes are
-      // single-core, so no non-identity task permutation can be generated; if
-      // one ever reaches here, returning the original state is the safe
-      // (non-reducing) fallback.
+    if (variable.kind == ClockKind::Release || variable.kind == ClockKind::Laxity) {
       return state;
     }
     const size_t source_transition = element.transition_inverse[variable.transition];

@@ -244,6 +244,20 @@ class StateClassReachabilityGraph {
   [[nodiscard]] int effective_earliest(size_t transition) const;
   [[nodiscard]] int effective_latest(size_t transition) const;
 
+  // Task chains of the net, cached for the LLF rate law and laxity reset.
+  [[nodiscard]] const std::vector<TaskChain>& task_chains() const;
+  // transition -> task ordinal for execution segments only (chain positions
+  // after the zero-time get_core dispatch), or -1. Cached.
+  [[nodiscard]] const std::vector<int>& execution_task_of_transition() const;
+  // Exact chi = TaskInfo::wcet - deadline at a fresh release, validated to fit
+  // in int. Only valid for nets that carry task metadata.
+  [[nodiscard]] int laxity_reset_value(size_t task) const;
+
+  mutable std::vector<TaskChain> task_chains_cache_;
+  mutable bool task_chains_valid_ = false;
+  mutable std::vector<int> execution_task_of_transition_;
+  mutable bool execution_task_valid_ = false;
+
   // Fills struct_enabled / priority_enabled / suspended from state.marking and
   // the selected active set `active` (which is E_pri-hat(M)).
   void recompute_sets(StateClass& state, const TransitionSet& active) const;

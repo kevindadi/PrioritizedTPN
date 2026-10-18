@@ -35,19 +35,20 @@ struct PolicyContext {
   const StateClass* state = nullptr;
 };
 
-// One difference constraint over release clocks attached to a scheduling
-// branch. It means `release[right] - release[left] <= bound`, i.e. the task at
-// `left` has an absolute deadline no later than the task at `right` when
-// `bound == D_right - D_left`. Task ids are ordinals into
-// build_task_chains(net) (sorted by task name).
+// One difference constraint over per-job clocks attached to a scheduling
+// branch. `domain` selects the clock kind; the default (Release) preserves the
+// EDF/FIFO encoding `release[right] - release[left] <= bound`. Event-driven LLF
+// uses `Laxity` and the bound 0: `chi[right] - chi[left] <= 0`. Task ids are
+// ordinals into build_task_chains(net) (sorted by task name).
 struct BranchConstraint {
   size_t left_task = 0;
   size_t right_task = 0;
   int bound = 0;
+  ClockKind domain = ClockKind::Release;
 
   bool operator==(const BranchConstraint& other) const {
     return left_task == other.left_task && right_task == other.right_task &&
-           bound == other.bound;
+           bound == other.bound && domain == other.domain;
   }
 };
 
@@ -69,10 +70,10 @@ struct PolicyBranch {
 // scheduling priority. Implementations must be deterministic.
 //
 // Policies whose decisions depend on clock values that must stay explicit in
-// the state (EDF and FIFO) override `branches()` and
-// `uses_release_clocks()` instead of encoding a fake scalar priority: the
-// analysis graph then creates a release clock per in-flight job and splits
-// each zone by the policy's arrival/deadline order.
+// the state override `branches()` and one of the job-clock predicates instead
+// of encoding a fake scalar priority: the analysis graph then creates a
+// per-job clock (release for EDF/FIFO, laxity for Event-driven LLF) and splits
+// each zone by the policy's ordering.
 class FiringRule {
  public:
   virtual ~FiringRule() = default;
@@ -86,16 +87,27 @@ class FiringRule {
 
   virtual PreemptionMode preemption_mode() const = 0;
 
-  // True when the rule depends on the per-task release clocks and therefore
-  // the graph must include them in the clock layout and state identity.
+  // True when the rule depends on per-task release clocks and therefore the
+  // graph must include them in the clock layout and state identity.
   virtual bool uses_release_clocks() const {
     return false;
   }
 
+  // True when the rule depends on per-task laxity clocks (chi = -laxity).
+  virtual bool uses_laxity_clocks() const {
+    return false;
+  }
+
+  // True iff either per-job clock kind is tracked. Such states reject
+  // extrapolation and symmetry reduction.
+  bool uses_job_clocks() const {
+    return uses_release_clocks() || uses_laxity_clocks();
+  }
+
   // Every admissible branch at a marking. The default implementation is the
   // existing scalar-priority branch enumeration with no extra constraints.
-  // Rules that use release clocks override this; `context.state` then carries
-  // the prepared successor/source layout and zone.
+  // Rules that use job clocks override this; `context.state` then carries the
+  // prepared successor/source layout and zone.
   virtual std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled,
                                              const petri::PTPN& net,
                                              const PolicyContext& context) const;
@@ -434,6 +446,108 @@ class FifoFiringRule : public FiringRule {
   mutable std::vector<int> task_of_periodic_transition_;
 };
 
+// Event-driven Least Laxity First (LLF-ED) under the laxity-clock state
+// extension.
+//
+// This is NOT classical continuous-time LLF. A scheduling decision is taken
+// only at discrete state-class events (a release, a completion, or an execution
+// segment boundary); running jobs are never preempted inside a
+// `time_elapse` region merely because their laxities cross. Within such a
+// region the selected active transition stays active and every other execution
+// clock is frozen, so the decision is exactly the event-driven variant.
+//
+// Urgency clock. For a job j with release age A_j, remaining execution budget
+// R_j = C_j - executed_j, and absolute deadline d_j:
+//
+//   chi_j = -laxity_j = A_j + R_j - d_j
+//
+// with C_j = TaskInfo::wcet and d_j = TaskInfo::deadline (the positive
+// implicit period when no explicit deadline is given). Larger chi means more
+// urgent. At release chi_j = C_j - d_j, which may be negative. The laxity clock
+// is a general DBM variable, not pinned to zero.
+//
+// Rate law during time elapse:
+//   - rate 0 while the job is actively executing a deterministic execution
+//     segment (that execution transition is in `priority_enabled`);
+//   - rate 1 otherwise: waiting at the entry place, released but filtered out
+//     of the active set, suspended/preempted, between execution segments, or
+//     while a zero-time control step is selected.
+// Age and remaining budget move in opposite directions while executing, so chi
+// is continuous across a deterministic segment firing; the clock is carried
+// unchanged rather than reset. It is never capped.
+//
+// Dispatch and branch enumeration. At a dispatch event the rule emits one
+// branch per feasible maximum-chi in-flight candidate i. Each branch activates
+// the control transitions plus i's structurally enabled chain transitions, and
+// every other in-flight candidate j contributes
+//
+//   chi_j - chi_i <= 0        (BranchConstraint{i, j, 0, ClockKind::Laxity})
+//
+// Branches inconsistent with the current zone are dropped. Equal chi admits
+// every tied candidate (non-strict constraint), so ties are enumerated rather
+// than broken by task index. A job that is not selected is preempted (its
+// execution clock freezes) and resumes later; `preemption_mode()` is RESUME.
+//
+// Supported class (enforced by lowering and re-checked when the rule indexes a
+// net): TDG2PN-lowered LLF nets with `num_cpus == 1`, `cores_per_cpu == 1`,
+// every task on core 0, `task_place_capacity == 1`, no locks, no fork/join, no
+// task-to-task dependency edges, at most one start token per task, every task
+// either periodic with a positive period or started once at time 0, a positive
+// absolute deadline (or a positive period supplying the implicit deadline),
+// at most one in-flight job per task, and deterministic execution segments
+// (`earliest == latest`). Interval execution times are rejected because then
+// the executed work would not be determined by elapsed time and chi could not
+// be carried exactly across a segment firing. Overlapping releases are
+// rejected as unsupported when the release fires while the task is mid-chain;
+// a release saturating a still-pending entry token starts no new job, so the
+// pending job keeps its original release age and laxity clock, matching the
+// net's capacity-one merge semantics. Completed jobs drop their laxity clock.
+//
+// LLF-ED has no scalar priority; `effective_priority()` throws so the analysis
+// can never silently fall back to static priorities.
+class LlfFiringRule : public FiringRule {
+ public:
+  LlfFiringRule() = default;
+  explicit LlfFiringRule(const petri::PTPN& net);
+
+  int effective_priority(const PolicyContext& context, size_t transition) const override;
+  bool admissible(const PolicyContext& /*context*/, size_t /*transition*/) const override {
+    return true;
+  }
+  PreemptionMode preemption_mode() const override {
+    return PreemptionMode::RESUME;
+  }
+  bool uses_laxity_clocks() const override {
+    return true;
+  }
+
+  std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled,
+                                     const petri::PTPN& net,
+                                     const PolicyContext& context) const override;
+
+  // Name-sorted task chains and transition -> task ordinal map. Exposed for
+  // diagnostics and tests.
+  [[nodiscard]] const std::vector<TaskChain>& tasks() const {
+    return tasks_;
+  }
+  [[nodiscard]] const std::vector<int>& task_of_transition() const {
+    return task_of_transition_;
+  }
+  // transition -> task ordinal for period-release (`_fire`) transitions, or -1.
+  [[nodiscard]] const std::vector<int>& task_of_periodic_transition() const {
+    return task_of_periodic_transition_;
+  }
+
+ private:
+  // Validates the supported class and builds the chain index.
+  void ensure_index(const petri::PTPN& net) const;
+
+  mutable const petri::PTPN* net_ = nullptr;
+  mutable std::vector<TaskChain> tasks_;
+  mutable std::vector<int> task_of_transition_;
+  mutable std::vector<int> task_of_periodic_transition_;
+};
+
 // Priority Inheritance Protocol as a dynamic firing rule.
 //
 // Base priorities come from `net.task_info()`; the effective priority of a
@@ -655,11 +769,13 @@ class SrpFiringRule : public FiringRule {
 //   EDF                                   -> EdfFiringRule, release clocks, RESUME
 //   FIFO                                  -> FifoFiringRule, release clocks,
 //                                            NON_PREEMPTIVE
+//   LLF                                   -> LlfFiringRule, laxity clocks,
+//                                            RESUME (Event-driven LLF only)
 //   PIP                                   -> PipFiringRule, RESUME
 //   PCP                                   -> PcpFiringRule, RESUME
 //   SRP                                   -> SrpFiringRule, RESUME
 //   FIXED_PRIOR_WITH_RESTART              -> static priorities, RESTART
-//   LLF, UNKNOWN                          -> static priorities, NON_PREEMPTIVE
+//   UNKNOWN                               -> static priorities, NON_PREEMPTIVE
 //
 // The policy-only overload cannot precompute the dynamic protocols' task-chain
 // index; it returns a rule that lazily indexes `PolicyContext::net` on first
