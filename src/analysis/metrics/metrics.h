@@ -127,7 +127,15 @@ class MetricsAnalyzer {
   // `wcrt_lb_valid` is false for graphs built with a state-merging reduction:
   // WCRT stays a certified upper bound, but lower bounds obtained from the same
   // over-approximated graph must not be reported (they are serialized as null).
+  //
+  // The single-vertex overload treats `initial` as the only initial class.
+  // Pass every vertex from StateClassReachabilityGraph::get_initial_vertices()
+  // through the vector overload so that nondeterministic initial active sets
+  // (equal-priority transitions, EDF/FIFO/LLF ties) are all covered.
   MetricsAnalyzer(const SCGraph& graph, const petri::PTPN& net, SCVertex initial, bool exact,
+                  bool wcrt_lb_valid = true);
+  MetricsAnalyzer(const SCGraph& graph, const petri::PTPN& net,
+                  const std::vector<SCVertex>& initial_vertices, bool exact,
                   bool wcrt_lb_valid = true);
 
   // Records the reachability builder's horizon configuration. Call before
@@ -171,7 +179,10 @@ class MetricsAnalyzer {
 
   const SCGraph& graph_;
   const petri::PTPN& net_;
-  SCVertex initial_;
+  // All initial state classes. Timing paths start from every one of them; a
+  // t=0 release is still a single activation even when several initial classes
+  // carry the task's entry token.
+  std::vector<SCVertex> initial_vertices_;
   bool exact_;
   bool wcrt_lb_valid_;
   HorizonInfo horizon_;

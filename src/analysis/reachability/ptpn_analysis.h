@@ -144,8 +144,19 @@ class StateClassReachabilityGraph {
     return graph_;
   }
 
+  // First initial class. Kept for compatibility with callers that only need a
+  // representative; use get_initial_vertices() when the analysis must cover
+  // every admissible initial active set.
   [[nodiscard]] SCVertex get_initial_vertex() const {
     return initial_vertex_;
+  }
+
+  // Every initial class created by build(), after symmetry deduplication. A
+  // nondeterministic initial active set (equal-priority transitions, EDF/FIFO/
+  // LLF ties) yields one class per admissible branch, so consumers that reason
+  // about releases or paths must consider all of them.
+  [[nodiscard]] const std::vector<SCVertex>& get_initial_vertices() const {
+    return initial_vertices_;
   }
 
   // The initial state classes C0 = (M0, Omega0) with every clock pinned to
@@ -200,6 +211,7 @@ class StateClassReachabilityGraph {
   std::unique_ptr<FiringRule> firing_rule_;
   SCGraph graph_;
   SCVertex initial_vertex_ = 0;
+  std::vector<SCVertex> initial_vertices_;
   Statistics stats_;
   CanonicalizationMode mode_ = CanonicalizationMode::EQUALITY;
   ReductionMode reduction_mode_ = ReductionMode::NONE;

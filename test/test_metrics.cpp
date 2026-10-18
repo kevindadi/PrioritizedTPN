@@ -1,5 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "model/petri.h"
@@ -205,6 +211,215 @@ TEST(MetricsTest, PeriodicLocalDeadlockIsDetected) {
   EXPECT_TRUE(t.local_deadlock);
   EXPECT_GT(t.local_deadlock_scc_size, 0u);
   EXPECT_FALSE(report.schedulable);
+}
+
+size_t place_index(const petri::PTPN& net, const std::string& name) {
+  for (size_t p = 0; p < net.num_places(); ++p) {
+    if (net.get_place(petri::PlaceId{p}).name == name) {
+      return p;
+    }
+  }
+  throw std::runtime_error("missing place " + name);
+}
+
+size_t transition_index(const petri::PTPN& net, const std::string& name) {
+  for (size_t t = 0; t < net.num_transitions(); ++t) {
+    if (net.get_transition(petri::TransitionId{t}).name == name) {
+      return t;
+    }
+  }
+  throw std::runtime_error("missing transition " + name);
+}
+
+state_class::SCVertex add_manual_state(state_class::SCGraph& graph,
+                                       std::vector<int> marking, size_t id) {
+  state_class::StateClass state;
+  state.marking = std::move(marking);
+  state.id = id;
+  return boost::add_vertex(std::move(state), graph);
+}
+
+void add_manual_edge(state_class::SCGraph& graph, state_class::SCVertex from,
+                     state_class::SCVertex to, int transition, int dwell_min,
+                     int dwell_max) {
+  state_class::FiringEdge edge(transition, dwell_min, dwell_max, dwell_min, dwell_max);
+  boost::add_edge(from, to, edge, graph);
+}
+
+// Two single-shot tasks with equal priority on one core, both released at
+// t = 0. The scheduler cannot order them, so the initial active set has two
+// admissible branches and the reachability builder creates two initial
+// classes.
+petri::PTPN make_two_equal_priority_start_tasks_net() {
+  petri::PTPN net;
+  auto add_task = [&](const std::string& name, int exec_time) {
+    const petri::PlaceId entry = net.add_place(name + "entry", 1);
+    const petri::TransitionId get_core = net.add_transition(
+        name + "get_core", petri::TimeInterval(0, 0), /*priority=*/1, /*core=*/0, false);
+    const petri::PlaceId ready = net.add_place(name + "ready", 1);
+    const petri::TransitionId exec =
+        net.add_transition(name + "exec", petri::TimeInterval(exec_time, exec_time),
+                           /*priority=*/1, /*core=*/0, false);
+    const petri::PlaceId exit = net.add_place(name + "exit", 1);
+    const petri::PlaceId done = net.add_place(name + "done", 1);
+    const petri::TransitionId consume =
+        net.add_transition(name + "consume", petri::TimeInterval(0, 0), /*priority=*/0,
+                           /*core=*/-1, false);
+
+    net.set_initial_marking(entry, 1);
+    net.set_pre_arc(entry, get_core, 1);
+    net.set_post_arc(get_core, ready, 1);
+    net.set_pre_arc(ready, exec, 1);
+    net.set_post_arc(exec, exit, 1);
+    net.set_pre_arc(exit, consume, 1);
+    net.set_post_arc(consume, done, 1);
+
+    net.set_task_chain(
+        name, {petri::NodeRef::of(entry), petri::NodeRef::of(get_core),
+               petri::NodeRef::of(ready), petri::NodeRef::of(exec),
+               petri::NodeRef::of(exit)});
+    net.set_node_span(name, petri::NodeRef::of(entry), petri::NodeRef::of(exit));
+
+    petri::TaskInfo info;
+    info.core = 0;
+    info.priority = 1;
+    info.wcet = exec_time;
+    info.bcet = exec_time;
+    net.set_task_info(name, info);
+  };
+
+  add_task("A", 4);
+  add_task("B", 2);
+  net.set_core_parallelism(0, 1);
+  return net;
+}
+
+TEST(MetricsTest, EqualPriorityStartTasksBuildMultipleInitialClasses) {
+  const petri::PTPN net = make_two_equal_priority_start_tasks_net();
+  StateClassReachabilityGraph graph(net);
+  graph.build(2048);
+  EXPECT_FALSE(graph.get_statistics().truncated);
+
+  ASSERT_EQ(graph.get_initial_vertices().size(), 2u);
+  EXPECT_EQ(graph.get_initial_vertex(), graph.get_initial_vertices().front());
+
+  // Both start tasks are released at t=0. Their response time is the worst
+  // over both dispatch branches: A then B (4+2) or B then A (2+4).
+  MetricsAnalyzer analyzer(graph.get_graph(), net, graph.get_initial_vertices(),
+                           /*exact=*/true);
+  const MetricsReport report = analyzer.analyze();
+  ASSERT_EQ(report.tasks.size(), 2u);
+  for (const auto& task : report.tasks) {
+    EXPECT_TRUE(task.observed) << task.name;
+    EXPECT_EQ(task.activations, 1) << task.name;  // one t=0 release, not per branch
+    EXPECT_FALSE(task.wcrt.infinite) << task.name;
+    EXPECT_EQ(task.wcrt.value, 6) << task.name;
+  }
+}
+
+TEST(MetricsTest, StartReleaseInNonFirstInitialClassIsObserved) {
+  // The initial active set has two classes. The first one does not carry the
+  // task's entry token; only the second one does. Passing just the first
+  // initial vertex (the historical behavior) therefore misses the release.
+  petri::PTPN net = make_single_task_net(true);
+  const size_t entry = place_index(net, "Tentry");
+  const size_t ready = place_index(net, "Tready");
+  const size_t exit = place_index(net, "Texit");
+  const size_t done = place_index(net, "Tdone");
+  const int get_core = static_cast<int>(transition_index(net, "Tget_core"));
+  const int exec = static_cast<int>(transition_index(net, "Texec"));
+  const int consume = static_cast<int>(transition_index(net, "Tconsume"));
+  net.set_initial_marking(petri::PlaceId{entry}, 0);  // marking comes from the graph
+
+  const std::vector<int> empty(net.num_places(), 0);
+  std::vector<int> at_entry = empty;
+  at_entry[entry] = 1;
+  std::vector<int> at_ready = empty;
+  at_ready[ready] = 1;
+  std::vector<int> at_exit = empty;
+  at_exit[exit] = 1;
+  std::vector<int> at_done = empty;
+  at_done[done] = 1;
+
+  state_class::SCGraph graph;
+  const state_class::SCVertex first = add_manual_state(graph, empty, 0);
+  const state_class::SCVertex start = add_manual_state(graph, at_entry, 1);
+  const state_class::SCVertex running = add_manual_state(graph, at_ready, 2);
+  const state_class::SCVertex completed = add_manual_state(graph, at_exit, 3);
+  const state_class::SCVertex drained = add_manual_state(graph, at_done, 4);
+  add_manual_edge(graph, start, running, get_core, 0, 0);
+  add_manual_edge(graph, running, completed, exec, 3, 5);
+  add_manual_edge(graph, completed, drained, consume, 0, 0);
+
+  MetricsAnalyzer analyzer(graph, net, std::vector<state_class::SCVertex>{first, start},
+                           /*exact=*/true);
+  const MetricsReport report = analyzer.analyze();
+  ASSERT_EQ(report.tasks.size(), 1u);
+  EXPECT_TRUE(report.tasks.front().observed);
+  EXPECT_EQ(report.tasks.front().activations, 1);
+  EXPECT_EQ(report.tasks.front().wcrt.value, 5);
+  EXPECT_EQ(report.tasks.front().bcrt.value, 3);
+
+  // Back-compat: the single-vertex overload still starts from one class only.
+  MetricsAnalyzer first_only(graph, net, first, /*exact=*/true);
+  const MetricsReport first_report = first_only.analyze();
+  ASSERT_EQ(first_report.tasks.size(), 1u);
+  EXPECT_FALSE(first_report.tasks.front().observed);
+  EXPECT_EQ(first_report.tasks.front().activations, 0);
+}
+
+TEST(MetricsTest, ResponseTimeTakesMaximumOverInitialClasses) {
+  // Two initial classes both carry the task's entry token but lead to
+  // different execution windows. The response-time DP must start from both,
+  // and the t=0 release is still a single activation.
+  petri::PTPN net = make_single_task_net(true);
+  const size_t entry = place_index(net, "Tentry");
+  const size_t ready = place_index(net, "Tready");
+  const size_t exit = place_index(net, "Texit");
+  const size_t done = place_index(net, "Tdone");
+  const int get_core = static_cast<int>(transition_index(net, "Tget_core"));
+  const int exec = static_cast<int>(transition_index(net, "Texec"));
+  const int consume = static_cast<int>(transition_index(net, "Tconsume"));
+  net.set_initial_marking(petri::PlaceId{entry}, 0);
+
+  const std::vector<int> empty(net.num_places(), 0);
+  std::vector<int> at_entry = empty;
+  at_entry[entry] = 1;
+  std::vector<int> at_ready = empty;
+  at_ready[ready] = 1;
+  std::vector<int> at_exit = empty;
+  at_exit[exit] = 1;
+  std::vector<int> at_done = empty;
+  at_done[done] = 1;
+
+  state_class::SCGraph graph;
+  const state_class::SCVertex short_start = add_manual_state(graph, at_entry, 0);
+  const state_class::SCVertex short_ready = add_manual_state(graph, at_ready, 1);
+  const state_class::SCVertex short_exit = add_manual_state(graph, at_exit, 2);
+  const state_class::SCVertex short_done = add_manual_state(graph, at_done, 3);
+  const state_class::SCVertex long_start = add_manual_state(graph, at_entry, 4);
+  const state_class::SCVertex long_ready = add_manual_state(graph, at_ready, 5);
+  const state_class::SCVertex long_exit = add_manual_state(graph, at_exit, 6);
+  const state_class::SCVertex long_done = add_manual_state(graph, at_done, 7);
+  add_manual_edge(graph, short_start, short_ready, get_core, 0, 0);
+  add_manual_edge(graph, short_ready, short_exit, exec, 1, 1);
+  add_manual_edge(graph, short_exit, short_done, consume, 0, 0);
+  add_manual_edge(graph, long_start, long_ready, get_core, 0, 0);
+  add_manual_edge(graph, long_ready, long_exit, exec, 9, 9);
+  add_manual_edge(graph, long_exit, long_done, consume, 0, 0);
+
+  MetricsAnalyzer analyzer(
+      graph, net,
+      std::vector<state_class::SCVertex>{short_start, long_start}, /*exact=*/true);
+  const MetricsReport report = analyzer.analyze();
+  ASSERT_EQ(report.tasks.size(), 1u);
+  EXPECT_TRUE(report.tasks.front().observed);
+  EXPECT_EQ(report.tasks.front().activations, 1);
+  EXPECT_EQ(report.tasks.front().wcrt.value, 9);  // max over both initial classes
+
+  // Starting from the first class alone reproduces the under-reporting bug.
+  MetricsAnalyzer first_only(graph, net, short_start, /*exact=*/true);
+  EXPECT_EQ(first_only.analyze().tasks.front().wcrt.value, 1);
 }
 
 }  // namespace

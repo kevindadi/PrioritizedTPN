@@ -141,13 +141,27 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
       tm.has_deadline = info_it->second.deadline > 0;
     }
 
-    // Release states: edges that deposit a token into the entry place, plus the
-    // initial state if the task starts already released.
+    // Release states: edges that deposit a token into the entry place, plus
+    // every initial state class in which the task starts already released.
+    // All initial classes with the entry token are path starts so that the DP
+    // covers every admissible initial active set; the t=0 release is still one
+    // activation for the task, not one per initial branch.
     std::vector<size_t> release_states;
     {
       std::set<size_t> uniq;
-      if (state_of_[initial_]->marking[task.entry_place] > 0) {
-        uniq.insert(initial_);
+      bool released_at_zero = false;
+      for (SCVertex initial : initial_vertices_) {
+        const size_t v = boost::get(boost::vertex_name, graph_, initial).id;
+        if (v >= state_of_.size() || state_of_[v] == nullptr) {
+          continue;
+        }
+        if (task.entry_place < state_of_[v]->marking.size() &&
+            state_of_[v]->marking[task.entry_place] > 0) {
+          uniq.insert(v);
+          released_at_zero = true;
+        }
+      }
+      if (released_at_zero) {
         tm.activations++;  // released at t=0 (start task)
       }
       for (size_t v = 0; v < num_vertices_; ++v) {

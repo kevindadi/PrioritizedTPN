@@ -334,6 +334,8 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
   merge_targets_.clear();
   stats_ = Statistics();
   next_id_ = 0;
+  initial_vertex_ = 0;
+  initial_vertices_.clear();
   reset_dbm_instrumentation();
   petri::reset_overflow_recording();
 
@@ -342,8 +344,7 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
     return 0;
   }
 
-  std::vector<SCVertex> initial_vertices;
-  initial_vertices.reserve(initial_states.size());
+  initial_vertices_.reserve(initial_states.size());
   for (StateClass& initial : initial_states) {
     canonicalize_state(initial);
     if (extrapolation_enabled_) {
@@ -361,16 +362,16 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
       }
     }
     SCVertex v = add_state(std::move(initial));
-    if (initial_vertices.empty()) {
-      initial_vertex_ = v;
-    }
-    initial_vertices.push_back(v);
+    initial_vertices_.push_back(v);
     stats_.total_states++;
+  }
+  if (!initial_vertices_.empty()) {
+    initial_vertex_ = initial_vertices_.front();
   }
 
   if (!horizon_enabled_) {
     // Exhaustive breadth-first exploration: unchanged default semantics.
-    std::vector<SCVertex> frontier = initial_vertices;
+    std::vector<SCVertex> frontier = initial_vertices_;
     while (!frontier.empty()) {
       std::vector<SCVertex> next_frontier;
 
@@ -417,7 +418,7 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
     const size_t initial_count = static_cast<size_t>(boost::num_vertices(graph_));
     std::vector<long long> min_time(initial_count, 0);
     std::vector<char> settled(initial_count, 0);
-    for (SCVertex v : initial_vertices) {
+    for (SCVertex v : initial_vertices_) {
       queue.push({0, v});
     }
 

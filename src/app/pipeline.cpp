@@ -326,7 +326,7 @@ bool analyze_task_cones(const petri::PTPN& ptpn, const PipelineOptions& opts,
     merged.transitions += stats.total_transitions;
 
     state_class::MetricsAnalyzer analyzer(graph.get_graph(), cone,
-                                          graph.get_initial_vertex(), cone_exact,
+                                          graph.get_initial_vertices(), cone_exact,
                                           /*wcrt_lb_valid=*/true);
     state_class::MetricsReport cone_report = analyzer.analyze();
     merged.bounded = merged.bounded && cone_report.bounded;
@@ -615,7 +615,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       }
       const auto metrics_start = PipelineClock::now();
       state_class::MetricsAnalyzer analyzer(reachability_graph.get_graph(), ptpn,
-                                            reachability_graph.get_initial_vertex(), exact,
+                                            reachability_graph.get_initial_vertices(), exact,
                                             /*wcrt_lb_valid=*/!upper_bound_merging);
       state_class::HorizonInfo horizon_info;
       if (opts.time_horizon.has_value()) {

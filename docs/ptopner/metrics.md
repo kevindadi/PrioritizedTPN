@@ -236,8 +236,13 @@ structurally: the model has no deadline-monitor sub-net. Use the per-task
 ### Tier 1 — timing / response (dwell-weighted, per single activation)
 
 A task **activation** starts when its `entry` place gains a token (a release
-edge), or at the initial state for start tasks released at `t = 0`. A task
-**completes** on the edge that increments its `end` place.
+edge), or at the initial state for start tasks released at `t = 0`. The initial
+state can consist of several state classes when the initial active set is
+nondeterministic (equal-priority transitions, EDF/FIFO/LLF ties): start/release
+accounting and the response-time paths cover **every** initial class, not just
+the first. A `t = 0` release is still counted as one activation for the task,
+not once per initial branch. A task **completes** on the edge that increments
+its `end` place.
 
 All response-style metrics are a DP over the **in-flight subgraph** of one task
 (vertices where any chain place holds a token), accumulating an edge weight up to

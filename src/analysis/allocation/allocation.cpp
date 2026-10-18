@@ -226,7 +226,7 @@ CandidateSummary evaluate_candidate(const tdg::TDG& graph,
     const auto& stats = reachability.get_statistics();
     const bool analysis_exact = !stats.truncated;
     state_class::MetricsAnalyzer analyzer(reachability.get_graph(), ptpn,
-                                          reachability.get_initial_vertex(), analysis_exact,
+                                          reachability.get_initial_vertices(), analysis_exact,
                                           /*wcrt_lb_valid=*/true);
     const state_class::MetricsReport report = analyzer.analyze();
 

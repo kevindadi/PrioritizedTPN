@@ -32,9 +32,14 @@ std::string TimeValue::to_string() const {
 
 MetricsAnalyzer::MetricsAnalyzer(const SCGraph& graph, const petri::PTPN& net, SCVertex initial,
                                  bool exact, bool wcrt_lb_valid)
+    : MetricsAnalyzer(graph, net, std::vector<SCVertex>{initial}, exact, wcrt_lb_valid) {}
+
+MetricsAnalyzer::MetricsAnalyzer(const SCGraph& graph, const petri::PTPN& net,
+                                 const std::vector<SCVertex>& initial_vertices, bool exact,
+                                 bool wcrt_lb_valid)
     : graph_(graph),
       net_(net),
-      initial_(initial),
+      initial_vertices_(initial_vertices),
       exact_(exact),
       wcrt_lb_valid_(wcrt_lb_valid) {
   flatten_graph();
