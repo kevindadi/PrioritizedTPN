@@ -77,8 +77,8 @@ void TDG::load_from_parser(const parse::Parser& parser, bool log_nodes) {
       } else {
         task_allowed_cores[task->name] = {task->core};
       }
-      task_wcet_provenance[task->name] = {
-          json_node.wcet_kind, json_node.wcet_method, json_node.wcet_artifact};
+      task_wcet_provenance[task->name] = {json_node.wcet_kind, json_node.wcet_method,
+                                          json_node.wcet_artifact};
     }
     register_node(*this, node_type, log_nodes);
   }

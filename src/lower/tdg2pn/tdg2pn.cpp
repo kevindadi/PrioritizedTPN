@@ -44,8 +44,7 @@ void validate_edf_supported_class(const tdg::TDG& tdg) {
   for (const auto& binding : tdg.periodic_tasks) {
     if (binding.period <= 0) {
       throw std::invalid_argument(name + " requires a positive period for periodic task '" +
-                                  binding.task + "', got " +
-                                  std::to_string(binding.period));
+                                  binding.task + "', got " + std::to_string(binding.period));
     }
     period_of[binding.task] = binding.period;
   }
@@ -54,8 +53,8 @@ void validate_edf_supported_class(const tdg::TDG& tdg) {
   for (const auto& start : tdg.start_tasks) {
     if (start.tokens < 0 || start.tokens > 1) {
       throw std::invalid_argument(
-          name + " requires at most one initial job per task; start binding for '" +
-          start.task + "' requests " + std::to_string(start.tokens) + " tokens");
+          name + " requires at most one initial job per task; start binding for '" + start.task +
+          "' requests " + std::to_string(start.tokens) + " tokens");
     }
     if (start.tokens == 1) {
       started.insert(start.task);
@@ -75,8 +74,10 @@ void validate_edf_supported_class(const tdg::TDG& tdg) {
     const auto period_it = period_of.find(task_name);
     const int period = period_it == period_of.end() ? 0 : period_it->second;
     if (task.deadline <= 0 && period <= 0) {
-      throw std::invalid_argument(name + " requires a positive absolute deadline or period for "
-                                  "task '" + task_name + "'");
+      throw std::invalid_argument(name +
+                                  " requires a positive absolute deadline or period for "
+                                  "task '" +
+                                  task_name + "'");
     }
     if (period <= 0 && started.find(task_name) == started.end()) {
       throw std::invalid_argument(
@@ -105,9 +106,8 @@ void validate_edf_supported_class(const tdg::TDG& tdg) {
 
   for (const auto& [node_name, node] : tdg.nodes_type) {
     if (is_fork_or_join(node)) {
-      throw std::invalid_argument(name +
-                                  " supported class does not include fork/join nodes: " +
-                                  node_name);
+      throw std::invalid_argument(
+          name + " supported class does not include fork/join nodes: " + node_name);
     }
   }
 
@@ -123,8 +123,7 @@ void validate_edf_supported_class(const tdg::TDG& tdg) {
     if (source_it == tdg.nodes_type.end() || target_it == tdg.nodes_type.end()) {
       continue;
     }
-    if (as_task_node(source_it->second) != nullptr &&
-        as_task_node(target_it->second) != nullptr) {
+    if (as_task_node(source_it->second) != nullptr && as_task_node(target_it->second) != nullptr) {
       throw std::invalid_argument(
           name + " supported class does not include dependency-driven releases: edge " +
           edge.source + " -> " + edge.target +
@@ -159,8 +158,7 @@ void validate_fifo_supported_class(const tdg::TDG& tdg) {
   for (const auto& binding : tdg.periodic_tasks) {
     if (binding.period <= 0) {
       throw std::invalid_argument(name + " requires a positive period for periodic task '" +
-                                  binding.task + "', got " +
-                                  std::to_string(binding.period));
+                                  binding.task + "', got " + std::to_string(binding.period));
     }
     period_of[binding.task] = binding.period;
   }
@@ -169,8 +167,8 @@ void validate_fifo_supported_class(const tdg::TDG& tdg) {
   for (const auto& start : tdg.start_tasks) {
     if (start.tokens < 0 || start.tokens > 1) {
       throw std::invalid_argument(
-          name + " requires at most one initial job per task; start binding for '" +
-          start.task + "' requests " + std::to_string(start.tokens) + " tokens");
+          name + " requires at most one initial job per task; start binding for '" + start.task +
+          "' requests " + std::to_string(start.tokens) + " tokens");
     }
     if (start.tokens == 1) {
       started.insert(start.task);
@@ -216,9 +214,8 @@ void validate_fifo_supported_class(const tdg::TDG& tdg) {
 
   for (const auto& [node_name, node] : tdg.nodes_type) {
     if (is_fork_or_join(node)) {
-      throw std::invalid_argument(name +
-                                  " supported class does not include fork/join nodes: " +
-                                  node_name);
+      throw std::invalid_argument(
+          name + " supported class does not include fork/join nodes: " + node_name);
     }
   }
 
@@ -234,8 +231,7 @@ void validate_fifo_supported_class(const tdg::TDG& tdg) {
     if (source_it == tdg.nodes_type.end() || target_it == tdg.nodes_type.end()) {
       continue;
     }
-    if (as_task_node(source_it->second) != nullptr &&
-        as_task_node(target_it->second) != nullptr) {
+    if (as_task_node(source_it->second) != nullptr && as_task_node(target_it->second) != nullptr) {
       throw std::invalid_argument(
           name + " supported class does not include dependency-driven releases: edge " +
           edge.source + " -> " + edge.target +
@@ -269,8 +265,7 @@ void validate_llf_supported_class(const tdg::TDG& tdg) {
   for (const auto& binding : tdg.periodic_tasks) {
     if (binding.period <= 0) {
       throw std::invalid_argument(name + " requires a positive period for periodic task '" +
-                                  binding.task + "', got " +
-                                  std::to_string(binding.period));
+                                  binding.task + "', got " + std::to_string(binding.period));
     }
     period_of[binding.task] = binding.period;
   }
@@ -279,8 +274,8 @@ void validate_llf_supported_class(const tdg::TDG& tdg) {
   for (const auto& start : tdg.start_tasks) {
     if (start.tokens < 0 || start.tokens > 1) {
       throw std::invalid_argument(
-          name + " requires at most one initial job per task; start binding for '" +
-          start.task + "' requests " + std::to_string(start.tokens) + " tokens");
+          name + " requires at most one initial job per task; start binding for '" + start.task +
+          "' requests " + std::to_string(start.tokens) + " tokens");
     }
     if (start.tokens == 1) {
       started.insert(start.task);
@@ -300,8 +295,10 @@ void validate_llf_supported_class(const tdg::TDG& tdg) {
     const auto period_it = period_of.find(task_name);
     const int period = period_it == period_of.end() ? 0 : period_it->second;
     if (task.deadline <= 0 && period <= 0) {
-      throw std::invalid_argument(name + " requires a positive absolute deadline or period for "
-                                  "task '" + task_name + "'");
+      throw std::invalid_argument(name +
+                                  " requires a positive absolute deadline or period for "
+                                  "task '" +
+                                  task_name + "'");
     }
     if (period <= 0 && started.find(task_name) == started.end()) {
       throw std::invalid_argument(
@@ -309,22 +306,21 @@ void validate_llf_supported_class(const tdg::TDG& tdg) {
           "' is neither periodic (released by _fire) nor started at time 0");
     }
     if (task.time.empty()) {
-      throw std::invalid_argument(name + " task '" + task_name +
-                                  "' has no execution segments");
+      throw std::invalid_argument(name + " task '" + task_name + "' has no execution segments");
     }
     for (const auto& segment : task.time) {
       if (segment.first != segment.second) {
-        throw std::invalid_argument(
-            name + " supports only deterministic execution segments "
-                   "(earliest == latest); task '" +
-            task_name + "' has an interval [" + std::to_string(segment.first) + ", " +
-            std::to_string(segment.second) + "]");
+        throw std::invalid_argument(name +
+                                    " supports only deterministic execution segments "
+                                    "(earliest == latest); task '" +
+                                    task_name + "' has an interval [" +
+                                    std::to_string(segment.first) + ", " +
+                                    std::to_string(segment.second) + "]");
       }
       if (segment.first < 0) {
         throw std::invalid_argument(name + " requires non-negative execution times; task '" +
-                                    task_name + "' has segment [" +
-                                    std::to_string(segment.first) + ", " +
-                                    std::to_string(segment.second) + "]");
+                                    task_name + "' has segment [" + std::to_string(segment.first) +
+                                    ", " + std::to_string(segment.second) + "]");
       }
     }
   };
@@ -349,9 +345,8 @@ void validate_llf_supported_class(const tdg::TDG& tdg) {
 
   for (const auto& [node_name, node] : tdg.nodes_type) {
     if (is_fork_or_join(node)) {
-      throw std::invalid_argument(name +
-                                  " supported class does not include fork/join nodes: " +
-                                  node_name);
+      throw std::invalid_argument(
+          name + " supported class does not include fork/join nodes: " + node_name);
     }
   }
 
@@ -367,8 +362,7 @@ void validate_llf_supported_class(const tdg::TDG& tdg) {
     if (source_it == tdg.nodes_type.end() || target_it == tdg.nodes_type.end()) {
       continue;
     }
-    if (as_task_node(source_it->second) != nullptr &&
-        as_task_node(target_it->second) != nullptr) {
+    if (as_task_node(source_it->second) != nullptr && as_task_node(target_it->second) != nullptr) {
       throw std::invalid_argument(
           name + " supported class does not include dependency-driven releases: edge " +
           edge.source + " -> " + edge.target +
@@ -402,8 +396,7 @@ void TDG2PN::transform(const tdg::TDG& tdg, petri::PTPN& ptpn) {
     // job token in a task chain. A chain capacity above one admits queued jobs
     // and makes that position ambiguous, so the supported class is enforced
     // here for the dynamic lock protocols.
-    if (configured.policy == SchedulePolicy::PIP ||
-        configured.policy == SchedulePolicy::PCP ||
+    if (configured.policy == SchedulePolicy::PIP || configured.policy == SchedulePolicy::PCP ||
         configured.policy == SchedulePolicy::SRP) {
       const std::string name = schedule_policy_to_string(configured.policy);
       if (configured.task_place_capacity != 1) {

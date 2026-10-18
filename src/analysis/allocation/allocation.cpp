@@ -25,9 +25,9 @@ constexpr double kUtilizationEpsilon = 1e-12;
 // One task's static allocation data, filled in task-name order.
 struct TaskSpec {
   std::string name;
-  std::vector<int> domain;  // sorted ascending, distinct
+  std::vector<int> domain;   // sorted ascending, distinct
   long long wcet_upper = 0;  // sum of segment upper bounds
-  bool fixed = false;  // domain size is exactly one
+  bool fixed = false;        // domain size is exactly one
 };
 
 std::vector<const TaskNode*> collect_task_nodes(const tdg::TDG& graph) {
@@ -38,9 +38,8 @@ std::vector<const TaskNode*> collect_task_nodes(const tdg::TDG& graph) {
       tasks.push_back(task);
     }
   }
-  std::sort(tasks.begin(), tasks.end(), [](const TaskNode* left, const TaskNode* right) {
-    return left->name < right->name;
-  });
+  std::sort(tasks.begin(), tasks.end(),
+            [](const TaskNode* left, const TaskNode* right) { return left->name < right->name; });
   return tasks;
 }
 
@@ -113,7 +112,7 @@ int compare_assignments(const std::vector<std::pair<std::string, int>>& left,
     return 0;
   }
   return std::lexicographical_compare(left.begin(), left.end(), right.begin(), right.end()) ? -1
-                                                                                           : 1;
+                                                                                            : 1;
 }
 
 // Total order used to pick `best` and to accept local-search moves.
@@ -125,8 +124,8 @@ int rank_candidates(const CandidateSummary& left, const CandidateSummary& right,
   }
 
   if (objective == Objective::MAX_WCRT) {
-    const int by_time = compare_time(left.max_wcrt_infinite, left.max_wcrt,
-                                     right.max_wcrt_infinite, right.max_wcrt);
+    const int by_time = compare_time(left.max_wcrt_infinite, left.max_wcrt, right.max_wcrt_infinite,
+                                     right.max_wcrt);
     if (by_time != 0) {
       return by_time;
     }
@@ -146,8 +145,8 @@ int rank_candidates(const CandidateSummary& left, const CandidateSummary& right,
   if (left.max_core_load != right.max_core_load) {
     return left.max_core_load < right.max_core_load ? -1 : 1;
   }
-  const int by_time = compare_time(left.max_wcrt_infinite, left.max_wcrt,
-                                   right.max_wcrt_infinite, right.max_wcrt);
+  const int by_time =
+      compare_time(left.max_wcrt_infinite, left.max_wcrt, right.max_wcrt_infinite, right.max_wcrt);
   if (by_time != 0) {
     return by_time;
   }
@@ -158,8 +157,8 @@ int rank_candidates(const CandidateSummary& left, const CandidateSummary& right,
 // and strictly better on at least one. Infinity is treated as +infinity. The
 // utilization metric is used even when incomplete (see docs/ptopner/allocation.md).
 bool dominates(const CandidateSummary& left, const CandidateSummary& right) {
-  const int by_time = compare_time(left.max_wcrt_infinite, left.max_wcrt,
-                                   right.max_wcrt_infinite, right.max_wcrt);
+  const int by_time =
+      compare_time(left.max_wcrt_infinite, left.max_wcrt, right.max_wcrt_infinite, right.max_wcrt);
   const bool time_no_worse = by_time <= 0;
   const bool utilization_no_worse = left.max_utilization <= right.max_utilization;
   const bool load_no_worse = left.max_core_load <= right.max_core_load;
@@ -171,8 +170,8 @@ bool dominates(const CandidateSummary& left, const CandidateSummary& right) {
 }
 
 bool pareto_sort_less(const CandidateSummary& left, const CandidateSummary& right) {
-  const int by_time = compare_time(left.max_wcrt_infinite, left.max_wcrt,
-                                   right.max_wcrt_infinite, right.max_wcrt);
+  const int by_time =
+      compare_time(left.max_wcrt_infinite, left.max_wcrt, right.max_wcrt_infinite, right.max_wcrt);
   if (by_time != 0) {
     return by_time < 0;
   }
@@ -185,11 +184,9 @@ bool pareto_sort_less(const CandidateSummary& left, const CandidateSummary& righ
 // Builds one candidate's assignment, lowers it, and runs the exact state-class
 // analysis. Any lowering/analysis failure yields an infeasible candidate rather
 // than aborting the whole search.
-CandidateSummary evaluate_candidate(const tdg::TDG& graph,
-                                    const std::vector<TaskSpec>& specs,
-                                    const std::vector<int>& cores,
-                                    const Options& options, size_t real_cores,
-                                    bool utilization_complete) {
+CandidateSummary evaluate_candidate(const tdg::TDG& graph, const std::vector<TaskSpec>& specs,
+                                    const std::vector<int>& cores, const Options& options,
+                                    size_t real_cores, bool utilization_complete) {
   CandidateSummary summary;
   summary.assignment.reserve(specs.size());
   for (size_t i = 0; i < specs.size(); ++i) {
@@ -233,9 +230,8 @@ CandidateSummary evaluate_candidate(const tdg::TDG& graph,
     summary.analysis_exact = analysis_exact;
     summary.states = stats.total_states;
     summary.deadlock_states = report.deadlock_states.size();
-    summary.feasible = report.deadlock_analysis_certified && report.bounded &&
-                       !stats.truncated && !report.truncated && report.schedulable &&
-                       report.deadlock_states.empty();
+    summary.feasible = report.deadlock_analysis_certified && report.bounded && !stats.truncated &&
+                       !report.truncated && report.schedulable && report.deadlock_states.empty();
 
     for (const auto& task : report.tasks) {
       if (!task.observed) {
@@ -351,8 +347,7 @@ const char* objective_name(Objective objective) {
   }
 }
 
-nlohmann::json assignment_to_json(
-    const std::vector<std::pair<std::string, int>>& assignment) {
+nlohmann::json assignment_to_json(const std::vector<std::pair<std::string, int>>& assignment) {
   nlohmann::json array = nlohmann::json::array();
   for (const auto& [task, core] : assignment) {
     array.push_back({{"task", task}, {"core", core}});
@@ -367,9 +362,8 @@ nlohmann::json candidate_to_json(const CandidateSummary& candidate) {
   json["analysis_exact"] = candidate.analysis_exact;
   json["utilization_complete"] = candidate.utilization_complete;
   json["max_wcrt_infinite"] = candidate.max_wcrt_infinite;
-  json["max_wcrt"] = candidate.max_wcrt_infinite
-                         ? nlohmann::json(nullptr)
-                         : nlohmann::json(candidate.max_wcrt);
+  json["max_wcrt"] =
+      candidate.max_wcrt_infinite ? nlohmann::json(nullptr) : nlohmann::json(candidate.max_wcrt);
   json["max_utilization"] = candidate.max_utilization;
   json["max_core_load"] = candidate.max_core_load;
   json["states"] = candidate.states;
@@ -392,10 +386,9 @@ struct SearchAccumulator {
     if (candidate.feasible) {
       ++feasible_count;
 
-      const bool dominated_by_existing =
-          std::any_of(pareto.begin(), pareto.end(), [&](const CandidateSummary& existing) {
-            return dominates(existing, candidate);
-          });
+      const bool dominated_by_existing = std::any_of(
+          pareto.begin(), pareto.end(),
+          [&](const CandidateSummary& existing) { return dominates(existing, candidate); });
       if (!dominated_by_existing) {
         pareto.erase(std::remove_if(pareto.begin(), pareto.end(),
                                     [&](const CandidateSummary& existing) {
@@ -406,11 +399,9 @@ struct SearchAccumulator {
       }
     }
 
-    const bool certification_eligible =
-        !require_certified_wcet || all_wcet_certified;
+    const bool certification_eligible = !require_certified_wcet || all_wcet_certified;
     if (candidate.feasible && certification_eligible &&
-        (!best.has_value() ||
-         rank_candidates(candidate, best.value(), objective) < 0)) {
+        (!best.has_value() || rank_candidates(candidate, best.value(), objective) < 0)) {
       best = candidate;
     }
   }
@@ -517,8 +508,7 @@ SearchReport search_allocations(const tdg::TDG& graph, const Options& options) {
   accumulator.objective = options.objective;
 
   const bool exhaustive =
-      domain_size <= options.max_candidates &&
-      domain_size != std::numeric_limits<size_t>::max();
+      domain_size <= options.max_candidates && domain_size != std::numeric_limits<size_t>::max();
 
   if (exhaustive) {
     report.strategy = Strategy::EXHAUSTIVE;
@@ -549,8 +539,8 @@ SearchReport search_allocations(const tdg::TDG& graph, const Options& options) {
       report.truncated = true;
     } else {
       std::vector<int> cores = seed_assignment(specs, real_cores);
-      CandidateSummary current = evaluate_candidate(graph, specs, cores, options, real_cores,
-                                                    report.utilization_complete);
+      CandidateSummary current =
+          evaluate_candidate(graph, specs, cores, options, real_cores, report.utilization_complete);
       ++report.evaluated;
       accumulator.add(current);
 
@@ -602,10 +592,9 @@ SearchReport search_allocations(const tdg::TDG& graph, const Options& options) {
       }
 
       if (report.truncated) {
-        append_reason(report.reason,
-                      "candidate evaluation budget (" +
-                          std::to_string(options.max_candidates) +
-                          ") was exhausted before the local search converged");
+        append_reason(report.reason, "candidate evaluation budget (" +
+                                         std::to_string(options.max_candidates) +
+                                         ") was exhausted before the local search converged");
       }
     }
   }
@@ -621,8 +610,7 @@ SearchReport search_allocations(const tdg::TDG& graph, const Options& options) {
   report.pareto = std::move(accumulator.pareto);
 
   if (options.max_candidates == 0) {
-    append_reason(report.reason,
-                  "candidate evaluation budget is zero; no candidate was evaluated");
+    append_reason(report.reason, "candidate evaluation budget is zero; no candidate was evaluated");
   }
 
   if (options.objective == Objective::MAX_UTILIZATION && !report.utilization_complete) {
@@ -635,8 +623,7 @@ SearchReport search_allocations(const tdg::TDG& graph, const Options& options) {
   if (!report.best.has_value() && options.max_candidates > 0) {
     if (report.feasible_count == 0) {
       append_reason(report.reason, "no feasible allocation among " +
-                                       std::to_string(report.evaluated) +
-                                       " evaluated candidates");
+                                       std::to_string(report.evaluated) + " evaluated candidates");
     } else if (options.require_certified_wcet && !report.all_wcet_certified) {
       append_reason(report.reason,
                     "no feasible allocation has fully certified WCET provenance "

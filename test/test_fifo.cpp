@@ -1,7 +1,6 @@
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <cstddef>
+#include <gtest/gtest.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -139,7 +138,8 @@ std::string fifo_vs_fixed_json(const std::string& policy) {
     "configuration": {
       "num_cpus": 1,
       "cores_per_cpu": 1,
-      "policy": ")" + policy + R"(",
+      "policy": ")" +
+         policy + R"(",
       "start": [{"task": "L", "tokens": 1}],
       "periodic": [{"task": "H", "period": 5}]
     },
@@ -347,28 +347,28 @@ TEST(FifoTest, EqualArrivalTiesEnumerateBothDispatchOrders) {
     const StateClass& target =
         state_of(full_graph.get_graph(), boost::target(*it, full_graph.get_graph()));
 
-    if (edge.transition_id == static_cast<int>(a_get_core) &&
-        source.marking[a_entry] > 0 && source.marking[b_entry] > 0 &&
-        target.marking[a_entry] == 0 && target.marking[b_entry] > 0) {
+    if (edge.transition_id == static_cast<int>(a_get_core) && source.marking[a_entry] > 0 &&
+        source.marking[b_entry] > 0 && target.marking[a_entry] == 0 &&
+        target.marking[b_entry] > 0) {
       saw_a_first = true;
     }
-    if (edge.transition_id == static_cast<int>(b_get_core) &&
-        source.marking[b_entry] > 0 && source.marking[a_entry] > 0 &&
-        target.marking[b_entry] == 0 && target.marking[a_entry] > 0) {
+    if (edge.transition_id == static_cast<int>(b_get_core) && source.marking[b_entry] > 0 &&
+        source.marking[a_entry] > 0 && target.marking[b_entry] == 0 &&
+        target.marking[a_entry] > 0) {
       saw_b_first = true;
     }
 
     // The second job dispatches after the first completed, with a release
     // clock equal to the first job's response time (1).
-    if (edge.transition_id == static_cast<int>(a_get_core) &&
-        source.marking[a_entry] > 0 && source.marking[b_exit] > 0) {
+    if (edge.transition_id == static_cast<int>(a_get_core) && source.marking[a_entry] > 0 &&
+        source.marking[b_exit] > 0) {
       const int r = source.release_index(ordinal_a);
       ASSERT_GT(r, 0);
       EXPECT_EQ(release_bounds(source, r), std::make_pair(1, 1));
       saw_a_waited = true;
     }
-    if (edge.transition_id == static_cast<int>(b_get_core) &&
-        source.marking[b_entry] > 0 && source.marking[a_exit] > 0) {
+    if (edge.transition_id == static_cast<int>(b_get_core) && source.marking[b_entry] > 0 &&
+        source.marking[a_exit] > 0) {
       const int r = source.release_index(ordinal_b);
       ASSERT_GT(r, 0);
       EXPECT_EQ(release_bounds(source, r), std::make_pair(1, 1));
@@ -502,9 +502,7 @@ TEST(FifoTest, FixedArrivalOrderEmitsSingleDispatchBranch) {
   // A arrived at t=7 and B at t=8 relative to L's completion at t=9.
   EXPECT_EQ(release_bounds(*found, r_a), std::make_pair(2, 2));
   EXPECT_EQ(release_bounds(*found, r_b), std::make_pair(1, 1));
-  EXPECT_EQ(found->zone.get_constraint(static_cast<size_t>(r_b),
-                                       static_cast<size_t>(r_a)),
-            -1);
+  EXPECT_EQ(found->zone.get_constraint(static_cast<size_t>(r_b), static_cast<size_t>(r_a)), -1);
 
   FifoFiringRule rule(net);
   const std::vector<PolicyBranch> branches =
@@ -624,10 +622,8 @@ TEST(FifoTest, ReleaseClockLifecycleAcrossDispatchMergeAndCompletion) {
 
   for (auto [it, end] = boost::edges(graph.get_graph()); it != end; ++it) {
     const FiringEdge& edge = boost::get(boost::edge_name, graph.get_graph(), *it);
-    const StateClass& source =
-        state_of(graph.get_graph(), boost::source(*it, graph.get_graph()));
-    const StateClass& target =
-        state_of(graph.get_graph(), boost::target(*it, graph.get_graph()));
+    const StateClass& source = state_of(graph.get_graph(), boost::source(*it, graph.get_graph()));
+    const StateClass& target = state_of(graph.get_graph(), boost::target(*it, graph.get_graph()));
 
     if (edge.transition_id == static_cast<int>(a_fire)) {
       const bool source_pending = source.marking[tasks[ordinal_a].entry_place] > 0;
@@ -688,8 +684,7 @@ TEST(FifoTest, ReleaseClockLifecycleAcrossDispatchMergeAndCompletion) {
       if (flying) {
         in_flight.push_back(ordinal);
         ASSERT_GT(release_index, 0);
-        EXPECT_EQ(state.clock_vars[static_cast<size_t>(release_index)].kind,
-                  ClockKind::Release);
+        EXPECT_EQ(state.clock_vars[static_cast<size_t>(release_index)].kind, ClockKind::Release);
         EXPECT_EQ(state.clock_vars[static_cast<size_t>(release_index)].task, ordinal);
       } else {
         EXPECT_EQ(release_index, -1);
@@ -770,7 +765,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "num_cpus >= 1");
+                  "num_cpus >= 1");
 
   // More than one running job per core.
   expect_rejected(R"({
@@ -781,7 +776,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "cores_per_cpu == 1");
+                  "cores_per_cpu == 1");
 
   // Queued jobs.
   expect_rejected(R"({
@@ -793,7 +788,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "task_place_capacity == 1");
+                  "task_place_capacity == 1");
 
   // More than one initial job for a task.
   expect_rejected(R"({
@@ -804,7 +799,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "at most one initial job");
+                  "at most one initial job");
 
   // Locks.
   expect_rejected(R"({
@@ -816,7 +811,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
                "time": [[1, 1]], "locks": ["m"]}],
     "edges": []
   })",
-                 "does not include locks");
+                  "does not include locks");
 
   // Dependency-driven release (task-to-task edge).
   expect_rejected(R"({
@@ -832,7 +827,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
     ],
     "edges": [{"source": "A", "target": "B", "label": "10"}]
   })",
-                 "dependency-driven releases");
+                  "dependency-driven releases");
 
   // A task on a core outside the declared range.
   expect_rejected(R"({
@@ -843,7 +838,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "outside [0, 1)");
+                  "outside [0, 1)");
 
   // Fork/join.
   expect_rejected(R"({
@@ -857,7 +852,7 @@ TEST(FifoTest, RejectsUnsupportedLoweredModels) {
     ],
     "edges": []
   })",
-                 "fork/join");
+                  "fork/join");
 
   // Neither periodic nor started.
   expect_rejected(kFifoOneShotJson, "neither periodic");

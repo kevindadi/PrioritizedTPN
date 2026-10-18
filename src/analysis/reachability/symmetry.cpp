@@ -405,8 +405,8 @@ class SwapBuilder {
       if (a.kind != b.kind) {
         return std::nullopt;
       }
-      const bool ok = a.is_place() ? assign_place(a.index, b.index)
-                                   : assign_transition(a.index, b.index);
+      const bool ok =
+          a.is_place() ? assign_place(a.index, b.index) : assign_transition(a.index, b.index);
       if (!ok) {
         return std::nullopt;
       }
@@ -529,9 +529,8 @@ class SwapBuilder {
 
   [[nodiscard]] bool place_has_fixed_neighbor(size_t place) const {
     for (size_t transition = 0; transition < num_transitions_; ++transition) {
-      if (transition_fixed_[transition] &&
-          (net_.get_pre_matrix()[place][transition] > 0 ||
-           net_.get_post_matrix()[transition][place] > 0)) {
+      if (transition_fixed_[transition] && (net_.get_pre_matrix()[place][transition] > 0 ||
+                                            net_.get_post_matrix()[transition][place] > 0)) {
         return true;
       }
     }
@@ -549,8 +548,7 @@ class SwapBuilder {
     return true;
   }
 
-  [[nodiscard]] std::vector<std::string> unmapped_place_descriptors(
-      size_t transition) const {
+  [[nodiscard]] std::vector<std::string> unmapped_place_descriptors(size_t transition) const {
     std::vector<std::string> descriptors;
     for (const auto& [place, weight] : net_.pre_arcs()[transition]) {
       if (!place_fixed_[place]) {
@@ -655,8 +653,7 @@ class SwapBuilder {
           candidates[other].front() != transition) {
         continue;
       }
-      if (!transition_has_fixed_neighbor(transition) &&
-          !transition_has_fixed_neighbor(other)) {
+      if (!transition_has_fixed_neighbor(transition) && !transition_has_fixed_neighbor(other)) {
         continue;
       }
       progress = assign_transition(transition, other) || progress;
@@ -749,8 +746,7 @@ class SwapBuilder {
       }
     }
     for (size_t transition = 0; transition < num_transitions; ++transition) {
-      if (!same_transition_attributes(net, transition,
-                                      permutation.transitions[transition])) {
+      if (!same_transition_attributes(net, transition, permutation.transitions[transition])) {
         return false;
       }
     }
@@ -861,8 +857,8 @@ SymmetryGroupElement make_group_element(NetPermutation permutation) {
 // and a set of star transpositions such as (01),(02),(03) would close to 8
 // elements instead of S_4. Returns an empty vector when the closure would
 // exceed `TaskSymmetry::kMaxGroupOrder`.
-std::vector<SymmetryGroupElement> close_group(
-    const NetPermutation& identity, const std::vector<NetPermutation>& generators) {
+std::vector<SymmetryGroupElement> close_group(const NetPermutation& identity,
+                                              const std::vector<NetPermutation>& generators) {
   std::vector<SymmetryGroupElement> elements{make_group_element(identity)};
   std::set<std::vector<size_t>> seen;
   seen.insert(permutation_key(identity));
@@ -890,8 +886,7 @@ std::vector<long long> orbit_key(const StateClass& state) {
   key.push_back(static_cast<long long>(state.clock_vars.size()));
   for (const ClockVar& var : state.clock_vars) {
     key.push_back(static_cast<long long>(var.kind));
-    key.push_back(var.transition == NO_TRANSITION ? -1
-                                                  : static_cast<long long>(var.transition));
+    key.push_back(var.transition == NO_TRANSITION ? -1 : static_cast<long long>(var.transition));
     key.push_back(var.task == NO_TASK ? -1 : static_cast<long long>(var.task));
   }
   key.push_back(static_cast<long long>(state.priority_enabled.size()));
@@ -1085,8 +1080,7 @@ TaskSymmetry::TaskSymmetry(const petri::PTPN& net) : net_(net) {
   std::sort(task_groups_.begin(), task_groups_.end());
 }
 
-StateClass TaskSymmetry::apply(const StateClass& state,
-                               const SymmetryGroupElement& element) const {
+StateClass TaskSymmetry::apply(const StateClass& state, const SymmetryGroupElement& element) const {
   StateClass out;
   out.marking.assign(net_.num_places(), 0);
   for (size_t place = 0; place < net_.num_places(); ++place) {
@@ -1110,19 +1104,13 @@ StateClass TaskSymmetry::apply(const StateClass& state,
   // when the source class still carries one).
   const bool keep_suspension_clocks =
       std::any_of(state.clock_vars.begin(), state.clock_vars.end(),
-                  [](const ClockVar& variable) {
-                    return variable.kind == ClockKind::Suspension;
-                  });
+                  [](const ClockVar& variable) { return variable.kind == ClockKind::Suspension; });
   const bool include_release_clocks =
       std::any_of(state.clock_vars.begin(), state.clock_vars.end(),
-                  [](const ClockVar& variable) {
-                    return variable.kind == ClockKind::Release;
-                  });
+                  [](const ClockVar& variable) { return variable.kind == ClockKind::Release; });
   const bool include_laxity_clocks =
       std::any_of(state.clock_vars.begin(), state.clock_vars.end(),
-                  [](const ClockVar& variable) {
-                    return variable.kind == ClockKind::Laxity;
-                  });
+                  [](const ClockVar& variable) { return variable.kind == ClockKind::Laxity; });
   // Job clocks are keyed by task ordinal, but NetPermutation does not carry a
   // task permutation. The supported EDF/FIFO/LLF classes are single-core, so no
   // non-identity task permutation can be generated; if one ever reaches here,
@@ -1154,8 +1142,7 @@ StateClass TaskSymmetry::apply(const StateClass& state,
   }
   for (size_t i = 0; i < clock_count; ++i) {
     for (size_t j = 0; j < clock_count; ++j) {
-      zone.set_constraint(
-          i, j, state.zone.get_constraint(source_index[i], source_index[j]));
+      zone.set_constraint(i, j, state.zone.get_constraint(source_index[i], source_index[j]));
     }
   }
   out.zone = std::move(zone);

@@ -355,8 +355,8 @@ class ConeBuilder {
       }
       const Transition& transition = net_.get_transition(TransitionId{t});
       transition_map[t] =
-          projected.add_transition(transition.name, transition.time_interval,
-                                   transition.priority, transition.core, transition.suspendable);
+          projected.add_transition(transition.name, transition.time_interval, transition.priority,
+                                   transition.core, transition.suspendable);
       transition_mapped[t] = 1;
     }
 
@@ -471,9 +471,9 @@ class ConeBuilder {
   std::unordered_map<std::string, size_t> task_by_name_;
   size_t focus_ = 0;
 
-  std::vector<int> place_owner_;       // place -> task index owning the chain place
-  std::vector<char> is_entry_place_;   // place is a task chain entry
-  std::vector<char> is_exit_place_;    // place is a task chain exit
+  std::vector<int> place_owner_;      // place -> task index owning the chain place
+  std::vector<char> is_entry_place_;  // place is a task chain entry
+  std::vector<char> is_exit_place_;   // place is a task chain exit
   std::vector<char> is_chain_transition_;
   std::vector<std::vector<size_t>> consumers_;  // place -> transitions reading it
   std::vector<std::vector<size_t>> producers_;  // place -> transitions producing it

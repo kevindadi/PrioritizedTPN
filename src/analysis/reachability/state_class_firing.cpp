@@ -12,19 +12,16 @@ namespace {
 
 // Intersects the job-clock scheduling constraints with the successor zone.
 // Returns false when the branch is infeasible and must be dropped.
-bool apply_branch_constraints(StateClass& state,
-                              const std::vector<BranchConstraint>& constraints) {
+bool apply_branch_constraints(StateClass& state, const std::vector<BranchConstraint>& constraints) {
   for (const BranchConstraint& constraint : constraints) {
     if (!uses_job_clock_kind(constraint.domain)) {
-      throw std::invalid_argument(
-          "branch constraint must use the release or laxity clock domain");
+      throw std::invalid_argument("branch constraint must use the release or laxity clock domain");
     }
     const int left = job_clock_index(state, constraint.domain, constraint.left_task);
     const int right = job_clock_index(state, constraint.domain, constraint.right_task);
     if (left <= 0 || right <= 0) {
-      throw std::invalid_argument(
-          std::string(clock_kind_label(constraint.domain)) +
-          "-clock constraint references a task without an in-flight job");
+      throw std::invalid_argument(std::string(clock_kind_label(constraint.domain)) +
+                                  "-clock constraint references a task without an in-flight job");
     }
     // job_clock[right] - job_clock[left] <= bound.
     if (!state.zone.tighten(static_cast<size_t>(right), static_cast<size_t>(left),
@@ -91,10 +88,8 @@ StateClass StateClassReachabilityGraph::time_elapse(const StateClass& state) con
       // Rate 0 while this task is actively executing its next deterministic
       // segment; rate 1 while waiting, filtered out/preempted, suspended,
       // between segments, or during a zero-time control step.
-      running[i] =
-          var.task >= executing_task.size() || !executing_task[var.task];
-    } else if (var.kind == ClockKind::Execution &&
-               contains(out.priority_enabled, var.transition)) {
+      running[i] = var.task >= executing_task.size() || !executing_task[var.task];
+    } else if (var.kind == ClockKind::Execution && contains(out.priority_enabled, var.transition)) {
       running[i] = true;  // active execution clocks advance
     }
   }
@@ -242,8 +237,7 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
   }
 
   // Step 2: discrete token shuffle (branch-independent).
-  const petri::Marking marking =
-      petri::PTPN::fire(elapsed.marking, net_, petri::TransitionId{t});
+  const petri::Marking marking = petri::PTPN::fire(elapsed.marking, net_, petri::TransitionId{t});
   const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, marking);
 
   // Rules that read job clocks need a prepared successor state: the job-clock
@@ -261,8 +255,7 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
     build_successor_zone(prepared, fired, elapsed, t);
   }
   const PolicyContext context{net_, &prepared};
-  const std::vector<PolicyBranch> branches =
-      firing_rule_->branches(struct_enabled, net_, context);
+  const std::vector<PolicyBranch> branches = firing_rule_->branches(struct_enabled, net_, context);
 
   const int h_lower = -elapsed.zone.get_constraint(0, idx);
   const int firing_instant = std::max(lower, h_lower);
@@ -296,8 +289,7 @@ bool StateClassReachabilityGraph::fire(const StateClass& elapsed, size_t t,
     return false;
   }
   if (successors.size() != 1) {
-    throw std::runtime_error(
-        "firing has multiple admissible target active sets; use fire_all()");
+    throw std::runtime_error("firing has multiple admissible target active sets; use fire_all()");
   }
   successor = std::move(successors.front());
   return true;

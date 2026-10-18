@@ -164,10 +164,11 @@ int main(int argc, char* argv[]) {
 
   auto* allocate_cmd = app.add_subcommand(
       "allocate", "Search deterministic core allocations with the exact PTPN analysis");
-  allocate_cmd->add_option("-f,--file", allocation_opts.input_file,
-                           "Input TDG JSON file")->required(true);
-  allocate_cmd->add_option("-o,--output", allocation_opts.output_file,
-                           "Output allocation report JSON")->required(true);
+  allocate_cmd->add_option("-f,--file", allocation_opts.input_file, "Input TDG JSON file")
+      ->required(true);
+  allocate_cmd
+      ->add_option("-o,--output", allocation_opts.output_file, "Output allocation report JSON")
+      ->required(true);
   allocate_cmd
       ->add_option("--objective", allocation_objective,
                    "Objective to minimize: max-wcrt, max-utilization, or max-load "
@@ -185,8 +186,7 @@ int main(int argc, char* argv[]) {
       ->add_option("--candidate-max-states", allocation_opts.candidate_max_states,
                    "State-class graph bound per candidate (default: 200000)")
       ->check(CLI::PositiveNumber);
-  allocate_cmd->add_flag("--require-certified-wcet",
-                         allocation_opts.require_certified_wcet,
+  allocate_cmd->add_flag("--require-certified-wcet", allocation_opts.require_certified_wcet,
                          "Only consider allocations whose WCET provenance is certified");
   allocate_cmd->add_flag("--debug", allocation_opts.debug_mode,
                          "Enable debug logging (including per-candidate analysis logs)");

@@ -122,9 +122,11 @@ class StateClassReachabilityGraph {
   // filtered. Construction is cheap when the net has no admissible task
   // permutation; see TaskSymmetry for the supported scope.
   void set_symmetry_reduction(bool enabled);
+
   [[nodiscard]] bool get_symmetry_reduction() const {
     return symmetry_enabled_;
   }
+
   // True when symmetry was requested and the net admits a non-trivial verified
   // task permutation group (i.e. the built graph is actually reduced).
   [[nodiscard]] bool symmetry_applied() const;

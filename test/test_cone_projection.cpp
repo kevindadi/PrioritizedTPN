@@ -102,10 +102,9 @@ const char* kDependencyChain = R"({
 
 const state_class::TaskMetrics* find_task(const state_class::MetricsReport& report,
                                           const std::string& name) {
-  const auto it = std::find_if(report.tasks.begin(), report.tasks.end(),
-                               [&](const state_class::TaskMetrics& metrics) {
-                                 return metrics.name == name;
-                               });
+  const auto it =
+      std::find_if(report.tasks.begin(), report.tasks.end(),
+                   [&](const state_class::TaskMetrics& metrics) { return metrics.name == name; });
   return it == report.tasks.end() ? nullptr : &*it;
 }
 

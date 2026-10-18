@@ -1,6 +1,5 @@
-#include <gtest/gtest.h>
-
 #include <fstream>
+#include <gtest/gtest.h>
 #include <set>
 #include <sstream>
 #include <string>
@@ -48,12 +47,12 @@ petri::PTPN make_merging_net() {
   ptpn.set_initial_marking(pb, 1);
   ptpn.set_initial_marking(p_obs, 1);
 
-  const petri::TransitionId a_exec = ptpn.add_transition(
-      "a_exec", petri::TimeInterval(1, 5), 0, petri::kControlTransitionCore);
-  const petri::TransitionId b_exec = ptpn.add_transition(
-      "b_exec", petri::TimeInterval(4, 10), 0, petri::kControlTransitionCore);
-  const petri::TransitionId c_exec = ptpn.add_transition(
-      "c_exec", petri::TimeInterval(100, 100), 0, petri::kControlTransitionCore);
+  const petri::TransitionId a_exec =
+      ptpn.add_transition("a_exec", petri::TimeInterval(1, 5), 0, petri::kControlTransitionCore);
+  const petri::TransitionId b_exec =
+      ptpn.add_transition("b_exec", petri::TimeInterval(4, 10), 0, petri::kControlTransitionCore);
+  const petri::TransitionId c_exec = ptpn.add_transition("c_exec", petri::TimeInterval(100, 100), 0,
+                                                         petri::kControlTransitionCore);
 
   ptpn.set_pre_arc(pa, a_exec, 1);
   ptpn.set_post_arc(a_exec, da, 1);
@@ -76,8 +75,8 @@ petri::PTPN make_merging_net() {
   return ptpn;
 }
 
-MetricsReport analyze(const StateClassReachabilityGraph& graph, const petri::PTPN& net,
-                      bool exact, bool wcrt_lb_valid) {
+MetricsReport analyze(const StateClassReachabilityGraph& graph, const petri::PTPN& net, bool exact,
+                      bool wcrt_lb_valid) {
   MetricsAnalyzer analyzer(graph.get_graph(), net, graph.get_initial_vertex(), exact,
                            wcrt_lb_valid);
   return analyzer.analyze();
@@ -110,8 +109,7 @@ TEST(ZoneMergingTest, MergesIncludedZoneIntoExistingState) {
   EXPECT_LE(merged.get_statistics().total_states, exact.get_statistics().total_states);
   EXPECT_GT(merged.get_statistics().zone_merges, 0u);
   EXPECT_GT(merged.get_statistics().merged_states, 0u);
-  EXPECT_LE(merged.get_statistics().merged_states,
-            merged.get_statistics().zone_merges);
+  EXPECT_LE(merged.get_statistics().merged_states, merged.get_statistics().zone_merges);
 
   // Every marking of the exact graph is still represented (over-approximation
   // must not delete behaviors, even though it drops the tighter zone).

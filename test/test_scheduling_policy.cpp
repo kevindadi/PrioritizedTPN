@@ -87,10 +87,9 @@ state_class::MetricsReport analyze(const petri::PTPN& net) {
 
 const state_class::TaskMetrics& task_metrics(const state_class::MetricsReport& report,
                                              const std::string& name) {
-  const auto it = std::find_if(report.tasks.begin(), report.tasks.end(),
-                               [&](const state_class::TaskMetrics& task) {
-                                 return task.name == name;
-                               });
+  const auto it =
+      std::find_if(report.tasks.begin(), report.tasks.end(),
+                   [&](const state_class::TaskMetrics& task) { return task.name == name; });
   EXPECT_NE(it, report.tasks.end()) << "missing task metrics for " << name;
   static const state_class::TaskMetrics kEmpty;
   return it == report.tasks.end() ? kEmpty : *it;
@@ -198,7 +197,8 @@ std::string pip_inversion_json(const std::string& policy) {
     "configuration": {
       "num_cpus": 1,
       "cores_per_cpu": 1,
-      "policy": ")" + policy + R"(",
+      "policy": ")" +
+         policy + R"(",
       "shared_locks": ["mutex1"],
       "start": [{"task": "L", "tokens": 1}],
       "periodic": [
@@ -361,7 +361,8 @@ std::string pcp_ceiling_json(const std::string& policy) {
     "configuration": {
       "num_cpus": 1,
       "cores_per_cpu": 1,
-      "policy": ")" + policy + R"(",
+      "policy": ")" +
+         policy + R"(",
       "shared_locks": ["mutexA", "mutexB"],
       "start": [{"task": "L", "tokens": 1}, {"task": "D", "tokens": 1},
                 {"task": "D2", "tokens": 1}]
@@ -529,7 +530,8 @@ std::string pcp_deadlock_json(const std::string& policy) {
     "configuration": {
       "num_cpus": 2,
       "cores_per_cpu": 1,
-      "policy": ")" + policy + R"(",
+      "policy": ")" +
+         policy + R"(",
       "shared_locks": ["mutex1", "mutex2"],
       "start": [{"task": "A", "tokens": 1}, {"task": "B", "tokens": 1}]
     },
@@ -682,7 +684,8 @@ std::string srp_deadlock_json(const std::string& policy) {
     "configuration": {
       "num_cpus": 1,
       "cores_per_cpu": 1,
-      "policy": ")" + policy + R"(",
+      "policy": ")" +
+         policy + R"(",
       "shared_locks": ["mutex1", "mutex2"],
       "start": [{"task": "A", "tokens": 1}, {"task": "D", "tokens": 1}]
     },
@@ -936,16 +939,16 @@ TEST(SchedulingPolicyTest, FixedRuleIsStaticAndResumes) {
 TEST(SchedulingPolicyTest, PolicyPreemptionModesMatchCurrentCoverage) {
   petri::PTPN net;
   const PolicyContext context{net, nullptr};
-  EXPECT_EQ(state_class::make_firing_rule(SchedulePolicy::FIXED_PRIOR_WITH_RESUME)
-                ->preemption_mode(),
-            PreemptionMode::RESUME);
+  EXPECT_EQ(
+      state_class::make_firing_rule(SchedulePolicy::FIXED_PRIOR_WITH_RESUME)->preemption_mode(),
+      PreemptionMode::RESUME);
   EXPECT_EQ(state_class::make_firing_rule(SchedulePolicy::RM)->preemption_mode(),
             PreemptionMode::RESUME);
   EXPECT_EQ(state_class::make_firing_rule(SchedulePolicy::DM)->preemption_mode(),
             PreemptionMode::RESUME);
-  EXPECT_EQ(state_class::make_firing_rule(SchedulePolicy::FIXED_PRIOR_WITH_RESTART)
-                ->preemption_mode(),
-            PreemptionMode::RESTART);
+  EXPECT_EQ(
+      state_class::make_firing_rule(SchedulePolicy::FIXED_PRIOR_WITH_RESTART)->preemption_mode(),
+      PreemptionMode::RESTART);
 
   // PIP is analyzed dynamically and uses resume-style preemption.
   auto pip_rule = state_class::make_firing_rule(SchedulePolicy::PIP);
@@ -1027,8 +1030,7 @@ TEST(SchedulingPolicyTest, PriorityBranchesUseRuleAdmissibilityAndPriorities) {
 
   // Static rule: t1 and t2 tie at the top -> both tie resolutions enumerated.
   auto static_rule = state_class::make_firing_rule(SchedulePolicy::FIXED);
-  const auto static_branches =
-      Scheduling::priority_branches(enabled, net, *static_rule, context);
+  const auto static_branches = Scheduling::priority_branches(enabled, net, *static_rule, context);
   ASSERT_EQ(static_branches.size(), 2u);
   EXPECT_EQ(static_branches[0], (state_class::TransitionSet{1}));
   EXPECT_EQ(static_branches[1], (state_class::TransitionSet{2}));
@@ -1036,8 +1038,7 @@ TEST(SchedulingPolicyTest, PriorityBranchesUseRuleAdmissibilityAndPriorities) {
   // Custom rule: filter t1 out and boost t0 from 5 to 7. t0 and t2 now tie;
   // t1 must not appear even though its static priority was maximal.
   const TestFiringRule custom_rule(/*filtered=*/1, /*boosted=*/0, /*boosted_priority=*/7);
-  const auto custom_branches =
-      Scheduling::priority_branches(enabled, net, custom_rule, context);
+  const auto custom_branches = Scheduling::priority_branches(enabled, net, custom_rule, context);
   ASSERT_EQ(custom_branches.size(), 2u);
   EXPECT_EQ(custom_branches[0], (state_class::TransitionSet{0}));
   EXPECT_EQ(custom_branches[1], (state_class::TransitionSet{2}));
@@ -1055,8 +1056,7 @@ TEST(SchedulingPolicyTest, PriorityBranchesEnumerateControlCoreMaximalSet) {
 
   auto rule = state_class::make_firing_rule(SchedulePolicy::FIXED);
   const PolicyContext context{net, nullptr};
-  const auto branches =
-      Scheduling::priority_branches({0, 1, 2}, net, *rule, context);
+  const auto branches = Scheduling::priority_branches({0, 1, 2}, net, *rule, context);
   ASSERT_EQ(branches.size(), 1u);
   EXPECT_EQ(branches.front(), (state_class::TransitionSet{0, 1}));
 }
@@ -1271,8 +1271,7 @@ TEST(PipPolicyTest, MultiLockRangeOwnershipCoversWholeCriticalSection) {
   const size_t acquire = state_class::PipFiringRule::kLockAcquireBase;
   const size_t stride = state_class::PipFiringRule::kLockStride;
   const size_t m_chain_length = net.node_pn_map().at("M").size();
-  const size_t release0 =
-      m_chain_length - state_class::PipFiringRule::kLockReleaseSuffix;
+  const size_t release0 = m_chain_length - state_class::PipFiringRule::kLockReleaseSuffix;
 
   const size_t h_pre2 = chain_place(net, "H", acquire - 1);
   const size_t l_hold1 = chain_place(net, "L", acquire + 1);
@@ -1294,7 +1293,7 @@ TEST(PipPolicyTest, MultiLockRangeOwnershipCoversWholeCriticalSection) {
 
   state_class::StateClass state;
   state.marking.assign(net.num_places(), 0);
-  state.marking[h_pre2] = 1;  // H waits for lock2
+  state.marking[h_pre2] = 1;   // H waits for lock2
   state.marking[l_hold1] = 1;  // L holds lock1
 
   // M has already left its first hold place (position 6) and is at the
@@ -1327,8 +1326,7 @@ TEST(PipPolicyTest, LoweringRejectsPipWithTaskPlaceCapacityAboveOne) {
     lower(tdg);
     FAIL() << "expected lowering to reject task_place_capacity > 1 for pip";
   } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string(error.what()).find("task_place_capacity"),
-              std::string::npos);
+    EXPECT_NE(std::string(error.what()).find("task_place_capacity"), std::string::npos);
   }
 
   // The default capacity of 1 remains accepted.
@@ -1355,8 +1353,7 @@ TEST(PipPolicyTest, LoweringRejectsMultipleInitialJobs) {
     lower(parse_tdg(json));
     FAIL() << "expected lowering to reject multiple initial PIP jobs";
   } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string(error.what()).find("one initial job"),
-              std::string::npos);
+    EXPECT_NE(std::string(error.what()).find("one initial job"), std::string::npos);
   }
 }
 
@@ -1383,14 +1380,11 @@ TEST(PipPolicyTest, EqualInheritedPrioritiesEnumerateBothBranches) {
 
   // One core, capacity 1: both inherited-priority candidates are maximal and
   // both tie resolutions must be present.
-  const auto branches =
-      Scheduling::priority_branches({a1_crit, a2_crit}, net, rule, context);
+  const auto branches = Scheduling::priority_branches({a1_crit, a2_crit}, net, rule, context);
   ASSERT_EQ(branches.size(), 2u);
   // Branch order follows transition indices, which need not match task order.
-  EXPECT_EQ(branches[0],
-            (state_class::TransitionSet{std::min(a1_crit, a2_crit)}));
-  EXPECT_EQ(branches[1],
-            (state_class::TransitionSet{std::max(a1_crit, a2_crit)}));
+  EXPECT_EQ(branches[0], (state_class::TransitionSet{std::min(a1_crit, a2_crit)}));
+  EXPECT_EQ(branches[1], (state_class::TransitionSet{std::max(a1_crit, a2_crit)}));
 }
 
 TEST(PipPolicyTest, AmbiguousChainsAndMultipleHoldersFallBackToBase) {
@@ -1407,11 +1401,10 @@ TEST(PipPolicyTest, AmbiguousChainsAndMultipleHoldersFallBackToBase) {
   state.marking[chain_place(direct, "H", acquire - 1)] = 1;
   state.marking[h_entry] = 1;  // second in-flight job token
   const PolicyContext direct_context{direct, &state};
-  EXPECT_EQ(direct_rule.effective_priority(
-                direct_context, chain_transition(direct, "L", acquire + 2)),
-            1);
-  EXPECT_EQ(direct_rule.effective_priority(
-                direct_context, chain_transition(direct, "H", acquire)),
+  EXPECT_EQ(
+      direct_rule.effective_priority(direct_context, chain_transition(direct, "L", acquire + 2)),
+      1);
+  EXPECT_EQ(direct_rule.effective_priority(direct_context, chain_transition(direct, "H", acquire)),
             3);
 
   // (b) Two holders for the same lock: propagation through that lock is
@@ -1424,10 +1417,8 @@ TEST(PipPolicyTest, AmbiguousChainsAndMultipleHoldersFallBackToBase) {
   two_state.marking[chain_place(two, "B", acquire + 1)] = 1;
   two_state.marking[chain_place(two, "H", acquire - 1)] = 1;
   const PolicyContext two_context{two, &two_state};
-  EXPECT_EQ(two_rule.effective_priority(two_context, chain_transition(two, "A", acquire + 2)),
-            1);
-  EXPECT_EQ(two_rule.effective_priority(two_context, chain_transition(two, "B", acquire + 2)),
-            2);
+  EXPECT_EQ(two_rule.effective_priority(two_context, chain_transition(two, "A", acquire + 2)), 1);
+  EXPECT_EQ(two_rule.effective_priority(two_context, chain_transition(two, "B", acquire + 2)), 2);
   EXPECT_EQ(two_rule.effective_priority(two_context, chain_transition(two, "H", acquire)), 3);
 }
 
@@ -1469,8 +1460,7 @@ TEST(PipPolicyTest, PipUsesResumeLoweringAndNetAwareRule) {
 // ---------------------------------------------------------------------------
 
 namespace {
-constexpr size_t kPcpAcquire =
-    state_class::detail::TaskLockTopology::kLockAcquireBase;
+constexpr size_t kPcpAcquire = state_class::detail::TaskLockTopology::kLockAcquireBase;
 }  // namespace
 
 TEST(PcpPolicyTest, CeilingBlockingPreventsMediumPriorityPreemption) {
@@ -1718,7 +1708,7 @@ TEST(PcpPolicyTest, CeilingTieBreaksOnLexicographicallySmallestLock) {
   state.marking[locks.at("mutexA").index()] = 0;  // held by A1, base 1
   state.marking[a2_holds_b] = 1;
   state.marking[locks.at("mutexB").index()] = 0;  // held by A2, base 3
-  state.marking[j_pre] = 1;                        // J requests free mutexJ
+  state.marking[j_pre] = 1;                       // J requests free mutexJ
   const PolicyContext context{net, &state};
 
   // Both held locks attain the system ceiling 5. The analyzed PCP instance
@@ -1772,8 +1762,8 @@ TEST(PcpPolicyTest, OwnLocksDoNotBlockAdmission) {
     empty.marking[place.index()] = 1;
   }
   const PolicyContext empty_context{admission_net, &empty};
-  EXPECT_TRUE(admission_rule.admissible(
-      empty_context, chain_transition(admission_net, "Z", kPcpAcquire)));
+  EXPECT_TRUE(
+      admission_rule.admissible(empty_context, chain_transition(admission_net, "Z", kPcpAcquire)));
 }
 
 TEST(PcpPolicyTest, EqualInheritedPrioritiesEnumerateBothBranches) {
@@ -1798,8 +1788,7 @@ TEST(PcpPolicyTest, EqualInheritedPrioritiesEnumerateBothBranches) {
 
   // One core, capacity 1: both inherited-priority candidates are maximal, so
   // both tie resolutions must be enumerated.
-  const auto branches =
-      Scheduling::priority_branches({a1_crit, a2_crit}, net, rule, context);
+  const auto branches = Scheduling::priority_branches({a1_crit, a2_crit}, net, rule, context);
   ASSERT_EQ(branches.size(), 2u);
   EXPECT_EQ(branches[0], (state_class::TransitionSet{std::min(a1_crit, a2_crit)}));
   EXPECT_EQ(branches[1], (state_class::TransitionSet{std::max(a1_crit, a2_crit)}));
@@ -1875,8 +1864,7 @@ TEST(PcpPolicyTest, LoweringUsesResumeResourcesAndRejectsAmbiguousJobs) {
     lower(parse_tdg(capacity_json));
     FAIL() << "expected lowering to reject task_place_capacity > 1 for pcp";
   } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string(error.what()).find("task_place_capacity"),
-              std::string::npos);
+    EXPECT_NE(std::string(error.what()).find("task_place_capacity"), std::string::npos);
   }
 
   // More than one initial job per task is rejected for PCP like PIP.
@@ -1899,8 +1887,7 @@ TEST(PcpPolicyTest, LoweringUsesResumeResourcesAndRejectsAmbiguousJobs) {
     lower(parse_tdg(start_json));
     FAIL() << "expected lowering to reject multiple initial PCP jobs";
   } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string(error.what()).find("one initial job"),
-              std::string::npos);
+    EXPECT_NE(std::string(error.what()).find("one initial job"), std::string::npos);
   }
 
   // The default single-job capacity remains accepted.
@@ -1920,12 +1907,8 @@ TEST(PcpPolicyTest, AmbiguousChainsFallBackToBasePriority) {
   state.marking[chain_place(net, "H", kPcpAcquire - 1)] = 1;
   state.marking[chain_place(net, "H", 0)] = 1;
   const PolicyContext context{net, &state};
-  EXPECT_EQ(rule.effective_priority(
-                context, chain_transition(net, "L", kPcpAcquire + 2)),
-            1);
-  EXPECT_EQ(rule.effective_priority(
-                context, chain_transition(net, "H", kPcpAcquire)),
-            3);
+  EXPECT_EQ(rule.effective_priority(context, chain_transition(net, "L", kPcpAcquire + 2)), 1);
+  EXPECT_EQ(rule.effective_priority(context, chain_transition(net, "H", kPcpAcquire)), 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -1933,8 +1916,7 @@ TEST(PcpPolicyTest, AmbiguousChainsFallBackToBasePriority) {
 // ---------------------------------------------------------------------------
 
 namespace {
-constexpr size_t kSrpAcquire =
-    state_class::detail::TaskLockTopology::kLockAcquireBase;
+constexpr size_t kSrpAcquire = state_class::detail::TaskLockTopology::kLockAcquireBase;
 }  // namespace
 
 TEST(SrpPolicyTest, StartGateRejectsTasksAtOrBelowSystemCeiling) {
@@ -2013,7 +1995,7 @@ TEST(SrpPolicyTest, StartedTasksAreNeverBlockedByLaterCeilingRise) {
 
   state_class::StateClass state;
   state.marking.assign(net.num_places(), 0);
-  state.marking[l_hold] = 1;  // system ceiling 3
+  state.marking[l_hold] = 1;   // system ceiling 3
   state.marking[m_ready] = 1;  // M (2) already started and is at ready
   const PolicyContext context{net, &state};
 
@@ -2065,12 +2047,10 @@ TEST(SrpPolicyTest, NoPriorityInheritanceFromWaiters) {
   // is structurally disabled by the held lock); it isolates the priority
   // comparison. SRP ranks H (3) strictly above L (1); PIP/PCP tie them at 3
   // and enumerate both resolutions.
-  const auto srp_branches =
-      Scheduling::priority_branches({l_crit, h_acquire}, net, srp, context);
+  const auto srp_branches = Scheduling::priority_branches({l_crit, h_acquire}, net, srp, context);
   ASSERT_EQ(srp_branches.size(), 1u);
   EXPECT_EQ(srp_branches[0], (state_class::TransitionSet{h_acquire}));
-  const auto pip_branches =
-      Scheduling::priority_branches({l_crit, h_acquire}, net, pip, context);
+  const auto pip_branches = Scheduling::priority_branches({l_crit, h_acquire}, net, pip, context);
   EXPECT_EQ(pip_branches.size(), 2u);
 }
 
@@ -2242,8 +2222,7 @@ TEST(SrpPolicyTest, UsesResumeLoweringAndRejectsAmbiguousJobs) {
     FAIL() << "expected lowering to reject task_place_capacity > 1 for srp";
   } catch (const std::invalid_argument& error) {
     const std::string message = error.what();
-    EXPECT_NE(message.find(schedule_policy_to_string(SchedulePolicy::SRP)),
-              std::string::npos);
+    EXPECT_NE(message.find(schedule_policy_to_string(SchedulePolicy::SRP)), std::string::npos);
     EXPECT_NE(message.find("task_place_capacity"), std::string::npos);
   }
 
@@ -2268,8 +2247,7 @@ TEST(SrpPolicyTest, UsesResumeLoweringAndRejectsAmbiguousJobs) {
     FAIL() << "expected lowering to reject multiple initial SRP jobs";
   } catch (const std::invalid_argument& error) {
     const std::string message = error.what();
-    EXPECT_NE(message.find(schedule_policy_to_string(SchedulePolicy::SRP)),
-              std::string::npos);
+    EXPECT_NE(message.find(schedule_policy_to_string(SchedulePolicy::SRP)), std::string::npos);
     EXPECT_NE(message.find("one initial job"), std::string::npos);
   }
 
@@ -2339,8 +2317,7 @@ TEST(SrpPolicyTest, EqualPriorityTransitionsEnumerateBothBranches) {
   EXPECT_TRUE(rule.admissible(context, a_get));
   EXPECT_TRUE(rule.admissible(context, b_get));
 
-  const auto branches =
-      Scheduling::priority_branches({a_get, b_get}, net, rule, context);
+  const auto branches = Scheduling::priority_branches({a_get, b_get}, net, rule, context);
   ASSERT_EQ(branches.size(), 2u);
   EXPECT_EQ(branches[0], (state_class::TransitionSet{std::min(a_get, b_get)}));
   EXPECT_EQ(branches[1], (state_class::TransitionSet{std::max(a_get, b_get)}));

@@ -403,8 +403,7 @@ ValidationResult Parser::validate() const {
         }
       }
 
-      if (!node.allowed_cores.empty() && node.has_core &&
-          seen_cores.count(node.core) == 0) {
+      if (!node.allowed_cores.empty() && node.has_core && seen_cores.count(node.core) == 0) {
         result.add_error("Core " + std::to_string(node.core) + " of node " + node.id +
                          " is not in its allowed_cores domain");
       }

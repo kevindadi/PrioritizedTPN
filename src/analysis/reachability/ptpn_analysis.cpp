@@ -121,8 +121,8 @@ size_t StateClassReachabilityGraph::symmetry_group_order() const {
   return symmetry_ != nullptr ? symmetry_->group_order() : 1;
 }
 
-const std::vector<std::vector<std::string>>&
-StateClassReachabilityGraph::symmetry_task_groups() const {
+const std::vector<std::vector<std::string>>& StateClassReachabilityGraph::symmetry_task_groups()
+    const {
   static const std::vector<std::vector<std::string>> kEmpty;
   return symmetry_ != nullptr ? symmetry_->task_groups() : kEmpty;
 }
@@ -408,6 +408,7 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
       long long time = 0;
       SCVertex vertex = 0;
     };
+
     struct LaterFirst {
       bool operator()(const QueueEntry& left, const QueueEntry& right) const {
         return left.time > right.time;
@@ -451,8 +452,7 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
           min_time.resize(target_index + 1, 0);
           settled.resize(target_index + 1, 0);
         }
-        const long long candidate =
-            entry.time + static_cast<long long>(record.edge.dwell_min);
+        const long long candidate = entry.time + static_cast<long long>(record.edge.dwell_min);
         if (record.is_new) {
           min_time[target_index] = candidate;
           queue.push({candidate, record.target});

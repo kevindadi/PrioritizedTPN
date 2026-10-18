@@ -31,8 +31,8 @@ struct TaskMetrics {
   bool observed = false;  // at least one activation seen in the graph
   int activations = 0;    // number of release events observed
 
-  TimeValue wcrt;                // worst-case response time (sound upper bound)
-  TimeValue wcrt_lb;             // certified lower bound for the same quantity
+  TimeValue wcrt;     // worst-case response time (sound upper bound)
+  TimeValue wcrt_lb;  // certified lower bound for the same quantity
   // True when the certified interval collapses (wcrt_lb == wcrt). A false
   // value does NOT prove that `wcrt` is inexact; it only means the interval
   // did not certify exactness.

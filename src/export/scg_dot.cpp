@@ -208,9 +208,7 @@ std::vector<std::string> ScgFormatter::format_zone_constraints(const state_class
     if (raw == state_class::INF_TIME) {
       return 0;
     }
-    return state.clock_vars[i].kind == state_class::ClockKind::Laxity
-               ? -raw
-               : std::max(0, -raw);
+    return state.clock_vars[i].kind == state_class::ClockKind::Laxity ? -raw : std::max(0, -raw);
   };
 
   // Per-clock bounds: -D[0][i] <= x_i <= D[i][0].

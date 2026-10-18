@@ -1,6 +1,5 @@
-#include <gtest/gtest.h>
-
 #include <cstddef>
+#include <gtest/gtest.h>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -192,9 +191,9 @@ petri::PTPN make_starved_task_net() {
   net.set_post_arc(l_exec, l_exit, 1);
 
   net.set_core_parallelism(0, 1);
-  net.set_task_chain("L", {petri::NodeRef::of(l_entry), petri::NodeRef::of(l_get),
-                           petri::NodeRef::of(l_ready), petri::NodeRef::of(l_exec),
-                           petri::NodeRef::of(l_exit)});
+  net.set_task_chain(
+      "L", {petri::NodeRef::of(l_entry), petri::NodeRef::of(l_get), petri::NodeRef::of(l_ready),
+            petri::NodeRef::of(l_exec), petri::NodeRef::of(l_exit)});
   net.set_node_span("L", petri::NodeRef::of(l_entry), petri::NodeRef::of(l_exit));
   petri::TaskInfo info;
   info.core = 0;
@@ -231,8 +230,8 @@ size_t transition_index(const petri::PTPN& net, const std::string& name) {
   throw std::runtime_error("missing transition " + name);
 }
 
-state_class::SCVertex add_manual_state(state_class::SCGraph& graph,
-                                       std::vector<int> marking, size_t id) {
+state_class::SCVertex add_manual_state(state_class::SCGraph& graph, std::vector<int> marking,
+                                       size_t id) {
   state_class::StateClass state;
   state.marking = std::move(marking);
   state.id = id;
@@ -240,8 +239,7 @@ state_class::SCVertex add_manual_state(state_class::SCGraph& graph,
 }
 
 void add_manual_edge(state_class::SCGraph& graph, state_class::SCVertex from,
-                     state_class::SCVertex to, int transition, int dwell_min,
-                     int dwell_max) {
+                     state_class::SCVertex to, int transition, int dwell_min, int dwell_max) {
   state_class::FiringEdge edge(transition, dwell_min, dwell_max, dwell_min, dwell_max);
   boost::add_edge(from, to, edge, graph);
 }
@@ -275,9 +273,8 @@ petri::PTPN make_two_equal_priority_start_tasks_net() {
     net.set_post_arc(consume, done, 1);
 
     net.set_task_chain(
-        name, {petri::NodeRef::of(entry), petri::NodeRef::of(get_core),
-               petri::NodeRef::of(ready), petri::NodeRef::of(exec),
-               petri::NodeRef::of(exit)});
+        name, {petri::NodeRef::of(entry), petri::NodeRef::of(get_core), petri::NodeRef::of(ready),
+               petri::NodeRef::of(exec), petri::NodeRef::of(exit)});
     net.set_node_span(name, petri::NodeRef::of(entry), petri::NodeRef::of(exit));
 
     petri::TaskInfo info;
@@ -408,9 +405,8 @@ TEST(MetricsTest, ResponseTimeTakesMaximumOverInitialClasses) {
   add_manual_edge(graph, long_ready, long_exit, exec, 9, 9);
   add_manual_edge(graph, long_exit, long_done, consume, 0, 0);
 
-  MetricsAnalyzer analyzer(
-      graph, net,
-      std::vector<state_class::SCVertex>{short_start, long_start}, /*exact=*/true);
+  MetricsAnalyzer analyzer(graph, net, std::vector<state_class::SCVertex>{short_start, long_start},
+                           /*exact=*/true);
   const MetricsReport report = analyzer.analyze();
   ASSERT_EQ(report.tasks.size(), 1u);
   EXPECT_TRUE(report.tasks.front().observed);

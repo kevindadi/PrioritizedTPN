@@ -1,8 +1,7 @@
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <gtest/gtest.h>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -137,9 +136,8 @@ struct HandTask {
   std::vector<petri::TransitionId> execs;
 };
 
-HandTask add_hand_task(petri::PTPN& net, const std::string& name,
-                       const std::vector<int>& segments, int deadline, int period,
-                       bool start_at_zero, int core = 0) {
+HandTask add_hand_task(petri::PTPN& net, const std::string& name, const std::vector<int>& segments,
+                       int deadline, int period, bool start_at_zero, int core = 0) {
   HandTask task;
   task.name = name;
   task.entry = net.add_place(name + "_entry", 1, true);
@@ -147,8 +145,7 @@ HandTask add_hand_task(petri::PTPN& net, const std::string& name,
       net.add_transition(name + "_get_core", petri::TimeInterval(0, 0), 0, core, false);
   const petri::PlaceId ready = net.add_place(name + "_ready", 1, true);
 
-  std::vector<petri::NodeRef> chain = {petri::NodeRef::of(task.entry),
-                                       petri::NodeRef::of(get_core),
+  std::vector<petri::NodeRef> chain = {petri::NodeRef::of(task.entry), petri::NodeRef::of(get_core),
                                        petri::NodeRef::of(ready)};
   net.set_pre_arc(task.entry, get_core, 1);
   net.set_post_arc(get_core, ready, 1);
@@ -157,8 +154,8 @@ HandTask add_hand_task(petri::PTPN& net, const std::string& name,
   int wcet = 0;
   for (size_t i = 0; i < segments.size(); ++i) {
     const petri::TransitionId exec = net.add_transition(
-        name + "_exec" + std::to_string(i), petri::TimeInterval(segments[i], segments[i]), 0,
-        core, /*suspendable=*/true);
+        name + "_exec" + std::to_string(i), petri::TimeInterval(segments[i], segments[i]), 0, core,
+        /*suspendable=*/true);
     const petri::PlaceId next = net.add_place(name + "_p" + std::to_string(i), 1, true);
     net.set_pre_arc(previous, exec, 1);
     net.set_post_arc(exec, next, 1);
@@ -248,7 +245,8 @@ std::string llf_at_zero_json(const std::string& policy) {
     "configuration": {
       "num_cpus": 1,
       "cores_per_cpu": 1,
-      "policy": ")" + policy + R"(",
+      "policy": ")" +
+         policy + R"(",
       "start": [
         {"task": "A", "tokens": 1},
         {"task": "B", "tokens": 1}
@@ -358,8 +356,7 @@ TEST(LlfTest, ReleaseChangesLaxityOrderAndPreemptsTheRunningJob) {
   bool saw_b_running = false;
   bool saw_a_resumed = false;
   for (auto [it, end] = boost::vertices(llf_graph.get_graph()); it != end; ++it) {
-    const StateClass& state =
-        boost::get(boost::vertex_name, llf_graph.get_graph(), *it);
+    const StateClass& state = boost::get(boost::vertex_name, llf_graph.get_graph(), *it);
     const bool a_in_flight = state_class::task_in_flight(tasks[ordinal_a], state.marking);
     const bool b_in_flight = state_class::task_in_flight(tasks[ordinal_b], state.marking);
 
@@ -413,8 +410,7 @@ TEST(LlfTest, ReleaseChangesLaxityOrderAndPreemptsTheRunningJob) {
   const size_t edf_b_get_core = chain_transition(edf_net, "B", 1);
   bool saw_edf_keeps_a = false;
   for (auto [it, end] = boost::vertices(edf_graph.get_graph()); it != end; ++it) {
-    const StateClass& state =
-        boost::get(boost::vertex_name, edf_graph.get_graph(), *it);
+    const StateClass& state = boost::get(boost::vertex_name, edf_graph.get_graph(), *it);
     if (state_class::task_in_flight(edf_tasks[edf_a], state.marking) &&
         state_class::task_in_flight(edf_tasks[edf_b], state.marking) &&
         state_class::contains(state.priority_enabled, edf_a_exec) &&
@@ -475,8 +471,7 @@ TEST(LlfTest, EqualUrgencyEnumeratesBothBranches) {
 
   LlfFiringRule rule(net);
   const std::vector<PolicyBranch> branches =
-      rule.branches(initials.front().struct_enabled, net,
-                    PolicyContext{net, &initials.front()});
+      rule.branches(initials.front().struct_enabled, net, PolicyContext{net, &initials.front()});
   ASSERT_EQ(branches.size(), 2u);
   const auto find_branch = [&](size_t transition) -> const PolicyBranch* {
     for (const PolicyBranch& branch : branches) {
@@ -537,15 +532,12 @@ TEST(LlfTest, MultiSegmentPreemptionFreezesExecutionOnly) {
   for (auto [it, end] = boost::edges(graph.get_graph()); it != end; ++it) {
     const auto source_vertex = boost::source(*it, graph.get_graph());
     const auto target_vertex = boost::target(*it, graph.get_graph());
-    const state_class::FiringEdge& edge =
-        boost::get(boost::edge_name, graph.get_graph(), *it);
+    const state_class::FiringEdge& edge = boost::get(boost::edge_name, graph.get_graph(), *it);
     if (static_cast<size_t>(edge.transition_id) != a_exec1) {
       continue;
     }
-    const StateClass& source =
-        boost::get(boost::vertex_name, graph.get_graph(), source_vertex);
-    const StateClass& target =
-        boost::get(boost::vertex_name, graph.get_graph(), target_vertex);
+    const StateClass& source = boost::get(boost::vertex_name, graph.get_graph(), source_vertex);
+    const StateClass& target = boost::get(boost::vertex_name, graph.get_graph(), target_vertex);
     if (!state_class::task_in_flight(tasks[ordinal_a], target.marking)) {
       continue;
     }
@@ -559,13 +551,11 @@ TEST(LlfTest, MultiSegmentPreemptionFreezesExecutionOnly) {
   EXPECT_TRUE(saw_segment_continuity);
 
   for (auto [it, end] = boost::vertices(graph.get_graph()); it != end; ++it) {
-    const StateClass& state =
-        boost::get(boost::vertex_name, graph.get_graph(), *it);
+    const StateClass& state = boost::get(boost::vertex_name, graph.get_graph(), *it);
     const bool a_in_flight = state_class::task_in_flight(tasks[ordinal_a], state.marking);
     const bool b_in_flight = state_class::task_in_flight(tasks[ordinal_b], state.marking);
 
-    if (a_in_flight && b_in_flight &&
-        state_class::contains(state.priority_enabled, b_exec)) {
+    if (a_in_flight && b_in_flight && state_class::contains(state.priority_enabled, b_exec)) {
       saw_b_running = true;
       const int a_exec2_index = state.exec_index(a_exec2);
       ASSERT_GT(a_exec2_index, 0);
@@ -666,8 +656,7 @@ TEST(LlfTest, TimeElapseRateLawForExecutingWaitingAndSegmentBoundaries) {
   const StateClass before_boundary = multi_graph.time_elapse(multi_dispatched.front());
   const size_t multi_a = task_ordinal(state_class::build_task_chains(multi_net), "A");
   ASSERT_TRUE(chi_exact(before_boundary, multi_a, -6));
-  const std::vector<StateClass> after_boundary =
-      multi_graph.fire_all(before_boundary, seg1);
+  const std::vector<StateClass> after_boundary = multi_graph.fire_all(before_boundary, seg1);
   ASSERT_EQ(after_boundary.size(), 1u);
   EXPECT_TRUE(state_class::contains(after_boundary.front().priority_enabled, seg2));
   EXPECT_TRUE(chi_exact(after_boundary.front(), multi_a, -6));
@@ -687,8 +676,7 @@ TEST(LlfTest, TimeElapseRateLawForExecutingWaitingAndSegmentBoundaries) {
   const size_t preempt_b_exec = chain_transition(preempt_net, "B", 3);
   bool checked_preempted_rate = false;
   for (auto [it, end] = boost::vertices(preempt_graph.get_graph()); it != end; ++it) {
-    const StateClass& state =
-        boost::get(boost::vertex_name, preempt_graph.get_graph(), *it);
+    const StateClass& state = boost::get(boost::vertex_name, preempt_graph.get_graph(), *it);
     if (!state_class::contains(state.priority_enabled, preempt_b_exec) ||
         !state_class::task_in_flight(preempt_tasks[preempt_a], state.marking)) {
       continue;
@@ -732,10 +720,8 @@ TEST(LlfTest, LaxityLifecycleResetsCarriesAndDropsClock) {
   for (auto [it, end] = boost::edges(graph.get_graph()); it != end; ++it) {
     const auto source_vertex = boost::source(*it, graph.get_graph());
     const auto target_vertex = boost::target(*it, graph.get_graph());
-    const StateClass& source =
-        boost::get(boost::vertex_name, graph.get_graph(), source_vertex);
-    const StateClass& target =
-        boost::get(boost::vertex_name, graph.get_graph(), target_vertex);
+    const StateClass& source = boost::get(boost::vertex_name, graph.get_graph(), source_vertex);
+    const StateClass& target = boost::get(boost::vertex_name, graph.get_graph(), target_vertex);
 
     for (size_t ordinal = 0; ordinal < tasks.size(); ++ordinal) {
       const bool in_source = state_class::task_in_flight(tasks[ordinal], source.marking);
@@ -763,8 +749,9 @@ TEST(LlfTest, LaxityLifecycleResetsCarriesAndDropsClock) {
         // advance chi: execution froze it (deterministic segment).
         bool own_transition = false;
         for (size_t transition : tasks[ordinal].transitions) {
-          if (static_cast<size_t>(boost::get(boost::edge_name, graph.get_graph(), *it)
-                                      .transition_id) == transition) {
+          if (static_cast<size_t>(
+                  boost::get(boost::edge_name, graph.get_graph(), *it).transition_id) ==
+              transition) {
             own_transition = true;
             break;
           }
@@ -790,8 +777,7 @@ TEST(LlfTest, LaxityLifecycleResetsCarriesAndDropsClock) {
   // supported class rejects overlap instead.) Completed tasks never carry a
   // laxity clock in any stored state.
   for (auto [it, end] = boost::vertices(graph.get_graph()); it != end; ++it) {
-    const StateClass& state =
-        boost::get(boost::vertex_name, graph.get_graph(), *it);
+    const StateClass& state = boost::get(boost::vertex_name, graph.get_graph(), *it);
     for (size_t ordinal = 0; ordinal < tasks.size(); ++ordinal) {
       EXPECT_EQ(state.has_laxity_clock(ordinal),
                 state_class::task_in_flight(tasks[ordinal], state.marking))
@@ -821,8 +807,7 @@ TEST(LlfTest, LaxityLayoutAndStateIdentity) {
   StateClass identity_state;
 
   for (auto [it, end] = boost::vertices(graph.get_graph()); it != end; ++it) {
-    const StateClass& state =
-        boost::get(boost::vertex_name, graph.get_graph(), *it);
+    const StateClass& state = boost::get(boost::vertex_name, graph.get_graph(), *it);
     ASSERT_EQ(state.zone.size(), state.clock_vars.size());
     ASSERT_FALSE(state.clock_vars.empty());
     EXPECT_EQ(state.clock_vars.front().kind, ClockKind::Zero);
@@ -911,8 +896,7 @@ TEST(LlfTest, LaxityLayoutAndStateIdentity) {
   const std::vector<StateClass> range_initials = range_graph.compute_initial_classes();
   ASSERT_EQ(range_initials.size(), 1u);
   const std::vector<StateClass> range_dispatched =
-      range_graph.fire_all(range_graph.time_elapse(range_initials.front()),
-                           range_a_get_core);
+      range_graph.fire_all(range_graph.time_elapse(range_initials.front()), range_a_get_core);
   ASSERT_EQ(range_dispatched.size(), 1u);
   const StateClass ranged = range_graph.time_elapse(range_dispatched.front());
   const int chi_index = ranged.laxity_index(range_ordinal_b);
@@ -926,15 +910,13 @@ TEST(LlfTest, LaxityLayoutAndStateIdentity) {
   ASSERT_TRUE(restricted.zone.tighten(0, chi, -chi_lower - 1));
   EXPECT_TRUE(restricted.zone.is_consistent());
   EXPECT_FALSE(state_class::check_equality(ranged, restricted));
-  EXPECT_NE(state_class::hash_state_class(ranged),
-            state_class::hash_state_class(restricted));
+  EXPECT_NE(state_class::hash_state_class(ranged), state_class::hash_state_class(restricted));
 
   // A different job-clock map is a different layout even with the same zone.
   StateClass remapped = identity_state;
   remapped.laxity_clock_of_task[identity_ordinal] = -1;
   EXPECT_FALSE(state_class::check_equality(identity_state, remapped));
-  EXPECT_NE(state_class::hash_state_class(identity_state),
-            state_class::hash_state_class(remapped));
+  EXPECT_NE(state_class::hash_state_class(identity_state), state_class::hash_state_class(remapped));
 
   // Extrapolation and symmetry are unsupported for job-clock states.
   StateClassReachabilityGraph llf_graph(net);
@@ -982,7 +964,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "num_cpus >= 1");
+                  "num_cpus >= 1");
 
   // More than one core per CPU.
   expect_rejected(R"({
@@ -993,7 +975,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "cores_per_cpu == 1");
+                  "cores_per_cpu == 1");
 
   // Task on a core outside the declared range.
   expect_rejected(R"({
@@ -1004,7 +986,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "outside [0, 1)");
+                  "outside [0, 1)");
 
   // Capacity above one (queued jobs are outside the supported class).
   expect_rejected(R"({
@@ -1016,7 +998,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "task_place_capacity == 1");
+                  "task_place_capacity == 1");
 
   // Locks.
   expect_rejected(R"({
@@ -1028,7 +1010,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": ["m"]}],
     "edges": []
   })",
-                 "does not include locks");
+                  "does not include locks");
 
   // Fork/join.
   expect_rejected(R"({
@@ -1042,7 +1024,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
     ],
     "edges": []
   })",
-                 "fork/join");
+                  "fork/join");
 
   // Dependency-driven release (task-to-task edge).
   expect_rejected(R"({
@@ -1058,7 +1040,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
     ],
     "edges": [{"source": "A", "target": "B", "label": "10"}]
   })",
-                 "dependency-driven releases");
+                  "dependency-driven releases");
 
   // Positive deadline but no release at all.
   expect_rejected(R"({
@@ -1068,7 +1050,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "neither periodic");
+                  "neither periodic");
 
   // Missing deadline and period.
   expect_rejected(R"({
@@ -1079,7 +1061,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "positive absolute deadline or period");
+                  "positive absolute deadline or period");
 
   // More than one initial job for a task.
   expect_rejected(R"({
@@ -1090,7 +1072,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "at most one initial job");
+                  "at most one initial job");
 
   // Interval (non-deterministic) execution times are unsupported: chi cannot
   // be carried exactly across a segment when work is not known.
@@ -1102,7 +1084,7 @@ TEST(LlfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 2]], "locks": []}],
     "edges": []
   })",
-                 "deterministic execution segments");
+                  "deterministic execution segments");
 
   // An overlapping periodic release is rejected at the successor state, not
   // queued or merged silently.
@@ -1178,9 +1160,9 @@ TEST(LlfTest, RejectsHandBuiltNetsWithMissingOrInconsistentMetadata) {
   interval.set_pre_arc(ready, interval_exec);
   interval.set_post_arc(interval_exec, exit);
   interval.set_initial_marking(entry, 1);
-  interval.set_task_chain("A", {petri::NodeRef::of(entry), petri::NodeRef::of(get_core),
-                                petri::NodeRef::of(ready), petri::NodeRef::of(interval_exec),
-                                petri::NodeRef::of(exit)});
+  interval.set_task_chain(
+      "A", {petri::NodeRef::of(entry), petri::NodeRef::of(get_core), petri::NodeRef::of(ready),
+            petri::NodeRef::of(interval_exec), petri::NodeRef::of(exit)});
   petri::TaskInfo interval_info;
   interval_info.core = 0;
   interval_info.wcet = 2;
@@ -1191,8 +1173,7 @@ TEST(LlfTest, RejectsHandBuiltNetsWithMissingOrInconsistentMetadata) {
     LlfFiringRule rule(interval);
     FAIL() << "expected LLF to reject an interval execution segment";
   } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string(error.what()).find("deterministic execution segments"),
-              std::string::npos)
+    EXPECT_NE(std::string(error.what()).find("deterministic execution segments"), std::string::npos)
         << "unexpected message: " << error.what();
   }
 
@@ -1219,8 +1200,7 @@ TEST(LlfTest, EveryStoredActiveStateEnforcesMaximumUrgency) {
     ASSERT_FALSE(graph.get_statistics().truncated);
     size_t checked = 0;
     for (auto [it, end] = boost::vertices(graph.get_graph()); it != end; ++it) {
-      const StateClass& state =
-          boost::get(boost::vertex_name, graph.get_graph(), *it);
+      const StateClass& state = boost::get(boost::vertex_name, graph.get_graph(), *it);
       std::vector<size_t> in_flight;
       size_t active = SIZE_MAX;
       size_t active_count = 0;
@@ -1248,8 +1228,8 @@ TEST(LlfTest, EveryStoredActiveStateEnforcesMaximumUrgency) {
         ASSERT_GT(other_clock, 0);
         const int bound = state.zone.get_constraint(static_cast<size_t>(other_clock),
                                                     static_cast<size_t>(active_clock));
-        EXPECT_NE(bound, INF_TIME) << "state " << state.id << " task "
-                                   << tasks[other].name << " vs " << tasks[active].name;
+        EXPECT_NE(bound, INF_TIME) << "state " << state.id << " task " << tasks[other].name
+                                   << " vs " << tasks[active].name;
         EXPECT_LE(bound, 0) << "state " << state.id << " task " << tasks[other].name
                             << " is more urgent than active " << tasks[active].name;
         ++checked;

@@ -19,15 +19,13 @@ namespace {
 // position `5 + 4*i` and released by the transition at
 // `chain.size() - 4 - 2*i`.
 bool valid_lock_binding(const std::vector<petri::NodeRef>& chain, size_t lock_index) {
-  const size_t minimum =
-      detail::TaskLockTopology::kLockReleaseSuffix + 2 * lock_index + 1;
+  const size_t minimum = detail::TaskLockTopology::kLockReleaseSuffix + 2 * lock_index + 1;
   if (chain.size() < minimum) {
     return false;  // also prevents underflow in the release calculation
   }
 
-  const size_t acquire =
-      detail::TaskLockTopology::kLockAcquireBase +
-      detail::TaskLockTopology::kLockStride * lock_index;
+  const size_t acquire = detail::TaskLockTopology::kLockAcquireBase +
+                         detail::TaskLockTopology::kLockStride * lock_index;
   const size_t release =
       chain.size() - detail::TaskLockTopology::kLockReleaseSuffix - 2 * lock_index;
   if (acquire == 0 || acquire + 1 >= chain.size() || release >= chain.size()) {
@@ -45,8 +43,7 @@ bool valid_lock_binding(const std::vector<petri::NodeRef>& chain, size_t lock_in
 // Least fixpoint of eff[holder] = max(eff[holder], eff[waiter]) over the wait
 // edges. The update is monotone and bounded by the largest base priority, so at
 // most task_count rounds are needed; a cycle simply saturates at the maximum.
-void inherit_priorities(std::vector<int>& effective,
-                        const std::vector<std::pair<int, int>>& edges,
+void inherit_priorities(std::vector<int>& effective, const std::vector<std::pair<int, int>>& edges,
                         size_t task_count) {
   for (size_t round = 0; round < task_count; ++round) {
     bool changed = false;
@@ -120,8 +117,7 @@ void detail::TaskLockTopology::build(const petri::PTPN& net) {
     task.chain = chain;
 
     const auto info_it = net.task_info().find(name);
-    const petri::TaskInfo* info =
-        info_it == net.task_info().end() ? nullptr : &info_it->second;
+    const petri::TaskInfo* info = info_it == net.task_info().end() ? nullptr : &info_it->second;
     bool have_priority = false;
     if (info != nullptr) {
       task.base_priority = info->priority;
@@ -136,8 +132,7 @@ void detail::TaskLockTopology::build(const petri::PTPN& net) {
       } else {
         task.chain_transitions.push_back(chain[position].as_transition().index());
         if (!have_priority) {
-          task.base_priority =
-              net.get_transition(chain[position].as_transition()).priority;
+          task.base_priority = net.get_transition(chain[position].as_transition()).priority;
           have_priority = true;
         }
       }
@@ -162,12 +157,9 @@ void detail::TaskLockTopology::build(const petri::PTPN& net) {
         LockBinding binding;
         binding.lock = info->locks[lock_index];
         binding.lock_place = lock_it->second.index();
-        binding.acquire_position =
-            kLockAcquireBase + kLockStride * lock_index;
-        binding.acquire_transition =
-            chain[binding.acquire_position].as_transition().index();
-        binding.release_position =
-            chain.size() - kLockReleaseSuffix - 2 * lock_index;
+        binding.acquire_position = kLockAcquireBase + kLockStride * lock_index;
+        binding.acquire_transition = chain[binding.acquire_position].as_transition().index();
+        binding.release_position = chain.size() - kLockReleaseSuffix - 2 * lock_index;
         acquire_transitions_[binding.acquire_transition] = {ordinal, lock_index};
         task.locks.push_back(std::move(binding));
       }
@@ -238,8 +230,7 @@ detail::TaskLockTopology::MarkingState detail::TaskLockTopology::analyze_marking
     }
     const size_t position = state.token_position[i];
     for (const LockBinding& binding : tasks_[i].locks) {
-      if (position < binding.acquire_position + 1 ||
-          position > binding.release_position - 1) {
+      if (position < binding.acquire_position + 1 || position > binding.release_position - 1) {
         continue;
       }
       if (marking[binding.lock_place] != 0) {
@@ -286,8 +277,7 @@ detail::TaskLockTopology::MarkingState detail::TaskLockTopology::analyze_marking
   return state;
 }
 
-std::optional<int> detail::TaskLockTopology::lock_ceiling(
-    const std::string& lock) const {
+std::optional<int> detail::TaskLockTopology::lock_ceiling(const std::string& lock) const {
   const auto it = lock_ceilings_.find(lock);
   if (it == lock_ceilings_.end()) {
     return std::nullopt;
@@ -295,8 +285,8 @@ std::optional<int> detail::TaskLockTopology::lock_ceiling(
   return it->second;
 }
 
-std::optional<int> detail::TaskLockTopology::system_ceiling_excluding(
-    const MarkingState& state, int task) const {
+std::optional<int> detail::TaskLockTopology::system_ceiling_excluding(const MarkingState& state,
+                                                                      int task) const {
   std::optional<int> ceiling;
   for (const auto& [lock, holder] : state.unique_holder) {
     if (holder == task) {
@@ -313,8 +303,7 @@ std::optional<int> detail::TaskLockTopology::system_ceiling_excluding(
   return ceiling;
 }
 
-std::optional<int> detail::TaskLockTopology::system_ceiling(
-    const MarkingState& state) const {
+std::optional<int> detail::TaskLockTopology::system_ceiling(const MarkingState& state) const {
   std::optional<int> ceiling;
   for (const auto& [lock, holder] : state.unique_holder) {
     (void)holder;
@@ -333,8 +322,7 @@ std::optional<int> detail::TaskLockTopology::system_ceiling(
 // Static rule
 // ---------------------------------------------------------------------------
 
-bool FiringRule::admissible(const PolicyContext& /*context*/,
-                            size_t /*transition*/) const {
+bool FiringRule::admissible(const PolicyContext& /*context*/, size_t /*transition*/) const {
   return true;
 }
 
@@ -352,16 +340,14 @@ std::vector<PolicyBranch> FiringRule::branches(const TransitionSet& struct_enabl
 }
 
 std::vector<PolicyBranch> combine_core_choices(
-    const TransitionSet& control,
-    const std::map<int, std::vector<CoreChoice>>& by_core) {
+    const TransitionSet& control, const std::map<int, std::vector<CoreChoice>>& by_core) {
   // Each prefix holds the choices made so far; control transitions are added
   // to every branch once at the end.
   std::vector<PolicyBranch> combined(1);
   for (const auto& [core, choices] : by_core) {
     if (choices.empty()) {
-      throw std::invalid_argument(
-          "combine_core_choices: core " + std::to_string(core) +
-          " has no feasible scheduling choice");
+      throw std::invalid_argument("combine_core_choices: core " + std::to_string(core) +
+                                  " has no feasible scheduling choice");
     }
     std::vector<PolicyBranch> next;
     next.reserve(combined.size() * choices.size());
@@ -369,11 +355,9 @@ std::vector<PolicyBranch> combine_core_choices(
       for (const CoreChoice& choice : choices) {
         PolicyBranch branch;
         branch.active = prefix.active;
-        branch.active.insert(branch.active.end(), choice.active.begin(),
-                             choice.active.end());
+        branch.active.insert(branch.active.end(), choice.active.begin(), choice.active.end());
         branch.constraints = prefix.constraints;
-        branch.constraints.insert(branch.constraints.end(),
-                                  choice.constraints.begin(),
+        branch.constraints.insert(branch.constraints.end(), choice.constraints.begin(),
                                   choice.constraints.end());
         next.push_back(std::move(branch));
       }
@@ -398,13 +382,11 @@ std::vector<PolicyBranch> combine_core_choices(
   return unique;
 }
 
-int StaticPriorityRule::effective_priority(const PolicyContext& context,
-                                           size_t transition) const {
+int StaticPriorityRule::effective_priority(const PolicyContext& context, size_t transition) const {
   return context.net.get_transition(petri::TransitionId{transition}).priority;
 }
 
-bool StaticPriorityRule::admissible(const PolicyContext& /*context*/,
-                                    size_t /*transition*/) const {
+bool StaticPriorityRule::admissible(const PolicyContext& /*context*/, size_t /*transition*/) const {
   return true;
 }
 
@@ -449,17 +431,17 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
   ReleaseTaskIndex index;
   index.tasks = build_task_chains(net);
   if (index.tasks.empty()) {
-    throw std::invalid_argument(
-        name + " supported class requires TDG2PN-lowered task metadata "
-               "(task_info/node_pn_map); this net has no task chains");
+    throw std::invalid_argument(name +
+                                " supported class requires TDG2PN-lowered task metadata "
+                                "(task_info/node_pn_map); this net has no task chains");
   }
   index.task_of_transition.assign(net.num_transitions(), -1);
   index.task_of_periodic_transition.assign(net.num_transitions(), -1);
 
   if (!net.lock_places().empty()) {
-    throw std::invalid_argument(
-        name + " supported class does not include locks, but the net declares "
-               "shared lock resources");
+    throw std::invalid_argument(name +
+                                " supported class does not include locks, but the net declares "
+                                "shared lock resources");
   }
 
   // Supported core range. All three job-clock policies are statically
@@ -474,10 +456,11 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
     for (const petri::PlaceId cpu : net.cpu_places()) {
       const petri::Place& place = net.get_place(cpu);
       if (place.capacity != 1) {
-        throw std::invalid_argument(
-            name + " requires cores_per_cpu == 1 (one running job per real core), "
-                   "but '" +
-            place.name + "' has capacity " + std::to_string(place.capacity));
+        throw std::invalid_argument(name +
+                                    " requires cores_per_cpu == 1 (one running job per real core), "
+                                    "but '" +
+                                    place.name + "' has capacity " +
+                                    std::to_string(place.capacity));
       }
     }
   } else {
@@ -502,8 +485,7 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
     const TaskChain& task = index.tasks[ordinal];
     const auto info_it = net.task_info().find(task.name);
     if (info_it == net.task_info().end()) {
-      throw std::invalid_argument(name + " task '" + task.name +
-                                  "' has no TaskInfo metadata");
+      throw std::invalid_argument(name + " task '" + task.name + "' has no TaskInfo metadata");
     }
     const int task_core = info_it->second.core;
     if (task_core < 0 || static_cast<size_t>(task_core) >= num_cores) {
@@ -522,69 +504,68 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
 
     // Standard no-lock lowering chain: entry, get_core, ready, then alternating
     // exec/place pairs, ending in the exit place.
-    if (task.chain.size() < 5 || task.chain.size() % 2 == 0 ||
-        !task.chain.front().is_place() || !task.chain.back().is_place()) {
+    if (task.chain.size() < 5 || task.chain.size() % 2 == 0 || !task.chain.front().is_place() ||
+        !task.chain.back().is_place()) {
       throw std::invalid_argument(
-          name + " supported class requires the standard lowered task chain for '" +
-          task.name + "' (alternating place/transition, at least 5 nodes)");
+          name + " supported class requires the standard lowered task chain for '" + task.name +
+          "' (alternating place/transition, at least 5 nodes)");
     }
     for (size_t position = 0; position < task.chain.size(); ++position) {
       const bool want_place = position % 2 == 0;
       if (task.chain[position].is_place() != want_place) {
         throw std::invalid_argument(
-            name + " supported class requires the standard lowered task chain for '" +
-            task.name + "' (chain positions must alternate place/transition)");
+            name + " supported class requires the standard lowered task chain for '" + task.name +
+            "' (chain positions must alternate place/transition)");
       }
     }
     if (task.entry_place == NO_TRANSITION || task.exit_place == NO_TRANSITION) {
-      throw std::invalid_argument(name + " task '" + task.name +
-                                  "' has no entry/exit place");
+      throw std::invalid_argument(name + " task '" + task.name + "' has no entry/exit place");
     }
 
     if (options.require_deterministic_segments) {
       // Position 1 is get_core (a zero-time dispatch step); positions 3, 5, ...
       // are the deterministic execution segments.
-      const auto& dispatch =
-          net.get_transition(petri::TransitionId{task.transitions.front()});
+      const auto& dispatch = net.get_transition(petri::TransitionId{task.transitions.front()});
       if (dispatch.time_interval.left_open || dispatch.time_interval.right_open ||
           dispatch.time_interval.earliest != 0 || dispatch.time_interval.latest != 0) {
-        throw std::invalid_argument(
-            name + " requires a zero-time get_core dispatch step for task '" +
-            task.name + "' (interval [0,0])");
+        throw std::invalid_argument(name +
+                                    " requires a zero-time get_core dispatch step for task '" +
+                                    task.name + "' (interval [0,0])");
       }
       long long wcet_sum = 0;
       for (size_t position = 1; position < task.transitions.size(); ++position) {
-        const auto& segment =
-            net.get_transition(petri::TransitionId{task.transitions[position]});
+        const auto& segment = net.get_transition(petri::TransitionId{task.transitions[position]});
         if (segment.time_interval.left_open || segment.time_interval.right_open ||
             segment.time_interval.earliest != segment.time_interval.latest ||
             segment.time_interval.earliest < 0) {
-          throw std::invalid_argument(
-              name + " supports only deterministic execution segments "
-                     "(earliest == latest); task '" +
-              task.name + "' has a non-deterministic or open interval on T" +
-              std::to_string(task.transitions[position]));
+          throw std::invalid_argument(name +
+                                      " supports only deterministic execution segments "
+                                      "(earliest == latest); task '" +
+                                      task.name +
+                                      "' has a non-deterministic or open interval on T" +
+                                      std::to_string(task.transitions[position]));
         }
         wcet_sum += segment.time_interval.latest;
       }
       if (wcet_sum > std::numeric_limits<int>::max()) {
-        throw std::invalid_argument(name + " worst-case execution time for task '" +
-                                    task.name + "' does not fit in an int");
+        throw std::invalid_argument(name + " worst-case execution time for task '" + task.name +
+                                    "' does not fit in an int");
       }
-      if (info_it->second.wcet < 0 ||
-          static_cast<long long>(info_it->second.wcet) != wcet_sum) {
+      if (info_it->second.wcet < 0 || static_cast<long long>(info_it->second.wcet) != wcet_sum) {
         throw std::invalid_argument(
-            name + " requires TaskInfo::wcet to equal the sum of the deterministic "
-                   "execution-segment upper bounds for task '" +
-            task.name + "' (metadata says " + std::to_string(info_it->second.wcet) +
-            ", net says " + std::to_string(wcet_sum) + ")");
+            name +
+            " requires TaskInfo::wcet to equal the sum of the deterministic "
+            "execution-segment upper bounds for task '" +
+            task.name + "' (metadata says " + std::to_string(info_it->second.wcet) + ", net says " +
+            std::to_string(wcet_sum) + ")");
       }
       const long long initial_chi =
           static_cast<long long>(info_it->second.wcet) - info_it->second.deadline;
       if (initial_chi < std::numeric_limits<int>::min() ||
           initial_chi > std::numeric_limits<int>::max()) {
-        throw std::invalid_argument(name + " initial laxity chi = wcet - deadline "
-                                           "does not fit in an int for task '" +
+        throw std::invalid_argument(name +
+                                    " initial laxity chi = wcet - deadline "
+                                    "does not fit in an int for task '" +
                                     task.name + "'");
       }
     }
@@ -602,8 +583,8 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
       if (place.capacity != 1 || !place.saturate) {
         throw std::invalid_argument(
             name + " requires task_place_capacity == 1 with saturating task places; task '" +
-            task.name + "' uses a place with capacity " +
-            std::to_string(place.capacity) + (place.saturate ? "" : " (non-saturating)"));
+            task.name + "' uses a place with capacity " + std::to_string(place.capacity) +
+            (place.saturate ? "" : " (non-saturating)"));
       }
     }
 
@@ -616,14 +597,13 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
       if (lowered.core != task_core) {
         throw std::invalid_argument(
             name + " task '" + task.name + "' has a chain transition T" +
-            std::to_string(transition) + " on core " +
-            std::to_string(lowered.core) + " (TaskInfo binds the task to core " +
-            std::to_string(task_core) + ")");
+            std::to_string(transition) + " on core " + std::to_string(lowered.core) +
+            " (TaskInfo binds the task to core " + std::to_string(task_core) + ")");
       }
       if (index.task_of_transition[transition] >= 0) {
-        throw std::invalid_argument(
-            name + " task chains share transition T" + std::to_string(transition) +
-            "; the standard lowering gives every task its own chain");
+        throw std::invalid_argument(name + " task chains share transition T" +
+                                    std::to_string(transition) +
+                                    "; the standard lowering gives every task its own chain");
       }
       index.task_of_transition[transition] = static_cast<int>(ordinal);
     }
@@ -634,13 +614,11 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
         throw std::invalid_argument(name + " task '" + task.name +
                                     "' has an out-of-range periodic release transition");
       }
-      const auto& release =
-          net.get_transition(petri::TransitionId{task.periodic_transition});
+      const auto& release = net.get_transition(petri::TransitionId{task.periodic_transition});
       if (release.core >= 0) {
-        throw std::invalid_argument(
-            name + " periodic release for task '" + task.name +
-            "' must be a control transition (core < 0), got core " +
-            std::to_string(release.core));
+        throw std::invalid_argument(name + " periodic release for task '" + task.name +
+                                    "' must be a control transition (core < 0), got core " +
+                                    std::to_string(release.core));
       }
       if (release.time_interval.left_open || release.time_interval.right_open ||
           release.time_interval.earliest != release.time_interval.latest ||
@@ -654,12 +632,11 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
                                     "' has no positive TaskInfo::period");
       }
       if (index.task_of_periodic_transition[task.periodic_transition] >= 0) {
-        throw std::invalid_argument(
-            name + " periodic release transition T" +
-            std::to_string(task.periodic_transition) + " is shared by multiple tasks");
+        throw std::invalid_argument(name + " periodic release transition T" +
+                                    std::to_string(task.periodic_transition) +
+                                    " is shared by multiple tasks");
       }
-      index.task_of_periodic_transition[task.periodic_transition] =
-          static_cast<int>(ordinal);
+      index.task_of_periodic_transition[task.periodic_transition] = static_cast<int>(ordinal);
     } else if (task.period > 0) {
       throw std::invalid_argument(
           name + " task '" + task.name +
@@ -668,9 +645,9 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
 
     const size_t chain_tokens = task_chain_token_count(task, initial);
     if (chain_tokens > 1) {
-      throw std::invalid_argument(
-          name + " supports at most one initial job per task; task '" + task.name +
-          "' starts " + std::to_string(chain_tokens) + " tokens");
+      throw std::invalid_argument(name + " supports at most one initial job per task; task '" +
+                                  task.name + "' starts " + std::to_string(chain_tokens) +
+                                  " tokens");
     }
     if (chain_tokens == 1 && initial[task.entry_place] <= 0) {
       throw std::invalid_argument(
@@ -714,8 +691,9 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
           continue;  // the task's own _fire release
         }
         throw std::invalid_argument(
-            name + " supported class does not include dependency-driven releases: control "
-                   "transition T" +
+            name +
+            " supported class does not include dependency-driven releases: control "
+            "transition T" +
             std::to_string(transition) + " releases task '" + index.tasks[ordinal].name +
             "' without being its periodic _fire transition");
       }
@@ -768,8 +746,7 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
     throw std::invalid_argument("EDF state marking does not match the net");
   }
   if (state.release_clock_of_task.size() != tasks_.size()) {
-    throw std::invalid_argument(
-        "EDF state does not carry the release-clock layout for every task");
+    throw std::invalid_argument("EDF state does not carry the release-clock layout for every task");
   }
 
   TransitionSet control;
@@ -798,13 +775,12 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
       control.push_back(transition);
       continue;
     }
-    const int ordinal = transition < task_of_transition_.size()
-                            ? task_of_transition_[transition]
-                            : -1;
+    const int ordinal =
+        transition < task_of_transition_.size() ? task_of_transition_[transition] : -1;
     if (ordinal < 0) {
-      throw std::invalid_argument(
-          "EDF cannot schedule real-core transition T" + std::to_string(transition) +
-          " because it does not belong to a task chain");
+      throw std::invalid_argument("EDF cannot schedule real-core transition T" +
+                                  std::to_string(transition) +
+                                  " because it does not belong to a task chain");
     }
     enabled_per_task[static_cast<size_t>(ordinal)].push_back(transition);
   }
@@ -830,9 +806,9 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
     const bool in_flight = task_in_flight(tasks_[ordinal], state.marking);
     const bool has_enabled = !enabled_per_task[ordinal].empty();
     if (in_flight && !has_enabled) {
-      throw std::invalid_argument(
-          "EDF job layout is ambiguous: in-flight task '" + tasks_[ordinal].name +
-          "' has no structurally enabled chain transition");
+      throw std::invalid_argument("EDF job layout is ambiguous: in-flight task '" +
+                                  tasks_[ordinal].name +
+                                  "' has no structurally enabled chain transition");
     }
     if (!in_flight && has_enabled) {
       throw std::invalid_argument(
@@ -859,9 +835,8 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
     for (size_t candidate : candidates) {
       const int candidate_clock = state.release_index(candidate);
       if (candidate_clock <= 0) {
-        throw std::invalid_argument(
-            "EDF state is missing the release clock of in-flight task '" +
-            task_name_or_ordinal(tasks_, candidate) + "'");
+        throw std::invalid_argument("EDF state is missing the release clock of in-flight task '" +
+                                    task_name_or_ordinal(tasks_, candidate) + "'");
       }
 
       // A candidate is feasible when the zone admits a valuation in which its
@@ -877,24 +852,20 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
         }
         const int other_clock = state.release_index(other);
         if (other_clock <= 0) {
-          throw std::invalid_argument(
-              "EDF state is missing the release clock of in-flight task '" +
-              task_name_or_ordinal(tasks_, other) + "'");
+          throw std::invalid_argument("EDF state is missing the release clock of in-flight task '" +
+                                      task_name_or_ordinal(tasks_, other) + "'");
         }
         const long long bound = static_cast<long long>(tasks_[other].deadline) -
                                 static_cast<long long>(tasks_[candidate].deadline);
-        if (bound < std::numeric_limits<int>::min() ||
-            bound > std::numeric_limits<int>::max()) {
+        if (bound < std::numeric_limits<int>::min() || bound > std::numeric_limits<int>::max()) {
           throw std::invalid_argument("EDF deadline difference does not fit in an int");
         }
-        if (!trial.tighten(static_cast<size_t>(other_clock),
-                           static_cast<size_t>(candidate_clock),
+        if (!trial.tighten(static_cast<size_t>(other_clock), static_cast<size_t>(candidate_clock),
                            static_cast<int>(bound))) {
           feasible = false;
           break;
         }
-        constraints.push_back(
-            BranchConstraint{candidate, other, static_cast<int>(bound)});
+        constraints.push_back(BranchConstraint{candidate, other, static_cast<int>(bound)});
       }
       if (!feasible) {
         continue;
@@ -968,8 +939,7 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
     throw std::invalid_argument("LLF state marking does not match the net");
   }
   if (state.laxity_clock_of_task.size() != tasks_.size()) {
-    throw std::invalid_argument(
-        "LLF state does not carry the laxity-clock layout for every task");
+    throw std::invalid_argument("LLF state does not carry the laxity-clock layout for every task");
   }
 
   TransitionSet control;
@@ -995,13 +965,12 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
       control.push_back(transition);
       continue;
     }
-    const int ordinal = transition < task_of_transition_.size()
-                            ? task_of_transition_[transition]
-                            : -1;
+    const int ordinal =
+        transition < task_of_transition_.size() ? task_of_transition_[transition] : -1;
     if (ordinal < 0) {
-      throw std::invalid_argument(
-          "LLF cannot schedule real-core transition T" + std::to_string(transition) +
-          " because it does not belong to a task chain");
+      throw std::invalid_argument("LLF cannot schedule real-core transition T" +
+                                  std::to_string(transition) +
+                                  " because it does not belong to a task chain");
     }
     enabled_per_task[static_cast<size_t>(ordinal)].push_back(transition);
   }
@@ -1028,9 +997,9 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
     const bool in_flight = task_in_flight(tasks_[ordinal], state.marking);
     const bool has_enabled = !enabled_per_task[ordinal].empty();
     if (in_flight && !has_enabled) {
-      throw std::invalid_argument(
-          "LLF job layout is ambiguous: in-flight task '" + tasks_[ordinal].name +
-          "' has no structurally enabled chain transition");
+      throw std::invalid_argument("LLF job layout is ambiguous: in-flight task '" +
+                                  tasks_[ordinal].name +
+                                  "' has no structurally enabled chain transition");
     }
     if (!in_flight && has_enabled) {
       throw std::invalid_argument(
@@ -1049,9 +1018,8 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
     for (size_t candidate : candidates) {
       const int candidate_clock = state.laxity_index(candidate);
       if (candidate_clock <= 0) {
-        throw std::invalid_argument(
-            "LLF state is missing the laxity clock of in-flight task '" +
-            task_name_or_ordinal(tasks_, candidate) + "'");
+        throw std::invalid_argument("LLF state is missing the laxity clock of in-flight task '" +
+                                    task_name_or_ordinal(tasks_, candidate) + "'");
       }
 
       // Candidate i is feasible when the zone admits a valuation in which its
@@ -1067,17 +1035,15 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
         }
         const int other_clock = state.laxity_index(other);
         if (other_clock <= 0) {
-          throw std::invalid_argument(
-              "LLF state is missing the laxity clock of in-flight task '" +
-              task_name_or_ordinal(tasks_, other) + "'");
+          throw std::invalid_argument("LLF state is missing the laxity clock of in-flight task '" +
+                                      task_name_or_ordinal(tasks_, other) + "'");
         }
-        if (!trial.tighten(static_cast<size_t>(other_clock),
-                           static_cast<size_t>(candidate_clock), 0)) {
+        if (!trial.tighten(static_cast<size_t>(other_clock), static_cast<size_t>(candidate_clock),
+                           0)) {
           feasible = false;
           break;
         }
-        constraints.push_back(
-            BranchConstraint{candidate, other, 0, ClockKind::Laxity});
+        constraints.push_back(BranchConstraint{candidate, other, 0, ClockKind::Laxity});
       }
       if (!feasible) {
         continue;
@@ -1091,9 +1057,8 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
     }
 
     if (choices.empty()) {
-      throw std::runtime_error(
-          "LLF urgency ordering is inconsistent with the state zone on core " +
-          std::to_string(core) + ": no candidate can have maximum chi");
+      throw std::runtime_error("LLF urgency ordering is inconsistent with the state zone on core " +
+                               std::to_string(core) + ": no candidate can have maximum chi");
     }
     choices_by_core.emplace(core, std::move(choices));
   }
@@ -1183,13 +1148,12 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
       control.push_back(transition);
       continue;
     }
-    const int ordinal = transition < task_of_transition_.size()
-                            ? task_of_transition_[transition]
-                            : -1;
+    const int ordinal =
+        transition < task_of_transition_.size() ? task_of_transition_[transition] : -1;
     if (ordinal < 0) {
-      throw std::invalid_argument(
-          "FIFO cannot schedule real-core transition T" + std::to_string(transition) +
-          " because it does not belong to a task chain");
+      throw std::invalid_argument("FIFO cannot schedule real-core transition T" +
+                                  std::to_string(transition) +
+                                  " because it does not belong to a task chain");
     }
     enabled_per_task[static_cast<size_t>(ordinal)].push_back(transition);
   }
@@ -1239,8 +1203,7 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
       throw std::invalid_argument(
           "FIFO supported class allows at most one running job per real core; tasks '" +
           tasks_[it->second].name + "' and '" + task.name +
-          "' both have a job past the task entry on core " +
-          std::to_string(task.core));
+          "' both have a job past the task entry on core " + std::to_string(task.core));
     }
   }
 
@@ -1256,8 +1219,7 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
     if (enabled_per_task[ordinal].empty()) {
       throw std::invalid_argument(
           "FIFO job layout is ambiguous: running task '" + tasks_[ordinal].name +
-          "' has no structurally enabled chain transition on core " +
-          std::to_string(core));
+          "' has no structurally enabled chain transition on core " + std::to_string(core));
     }
     CoreChoice choice;
     choice.active = enabled_per_task[ordinal];
@@ -1294,9 +1256,8 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
     for (size_t candidate : pending) {
       const int candidate_clock = state.release_index(candidate);
       if (candidate_clock <= 0) {
-        throw std::invalid_argument(
-            "FIFO state is missing the release clock of pending task '" +
-            task_name_or_ordinal(tasks_, candidate) + "'");
+        throw std::invalid_argument("FIFO state is missing the release clock of pending task '" +
+                                    task_name_or_ordinal(tasks_, candidate) + "'");
       }
 
       DBM trial = state.zone;
@@ -1308,12 +1269,11 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
         }
         const int other_clock = state.release_index(other);
         if (other_clock <= 0) {
-          throw std::invalid_argument(
-              "FIFO state is missing the release clock of pending task '" +
-              task_name_or_ordinal(tasks_, other) + "'");
+          throw std::invalid_argument("FIFO state is missing the release clock of pending task '" +
+                                      task_name_or_ordinal(tasks_, other) + "'");
         }
-        if (!trial.tighten(static_cast<size_t>(other_clock),
-                           static_cast<size_t>(candidate_clock), 0)) {
+        if (!trial.tighten(static_cast<size_t>(other_clock), static_cast<size_t>(candidate_clock),
+                           0)) {
           feasible = false;
           break;
         }
@@ -1360,8 +1320,8 @@ void PipFiringRule::ensure_index(const petri::PTPN& net) const {
   }
 }
 
-const std::vector<int>& PipFiringRule::effective_priorities(
-    const petri::PTPN& net, const petri::Marking& marking) const {
+const std::vector<int>& PipFiringRule::effective_priorities(const petri::PTPN& net,
+                                                            const petri::Marking& marking) const {
   ensure_index(net);
 
   if (cache_valid_ && cached_net_ == &net && cached_marking_ == marking) {
@@ -1375,13 +1335,11 @@ const std::vector<int>& PipFiringRule::effective_priorities(
     effective[i] = topology.tasks()[i].base_priority;
   }
 
-  const detail::TaskLockTopology::MarkingState layout =
-      topology.analyze_marking(marking);
+  const detail::TaskLockTopology::MarkingState layout = topology.analyze_marking(marking);
   std::vector<std::pair<int, int>> wait_edges;
   for (const auto& [waiter, lock] : layout.blocked_requests) {
     const auto holder_it = layout.unique_holder.find(lock);
-    if (holder_it == layout.unique_holder.end() ||
-        holder_it->second == waiter) {
+    if (holder_it == layout.unique_holder.end() || holder_it->second == waiter) {
       continue;
     }
     wait_edges.emplace_back(waiter, holder_it->second);
@@ -1395,15 +1353,13 @@ const std::vector<int>& PipFiringRule::effective_priorities(
   return cached_effective_;
 }
 
-int PipFiringRule::effective_priority(const PolicyContext& context,
-                                      size_t transition) const {
+int PipFiringRule::effective_priority(const PolicyContext& context, size_t transition) const {
   ensure_index(context.net);
   const size_t num_transitions = index_->task_of_transition().size();
   if (transition < num_transitions) {
     const int task = index_->task_of_transition()[transition];
     if (task >= 0 && context.state != nullptr) {
-      const std::vector<int>& effective =
-          effective_priorities(context.net, context.state->marking);
+      const std::vector<int>& effective = effective_priorities(context.net, context.state->marking);
       if (static_cast<size_t>(task) < effective.size()) {
         return effective[static_cast<size_t>(task)];
       }
@@ -1414,8 +1370,7 @@ int PipFiringRule::effective_priority(const PolicyContext& context,
   return context.net.get_transition(petri::TransitionId{transition}).priority;
 }
 
-bool PipFiringRule::admissible(const PolicyContext& /*context*/,
-                               size_t /*transition*/) const {
+bool PipFiringRule::admissible(const PolicyContext& /*context*/, size_t /*transition*/) const {
   // PIP only changes effective priorities; it never blocks a transition.
   return true;
 }
@@ -1453,8 +1408,7 @@ const PcpFiringRule::DynamicState& PcpFiringRule::dynamic_state(
   }
 
   const detail::TaskLockTopology& topology = *index_;
-  const std::vector<detail::TaskLockTopology::TaskRecord>& tasks =
-      topology.tasks();
+  const std::vector<detail::TaskLockTopology::TaskRecord>& tasks = topology.tasks();
   const size_t task_count = tasks.size();
 
   DynamicState state;
@@ -1470,8 +1424,7 @@ const PcpFiringRule::DynamicState& PcpFiringRule::dynamic_state(
   // the unique holder.
   for (const auto& [waiter, lock] : state.layout.blocked_requests) {
     const auto holder_it = state.layout.unique_holder.find(lock);
-    if (holder_it == state.layout.unique_holder.end() ||
-        holder_it->second == waiter) {
+    if (holder_it == state.layout.unique_holder.end() || holder_it->second == waiter) {
       continue;
     }
     wait_edges.emplace_back(waiter, holder_it->second);
@@ -1483,8 +1436,7 @@ const PcpFiringRule::DynamicState& PcpFiringRule::dynamic_state(
   // attaining that ceiling.
   for (const auto& [waiter, lock] : state.layout.free_requests) {
     (void)lock;
-    const std::optional<int> ceiling =
-        topology.system_ceiling_excluding(state.layout, waiter);
+    const std::optional<int> ceiling = topology.system_ceiling_excluding(state.layout, waiter);
     if (!ceiling) {
       continue;  // no other task holds a lock: always admissible
     }
@@ -1520,15 +1472,13 @@ const PcpFiringRule::DynamicState& PcpFiringRule::dynamic_state(
   return cached_dynamic_;
 }
 
-int PcpFiringRule::effective_priority(const PolicyContext& context,
-                                      size_t transition) const {
+int PcpFiringRule::effective_priority(const PolicyContext& context, size_t transition) const {
   ensure_index(context.net);
   const size_t num_transitions = index_->task_of_transition().size();
   if (transition < num_transitions) {
     const int task = index_->task_of_transition()[transition];
     if (task >= 0 && context.state != nullptr) {
-      const DynamicState& state =
-          dynamic_state(context.net, context.state->marking);
+      const DynamicState& state = dynamic_state(context.net, context.state->marking);
       if (static_cast<size_t>(task) < state.effective.size()) {
         return state.effective[static_cast<size_t>(task)];
       }
@@ -1539,8 +1489,7 @@ int PcpFiringRule::effective_priority(const PolicyContext& context,
   return context.net.get_transition(petri::TransitionId{transition}).priority;
 }
 
-bool PcpFiringRule::admissible(const PolicyContext& context,
-                               size_t transition) const {
+bool PcpFiringRule::admissible(const PolicyContext& context, size_t transition) const {
   ensure_index(context.net);
   const auto acquire_it = index_->acquire_transitions().find(transition);
   if (acquire_it == index_->acquire_transitions().end()) {
@@ -1558,8 +1507,7 @@ bool PcpFiringRule::admissible(const PolicyContext& context,
   const int task = acquire_it->second.first;
   const size_t lock_index = acquire_it->second.second;
   const auto& task_record = index_->tasks()[static_cast<size_t>(task)];
-  const detail::TaskLockTopology::LockBinding& binding =
-      task_record.locks[lock_index];
+  const detail::TaskLockTopology::LockBinding& binding = task_record.locks[lock_index];
 
   const DynamicState& state = dynamic_state(context.net, marking);
 
@@ -1576,8 +1524,7 @@ bool PcpFiringRule::admissible(const PolicyContext& context,
     return true;
   }
 
-  const std::optional<int> ceiling =
-      index_->system_ceiling_excluding(state.layout, task);
+  const std::optional<int> ceiling = index_->system_ceiling_excluding(state.layout, task);
   if (!ceiling) {
     return true;  // no other task holds a lock
   }
@@ -1623,16 +1570,14 @@ const detail::TaskLockTopology::MarkingState& SrpFiringRule::dynamic_state(
   return cached_layout_;
 }
 
-int SrpFiringRule::effective_priority(const PolicyContext& context,
-                                      size_t transition) const {
+int SrpFiringRule::effective_priority(const PolicyContext& context, size_t transition) const {
   // SRP has no priority inheritance: every transition keeps its statically
   // encoded priority. For task chains this equals the task's base priority;
   // control and non-task transitions keep their static priority.
   return context.net.get_transition(petri::TransitionId{transition}).priority;
 }
 
-bool SrpFiringRule::admissible(const PolicyContext& context,
-                               size_t transition) const {
+bool SrpFiringRule::admissible(const PolicyContext& context, size_t transition) const {
   if (context.state == nullptr) {
     return true;  // no marking: no ceiling information, no restriction
   }
@@ -1646,8 +1591,7 @@ bool SrpFiringRule::admissible(const PolicyContext& context,
   if (task < 0) {
     return true;  // control/other transition
   }
-  const detail::TaskLockTopology::TaskRecord& record =
-      index_->tasks()[static_cast<size_t>(task)];
+  const detail::TaskLockTopology::TaskRecord& record = index_->tasks()[static_cast<size_t>(task)];
 
   // Only the get_core transition (chain position 1) opens a task. Every other
   // transition is admissible regardless of the system ceiling.
@@ -1661,8 +1605,7 @@ bool SrpFiringRule::admissible(const PolicyContext& context,
     return true;  // defensive fallback: cannot reason about this marking
   }
 
-  const detail::TaskLockTopology::MarkingState& layout =
-      dynamic_state(context.net, marking);
+  const detail::TaskLockTopology::MarkingState& layout = dynamic_state(context.net, marking);
   const size_t ordinal = static_cast<size_t>(task);
   if (ordinal >= layout.supported.size() || !layout.supported[ordinal]) {
     // Unsupported/ambiguous chain: skip the admission check. This is a
@@ -1721,8 +1664,7 @@ std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy) {
   return std::make_unique<StaticPriorityRule>(PreemptionMode::NON_PREEMPTIVE);
 }
 
-std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy,
-                                             const petri::PTPN& net) {
+std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy, const petri::PTPN& net) {
   if (policy == SchedulePolicy::EDF) {
     return std::make_unique<EdfFiringRule>(net);
   }

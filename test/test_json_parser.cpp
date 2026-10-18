@@ -1,6 +1,5 @@
-#include <gtest/gtest.h>
-
 #include <algorithm>
+#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
@@ -17,8 +16,8 @@ namespace {
 ValidationResult validate_single_task(const std::string& task_json) {
   const std::string json = R"({
     "configuration": {"num_cpus": 2, "cores_per_cpu": 4, "shared_locks": []},
-    "nodes": [)" +
-                           task_json + R"(],
+    "nodes": [)" + task_json +
+                           R"(],
     "edges": []
   })";
 
@@ -29,10 +28,9 @@ ValidationResult validate_single_task(const std::string& task_json) {
 }
 
 bool has_error_containing(const ValidationResult& result, const std::string& needle) {
-  return std::any_of(result.errors.begin(), result.errors.end(),
-                     [&](const std::string& error) {
-                       return error.find(needle) != std::string::npos;
-                     });
+  return std::any_of(result.errors.begin(), result.errors.end(), [&](const std::string& error) {
+    return error.find(needle) != std::string::npos;
+  });
 }
 
 }  // namespace
@@ -196,8 +194,8 @@ TEST_F(JsonParserTest, AllowedCoresProvideInitialCoreAndProvenance) {
   Parser parser;
   ASSERT_TRUE(parser.parse_string(json).success);
   const auto validation = parser.validate();
-  EXPECT_TRUE(validation.success)
-      << (validation.errors.empty() ? std::string() : validation.errors.front());
+  EXPECT_TRUE(validation.success) << (validation.errors.empty() ? std::string()
+                                                                : validation.errors.front());
 
   ASSERT_EQ(parser.get_nodes().size(), 2);
   const JsonNode& task_a = parser.get_nodes()[0];
@@ -245,9 +243,9 @@ TEST_F(JsonParserTest, InvalidAllowedCoresAreRejected) {
 TEST_F(JsonParserTest, WcetKindAcceptsKnownValuesAndRejectsUnknown) {
   for (const char* kind : {"model", "certified", "measured", "estimated"}) {
     SCOPED_TRACE(kind);
-    const auto validation = validate_single_task(
-        std::string(R"({"id": "T", "type": "task", "wcet_kind": ")") + kind +
-        R"(", "time": [[1, 2]], "locks": []})");
+    const auto validation =
+        validate_single_task(std::string(R"({"id": "T", "type": "task", "wcet_kind": ")") + kind +
+                             R"(", "time": [[1, 2]], "locks": []})");
     EXPECT_TRUE(validation.success)
         << (validation.errors.empty() ? std::string() : validation.errors.front());
   }

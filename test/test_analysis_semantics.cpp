@@ -142,13 +142,11 @@ petri::PTPN make_preemption_metrics_net() {
   ptpn.set_pre_arc(high_exit, high_consume, 1);
   ptpn.set_post_arc(high_consume, high_done, 1);
 
-  ptpn.set_task_chain(
-      "L", {petri::NodeRef::of(low_entry), petri::NodeRef::of(low_exec),
-            petri::NodeRef::of(low_exit)});
+  ptpn.set_task_chain("L", {petri::NodeRef::of(low_entry), petri::NodeRef::of(low_exec),
+                            petri::NodeRef::of(low_exit)});
   ptpn.set_node_span("L", petri::NodeRef::of(low_entry), petri::NodeRef::of(low_exit));
-  ptpn.set_task_chain(
-      "H", {petri::NodeRef::of(high_entry), petri::NodeRef::of(high_exec),
-            petri::NodeRef::of(high_exit)});
+  ptpn.set_task_chain("H", {petri::NodeRef::of(high_entry), petri::NodeRef::of(high_exec),
+                            petri::NodeRef::of(high_exit)});
   ptpn.set_node_span("H", petri::NodeRef::of(high_entry), petri::NodeRef::of(high_exit));
 
   petri::TaskInfo low_info;

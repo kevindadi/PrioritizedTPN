@@ -1,7 +1,6 @@
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <fstream>
+#include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <utility>
@@ -306,6 +305,6 @@ TEST(AllocationTest, ReportWriteFailsForMissingDirectory) {
   allocation::Options options;
   const allocation::SearchReport report = allocation::search_allocations(graph, options);
 
-  EXPECT_FALSE(allocation::save_report_json(
-      report, "/nonexistent-ptpn-allocation-dir/report.json"));
+  EXPECT_FALSE(
+      allocation::save_report_json(report, "/nonexistent-ptpn-allocation-dir/report.json"));
 }

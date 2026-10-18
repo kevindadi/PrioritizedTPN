@@ -20,8 +20,7 @@ const std::vector<size_t>& overflowed_places() {
   return g_overflow_places;
 }
 
-void PTPN::set_arcs(const std::vector<ArcSpec>& pre_arcs,
-                    const std::vector<ArcSpec>& post_arcs) {
+void PTPN::set_arcs(const std::vector<ArcSpec>& pre_arcs, const std::vector<ArcSpec>& post_arcs) {
   for (const ArcSpec& arc : pre_arcs) {
     if (arc.place.index() >= places_.size() || arc.transition.index() >= transitions_.size()) {
       throw std::out_of_range("Invalid place or transition index");

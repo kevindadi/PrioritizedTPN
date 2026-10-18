@@ -13,8 +13,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <numeric>
 #include <nlohmann/json.hpp>
+#include <numeric>
 #include <set>
 #include <spdlog/spdlog.h>
 #include <variant>
@@ -74,6 +74,7 @@ class ScopedLogLevel {
       : previous_level_(spdlog::default_logger()->level()) {
     spdlog::set_level(level);
   }
+
   ~ScopedLogLevel() {
     spdlog::set_level(previous_level_);
   }
@@ -85,8 +86,7 @@ class ScopedLogLevel {
   spdlog::level::level_enum previous_level_;
 };
 
-string format_allocation_assignment(
-    const vector<pair<string, int>>& assignment) {
+string format_allocation_assignment(const vector<pair<string, int>>& assignment) {
   string text;
   for (const auto& [task, core] : assignment) {
     if (!text.empty()) {
@@ -317,31 +317,26 @@ bool analyze_task_cones(const petri::PTPN& ptpn, const PipelineOptions& opts,
     }
     graph.build(opts.max_states);
     const auto& stats = graph.get_statistics();
-    const bool cone_exact =
-        canonicalization == state_class::CanonicalizationMode::EQUALITY &&
-        !opts.extrapolation && !stats.truncated;
+    const bool cone_exact = canonicalization == state_class::CanonicalizationMode::EQUALITY &&
+                            !opts.extrapolation && !stats.truncated;
     merged.exact = merged.exact && cone_exact;
     merged.truncated = merged.truncated || stats.truncated;
     merged.states += stats.total_states;
     merged.transitions += stats.total_transitions;
 
-    state_class::MetricsAnalyzer analyzer(graph.get_graph(), cone,
-                                          graph.get_initial_vertices(), cone_exact,
+    state_class::MetricsAnalyzer analyzer(graph.get_graph(), cone, graph.get_initial_vertices(),
+                                          cone_exact,
                                           /*wcrt_lb_valid=*/true);
     state_class::MetricsReport cone_report = analyzer.analyze();
     merged.bounded = merged.bounded && cone_report.bounded;
-    merged.overflow_places.insert(merged.overflow_places.end(),
-                                  cone_report.overflow_places.begin(),
+    merged.overflow_places.insert(merged.overflow_places.end(), cone_report.overflow_places.begin(),
                                   cone_report.overflow_places.end());
     merged.has_steady_cycle = merged.has_steady_cycle || cone_report.has_steady_cycle;
-    merged.recurrent_scc_size =
-        std::max(merged.recurrent_scc_size, cone_report.recurrent_scc_size);
+    merged.recurrent_scc_size = std::max(merged.recurrent_scc_size, cone_report.recurrent_scc_size);
 
-    const auto metric_it =
-        std::find_if(cone_report.tasks.begin(), cone_report.tasks.end(),
-                     [&](const state_class::TaskMetrics& metrics) {
-                       return metrics.name == task_name;
-                     });
+    const auto metric_it = std::find_if(
+        cone_report.tasks.begin(), cone_report.tasks.end(),
+        [&](const state_class::TaskMetrics& metrics) { return metrics.name == task_name; });
     if (metric_it == cone_report.tasks.end()) {
       spdlog::warn("[CONE] Cone for task '{}' produced no task metrics", task_name);
       return false;
@@ -364,10 +359,9 @@ bool analyze_task_cones(const petri::PTPN& ptpn, const PipelineOptions& opts,
   }
   merged.hyperperiod = hyperperiod;
   for (auto& metrics : merged.tasks) {
-    metrics.jobs_per_hyperperiod =
-        (metrics.period > 0 && hyperperiod > 0)
-            ? static_cast<int>(hyperperiod / metrics.period)
-            : 0;
+    metrics.jobs_per_hyperperiod = (metrics.period > 0 && hyperperiod > 0)
+                                       ? static_cast<int>(hyperperiod / metrics.period)
+                                       : 0;
   }
 
   std::set<int> cores;
@@ -450,19 +444,17 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       if (analyze_task_cones(ptpn, opts, canonicalization, cone_result)) {
         const state_class::MetricsReport& report = cone_result.report;
         log_step_timing("Cone analysis", cone_result.duration_ms,
-                        "tasks=" + to_string(cone_result.tasks) +
-                            ", states=" + to_string(report.states) +
-                            ", edges=" + to_string(report.transitions));
+                        "tasks=" + to_string(cone_result.tasks) + ", states=" +
+                            to_string(report.states) + ", edges=" + to_string(report.transitions));
         if (!opts.exports.metrics_json.empty()) {
-          if (!state_class::MetricsAnalyzer::save_to_json(report,
-                                                          opts.exports.metrics_json)) {
+          if (!state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
             spdlog::warn("[OUTPUT] Failed to export metrics");
             return 1;
           }
           spdlog::info("[OUTPUT] Metrics exported to: {}", opts.exports.metrics_json);
           spdlog::info("[METRICS] schedulable={}, bounded={}, deadlocks={}",
-                       report.schedulable ? "true" : "false",
-                       report.bounded ? "true" : "false", report.deadlock_states.size());
+                       report.schedulable ? "true" : "false", report.bounded ? "true" : "false",
+                       report.deadlock_states.size());
         }
         const auto end_time = PipelineClock::now();
         const auto total_duration =
@@ -490,9 +482,8 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
           "[SCG] Reduction: upper-bound zone merging (sound over-approximation; "
           "WCRT is an upper bound, wcrt_lb unavailable)");
       if (canonicalization != state_class::CanonicalizationMode::EQUALITY) {
-        spdlog::warn(
-            "[SCG] Reduction 'upper-bound' takes precedence over canonicalization '{}'",
-            opts.canonicalization_mode);
+        spdlog::warn("[SCG] Reduction 'upper-bound' takes precedence over canonicalization '{}'",
+                     opts.canonicalization_mode);
       }
     } else if (canonicalization != state_class::CanonicalizationMode::EQUALITY) {
       spdlog::warn(
@@ -540,17 +531,17 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
     const auto scg_start = PipelineClock::now();
     const size_t state_count = reachability_graph.build(opts.max_states);
     const auto& reachability_stats = reachability_graph.get_statistics();
-    log_step_timing("SCG build", elapsed_ms(scg_start),
-                    "states=" + to_string(reachability_stats.total_states) +
-                        ", edges=" + to_string(reachability_stats.total_transitions) +
-                        ", dedup_hits=" + to_string(reachability_stats.dedup_hits) +
-                        ", zone_merges=" + to_string(reachability_stats.zone_merges) +
-                        ", merged_states=" + to_string(reachability_stats.merged_states) +
-                        (reachability_stats.horizon_truncated
-                             ? ", horizon_pruned=" +
-                                   to_string(reachability_stats.horizon_pruned_states)
-                             : "") +
-                        (reachability_stats.truncated ? ", truncated" : ""));
+    log_step_timing(
+        "SCG build", elapsed_ms(scg_start),
+        "states=" + to_string(reachability_stats.total_states) +
+            ", edges=" + to_string(reachability_stats.total_transitions) +
+            ", dedup_hits=" + to_string(reachability_stats.dedup_hits) +
+            ", zone_merges=" + to_string(reachability_stats.zone_merges) +
+            ", merged_states=" + to_string(reachability_stats.merged_states) +
+            (reachability_stats.horizon_truncated
+                 ? ", horizon_pruned=" + to_string(reachability_stats.horizon_pruned_states)
+                 : "") +
+            (reachability_stats.truncated ? ", truncated" : ""));
     if (reachability_stats.horizon_truncated) {
       spdlog::warn(
           "[SCG] Time horizon pruned expansion of {} state classes; WCRT values "
@@ -590,13 +581,12 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       // reachable classes, but graph edges carry representative task labels;
       // timing values are pooled within verified groups and therefore reported
       // as bounds rather than certified exact.
-      const bool horizon_truncated = opts.time_horizon.has_value() &&
-                                     reachability_stats.horizon_truncated;
+      const bool horizon_truncated =
+          opts.time_horizon.has_value() && reachability_stats.horizon_truncated;
       const bool symmetry_used = reachability_graph.symmetry_applied();
       const bool exact = canonicalization == state_class::CanonicalizationMode::EQUALITY &&
                          !opts.extrapolation && !upper_bound_merging &&
-                         !reachability_stats.truncated && !horizon_truncated &&
-                         !symmetry_used;
+                         !reachability_stats.truncated && !horizon_truncated && !symmetry_used;
       if (!exact) {
         spdlog::warn(
             "[METRICS] Metrics are approximate (canonicalization='{}', "
@@ -604,8 +594,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
             "horizon_truncated={}, symmetry={}); timing values are bounds, not "
             "exact values",
             opts.canonicalization_mode, opts.extrapolation, opts.reduction_mode,
-            reachability_stats.truncated ? "true" : "false",
-            horizon_truncated ? "true" : "false",
+            reachability_stats.truncated ? "true" : "false", horizon_truncated ? "true" : "false",
             symmetry_used ? "true" : "false");
       }
       if (upper_bound_merging) {
@@ -632,8 +621,8 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
         spdlog::info("[OUTPUT] Metrics exported to: {}", opts.exports.metrics_json);
         if (report.deadlock_analysis_certified) {
           spdlog::info("[METRICS] schedulable={}, bounded={}, deadlocks={}",
-                       report.schedulable ? "true" : "false",
-                       report.bounded ? "true" : "false", report.deadlock_states.size());
+                       report.schedulable ? "true" : "false", report.bounded ? "true" : "false",
+                       report.deadlock_states.size());
         } else {
           spdlog::warn(
               "[METRICS] deadlock/schedulability/SCC results are not certified "
@@ -932,20 +921,17 @@ int run_allocation(const AllocationCommandOptions& opts) {
 
   spdlog::info("[ALLOC] Strategy: {} (complete={}), objective={}",
                report.strategy == allocation::Strategy::EXHAUSTIVE ? "exhaustive" : "heuristic",
-               report.complete ? "true" : "false",
-               allocation_objective_name(report.objective));
+               report.complete ? "true" : "false", allocation_objective_name(report.objective));
   spdlog::info("[ALLOC] Domain size: {}, evaluated: {}, feasible: {}{}", report.domain_size,
                report.evaluated, report.feasible_count,
                report.truncated ? " (search truncated)" : "");
   if (report.best.has_value()) {
     const allocation::CandidateSummary& best = report.best.value();
-    spdlog::info("[ALLOC] Best assignment: {}",
-                 format_allocation_assignment(best.assignment));
+    spdlog::info("[ALLOC] Best assignment: {}", format_allocation_assignment(best.assignment));
     if (best.max_wcrt_infinite) {
       spdlog::info("[ALLOC] max_wcrt: infinite, max_core_load: {}", best.max_core_load);
     } else {
-      spdlog::info("[ALLOC] max_wcrt: {}, max_core_load: {}", best.max_wcrt,
-                   best.max_core_load);
+      spdlog::info("[ALLOC] max_wcrt: {}, max_core_load: {}", best.max_wcrt, best.max_core_load);
     }
     if (best.utilization_complete) {
       spdlog::info("[ALLOC] max_utilization: {:.6f}", best.max_utilization);

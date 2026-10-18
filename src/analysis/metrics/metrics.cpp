@@ -210,8 +210,7 @@ bool MetricsAnalyzer::task_blocked_by_lower(const TaskTopology& task, size_t v) 
   return false;
 }
 
-void MetricsAnalyzer::set_symmetry_task_groups(
-    std::vector<std::vector<std::string>> groups) {
+void MetricsAnalyzer::set_symmetry_task_groups(std::vector<std::vector<std::string>> groups) {
   symmetry_task_groups_ = std::move(groups);
 }
 
@@ -289,16 +288,13 @@ void MetricsAnalyzer::apply_symmetry_groups(MetricsReport& report) {
       task.wcrt_interval_tight = is_time_equal(pooled_wcrt, pooled_wcrt_lb);
       task.jitter.infinite = pooled_wcrt.infinite;
       if (!pooled_wcrt.infinite && !pooled_bcrt.infinite) {
-        task.jitter.value =
-            std::max<long long>(0, pooled_wcrt.value - pooled_bcrt.value);
+        task.jitter.value = std::max<long long>(0, pooled_wcrt.value - pooled_bcrt.value);
       }
       if (task.has_deadline) {
-        task.deadline_missed =
-            pooled_wcrt.infinite || pooled_wcrt.value > task.deadline;
+        task.deadline_missed = pooled_wcrt.infinite || pooled_wcrt.value > task.deadline;
         task.slack.infinite = pooled_wcrt.infinite;
         if (!pooled_wcrt.infinite) {
-          task.slack.value =
-              static_cast<long long>(task.deadline) - pooled_wcrt.value;
+          task.slack.value = static_cast<long long>(task.deadline) - pooled_wcrt.value;
         }
       }
     }

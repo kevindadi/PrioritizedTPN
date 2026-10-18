@@ -111,8 +111,7 @@ std::unordered_map<std::string, int> compute_policy_priorities(const tdg::TDG& t
     }
   }
   std::sort(distinct_keys.begin(), distinct_keys.end());
-  distinct_keys.erase(std::unique(distinct_keys.begin(), distinct_keys.end()),
-                      distinct_keys.end());
+  distinct_keys.erase(std::unique(distinct_keys.begin(), distinct_keys.end()), distinct_keys.end());
 
   std::map<int, int> rank_of_key;
   for (size_t i = 0; i < distinct_keys.size(); ++i) {
@@ -132,8 +131,7 @@ void apply_policy_priorities(tdg::TDG& tdg) {
     return;
   }
 
-  const std::unordered_map<std::string, int> priorities =
-      compute_policy_priorities(tdg);
+  const std::unordered_map<std::string, int> priorities = compute_policy_priorities(tdg);
 
   for (auto& node : tdg.all_task) {
     if (auto* task = as_task_node(node)) {

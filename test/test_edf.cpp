@@ -1,7 +1,6 @@
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <cstddef>
+#include <gtest/gtest.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -138,7 +137,8 @@ std::string edf_vs_static_json(const std::string& policy) {
     "configuration": {
       "num_cpus": 1,
       "cores_per_cpu": 1,
-      "policy": ")" + policy + R"(",
+      "policy": ")" +
+         policy + R"(",
       "start": [{"task": "B", "tokens": 1}],
       "periodic": [
         {"task": "A", "period": 5}
@@ -487,7 +487,7 @@ TEST(EdfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "outside [0, 2)");
+                  "outside [0, 2)");
 
   // Capacity above one (queued jobs are outside the supported class).
   expect_rejected(R"({
@@ -499,7 +499,7 @@ TEST(EdfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "task_place_capacity == 1");
+                  "task_place_capacity == 1");
 
   // Locks.
   expect_rejected(R"({
@@ -511,7 +511,7 @@ TEST(EdfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": ["m"]}],
     "edges": []
   })",
-                 "does not include locks");
+                  "does not include locks");
 
   // Dependency-driven release (task-to-task edge).
   expect_rejected(R"({
@@ -527,7 +527,7 @@ TEST(EdfTest, RejectsUnsupportedLoweredModels) {
     ],
     "edges": [{"source": "A", "target": "B", "label": "10"}]
   })",
-                 "dependency-driven releases");
+                  "dependency-driven releases");
 
   // Positive deadline but no release at all.
   expect_rejected(kNotReleasedJson, "neither periodic");
@@ -540,7 +540,7 @@ TEST(EdfTest, RejectsUnsupportedLoweredModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "positive absolute deadline or period");
+                  "positive absolute deadline or period");
 
   // More than one initial job for a task.
   expect_rejected(R"({
@@ -551,7 +551,7 @@ TEST(EdfTest, RejectsUnsupportedLoweredModels) {
                "deadline": 5, "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "at most one initial job");
+                  "at most one initial job");
 
   // A periodic release that overlaps a mid-chain job is rejected at the
   // successor state instead of being queued into the single job slot.
@@ -655,8 +655,7 @@ TEST(EdfTest, ReleaseClockLayoutInvariantsHoldOnEveryState) {
         in_flight_ordinals.push_back(ordinal);
         ASSERT_GT(release_index, 0) << tasks[ordinal].name;
         ASSERT_LT(static_cast<size_t>(release_index), state.clock_vars.size());
-        EXPECT_EQ(state.clock_vars[static_cast<size_t>(release_index)].kind,
-                  ClockKind::Release);
+        EXPECT_EQ(state.clock_vars[static_cast<size_t>(release_index)].kind, ClockKind::Release);
         EXPECT_EQ(state.clock_vars[static_cast<size_t>(release_index)].task, ordinal);
         EXPECT_EQ(state.clock_vars[static_cast<size_t>(release_index)].transition,
                   state_class::NO_TRANSITION);

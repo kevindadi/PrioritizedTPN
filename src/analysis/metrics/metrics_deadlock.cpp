@@ -32,6 +32,7 @@ std::vector<long long> tarjan_components(const std::vector<std::vector<size_t>>&
     size_t vertex;
     size_t next_edge;
   };
+
   std::vector<Frame> call_stack;
 
   for (size_t root = 0; root < n; ++root) {
@@ -202,8 +203,7 @@ void MetricsAnalyzer::compute_local_deadlocks(MetricsReport& report) {
             periodic_of_task.count(t) > 0) {
           continue;
         }
-        if (net_.get_transition(petri::TransitionId{t})
-                .time_interval.effective_earliest() > 0) {
+        if (net_.get_transition(petri::TransitionId{t}).time_interval.effective_earliest() > 0) {
           progress_component[c] = 1;
           break;
         }

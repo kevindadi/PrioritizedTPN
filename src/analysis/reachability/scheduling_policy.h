@@ -47,8 +47,8 @@ struct BranchConstraint {
   ClockKind domain = ClockKind::Release;
 
   bool operator==(const BranchConstraint& other) const {
-    return left_task == other.left_task && right_task == other.right_task &&
-           bound == other.bound && domain == other.domain;
+    return left_task == other.left_task && right_task == other.right_task && bound == other.bound &&
+           domain == other.domain;
   }
 };
 
@@ -85,8 +85,7 @@ struct CoreChoice {
 // this helper throws std::invalid_argument. Duplicate branches (same active set
 // and same constraint list) are removed while preserving enumeration order.
 std::vector<PolicyBranch> combine_core_choices(
-    const TransitionSet& control,
-    const std::map<int, std::vector<CoreChoice>>& by_core);
+    const TransitionSet& control, const std::map<int, std::vector<CoreChoice>>& by_core);
 
 // A scheduling policy expressed as a priority + admissibility function over
 // the transitions of a PTPN. Higher `effective_priority` means higher
@@ -273,6 +272,7 @@ class StaticPriorityRule : public FiringRule {
 
   int effective_priority(const PolicyContext& context, size_t transition) const override;
   bool admissible(const PolicyContext& context, size_t transition) const override;
+
   PreemptionMode preemption_mode() const override {
     return mode_;
   }
@@ -347,18 +347,20 @@ class EdfFiringRule : public FiringRule {
   explicit EdfFiringRule(const petri::PTPN& net);
 
   int effective_priority(const PolicyContext& context, size_t transition) const override;
+
   bool admissible(const PolicyContext& context, size_t transition) const override {
     return true;
   }
+
   PreemptionMode preemption_mode() const override {
     return PreemptionMode::RESUME;
   }
+
   bool uses_release_clocks() const override {
     return true;
   }
 
-  std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled,
-                                     const petri::PTPN& net,
+  std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled, const petri::PTPN& net,
                                      const PolicyContext& context) const override;
 
   // Name-sorted task chains and transition -> task ordinal map. Exposed for
@@ -366,9 +368,11 @@ class EdfFiringRule : public FiringRule {
   [[nodiscard]] const std::vector<TaskChain>& tasks() const {
     return tasks_;
   }
+
   [[nodiscard]] const std::vector<int>& task_of_transition() const {
     return task_of_transition_;
   }
+
   // transition -> task ordinal for period-release (`_fire`) transitions, or -1.
   [[nodiscard]] const std::vector<int>& task_of_periodic_transition() const {
     return task_of_periodic_transition_;
@@ -452,18 +456,20 @@ class FifoFiringRule : public FiringRule {
   explicit FifoFiringRule(const petri::PTPN& net);
 
   int effective_priority(const PolicyContext& context, size_t transition) const override;
+
   bool admissible(const PolicyContext& /*context*/, size_t /*transition*/) const override {
     return true;
   }
+
   PreemptionMode preemption_mode() const override {
     return PreemptionMode::NON_PREEMPTIVE;
   }
+
   bool uses_release_clocks() const override {
     return true;
   }
 
-  std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled,
-                                     const petri::PTPN& net,
+  std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled, const petri::PTPN& net,
                                      const PolicyContext& context) const override;
 
   // Name-sorted task chains and transition -> task ordinal map. Exposed for
@@ -471,9 +477,11 @@ class FifoFiringRule : public FiringRule {
   [[nodiscard]] const std::vector<TaskChain>& tasks() const {
     return tasks_;
   }
+
   [[nodiscard]] const std::vector<int>& task_of_transition() const {
     return task_of_transition_;
   }
+
   // transition -> task ordinal for period-release (`_fire`) transitions, or -1.
   [[nodiscard]] const std::vector<int>& task_of_periodic_transition() const {
     return task_of_periodic_transition_;
@@ -561,18 +569,20 @@ class LlfFiringRule : public FiringRule {
   explicit LlfFiringRule(const petri::PTPN& net);
 
   int effective_priority(const PolicyContext& context, size_t transition) const override;
+
   bool admissible(const PolicyContext& /*context*/, size_t /*transition*/) const override {
     return true;
   }
+
   PreemptionMode preemption_mode() const override {
     return PreemptionMode::RESUME;
   }
+
   bool uses_laxity_clocks() const override {
     return true;
   }
 
-  std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled,
-                                     const petri::PTPN& net,
+  std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled, const petri::PTPN& net,
                                      const PolicyContext& context) const override;
 
   // Name-sorted task chains and transition -> task ordinal map. Exposed for
@@ -580,9 +590,11 @@ class LlfFiringRule : public FiringRule {
   [[nodiscard]] const std::vector<TaskChain>& tasks() const {
     return tasks_;
   }
+
   [[nodiscard]] const std::vector<int>& task_of_transition() const {
     return task_of_transition_;
   }
+
   // transition -> task ordinal for period-release (`_fire`) transitions, or -1.
   [[nodiscard]] const std::vector<int>& task_of_periodic_transition() const {
     return task_of_periodic_transition_;
@@ -637,6 +649,7 @@ class PipFiringRule : public FiringRule {
 
   int effective_priority(const PolicyContext& context, size_t transition) const override;
   bool admissible(const PolicyContext& context, size_t transition) const override;
+
   PreemptionMode preemption_mode() const override {
     return PreemptionMode::RESUME;
   }
@@ -709,6 +722,7 @@ class PcpFiringRule : public FiringRule {
 
   int effective_priority(const PolicyContext& context, size_t transition) const override;
   bool admissible(const PolicyContext& context, size_t transition) const override;
+
   PreemptionMode preemption_mode() const override {
     return PreemptionMode::RESUME;
   }
@@ -786,6 +800,7 @@ class SrpFiringRule : public FiringRule {
 
   int effective_priority(const PolicyContext& context, size_t transition) const override;
   bool admissible(const PolicyContext& context, size_t transition) const override;
+
   PreemptionMode preemption_mode() const override {
     return PreemptionMode::RESUME;
   }
@@ -801,8 +816,8 @@ class SrpFiringRule : public FiringRule {
 
  private:
   void ensure_index(const petri::PTPN& net) const;
-  const detail::TaskLockTopology::MarkingState& dynamic_state(
-      const petri::PTPN& net, const petri::Marking& marking) const;
+  const detail::TaskLockTopology::MarkingState& dynamic_state(const petri::PTPN& net,
+                                                              const petri::Marking& marking) const;
 
   mutable std::unique_ptr<detail::TaskLockTopology> index_;
   // One-entry memo of the marking analysis used by admissible(). The same

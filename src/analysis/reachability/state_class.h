@@ -226,8 +226,7 @@ const char* clock_kind_label(ClockKind kind);
 // Shared by the symbolic construction and the symmetry canonicalizer so both
 // agree bit for bit.
 void build_clock_layout(StateClass& state, const petri::PTPN& net,
-                        bool keep_suspension_clocks = false,
-                        bool include_release_clocks = false,
+                        bool keep_suspension_clocks = false, bool include_release_clocks = false,
                         bool include_laxity_clocks = false);
 
 // Hashes the marking alone so candidates that might merge land in one bucket.

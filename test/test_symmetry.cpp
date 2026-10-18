@@ -1,6 +1,5 @@
-#include <gtest/gtest.h>
-
 #include <algorithm>
+#include <gtest/gtest.h>
 #include <set>
 #include <string>
 #include <vector>
@@ -34,13 +33,12 @@ struct TaskSpec {
 // chain work; compute transitions run on the control core.
 void add_task(petri::PTPN& net, const TaskSpec& spec) {
   const petri::PlaceId entry = net.add_place(spec.name + "_entry", 1);
-  const petri::TransitionId get_core =
-      net.add_transition(spec.name + "_get_core", petri::TimeInterval(0, 0), spec.priority,
-                         spec.core, false);
+  const petri::TransitionId get_core = net.add_transition(
+      spec.name + "_get_core", petri::TimeInterval(0, 0), spec.priority, spec.core, false);
   const petri::PlaceId ready = net.add_place(spec.name + "_ready", 1);
-  const petri::TransitionId exec = net.add_transition(
-      spec.name + "_exec", petri::TimeInterval(spec.earliest, spec.latest), spec.priority,
-      spec.core, false);
+  const petri::TransitionId exec =
+      net.add_transition(spec.name + "_exec", petri::TimeInterval(spec.earliest, spec.latest),
+                         spec.priority, spec.core, false);
   const petri::PlaceId exit = net.add_place(spec.name + "_exit", 1);
   const petri::TransitionId consume =
       net.add_transition(spec.name + "_consume", petri::TimeInterval(0, 0), 0, -1, false);
@@ -55,9 +53,8 @@ void add_task(petri::PTPN& net, const TaskSpec& spec) {
   net.set_post_arc(consume, done, 1);
 
   net.set_task_chain(
-      spec.name,
-      {petri::NodeRef::of(entry), petri::NodeRef::of(get_core), petri::NodeRef::of(ready),
-       petri::NodeRef::of(exec), petri::NodeRef::of(exit)});
+      spec.name, {petri::NodeRef::of(entry), petri::NodeRef::of(get_core),
+                  petri::NodeRef::of(ready), petri::NodeRef::of(exec), petri::NodeRef::of(exit)});
   net.set_node_span(spec.name, petri::NodeRef::of(entry), petri::NodeRef::of(exit));
 
   petri::TaskInfo info;
@@ -90,21 +87,27 @@ class SymmetryRun {
   [[nodiscard]] size_t states() const {
     return graph_.get_statistics().total_states;
   }
+
   [[nodiscard]] size_t edges() const {
     return graph_.get_statistics().total_transitions;
   }
+
   [[nodiscard]] bool applied() const {
     return graph_.symmetry_applied();
   }
+
   [[nodiscard]] size_t group_order() const {
     return graph_.symmetry_group_order();
   }
+
   [[nodiscard]] const std::vector<std::vector<std::string>>& groups() const {
     return graph_.symmetry_task_groups();
   }
+
   [[nodiscard]] const state_class::SCGraph& graph() const {
     return graph_.get_graph();
   }
+
   [[nodiscard]] state_class::SCVertex initial() const {
     return graph_.get_initial_vertex();
   }
@@ -144,8 +147,7 @@ petri::PTPN make_symmetric_pair() {
 void expect_canonical_invariants(const petri::PTPN& net, const state_class::SCGraph& graph) {
   for (auto [it, end] = boost::vertices(graph); it != end; ++it) {
     const StateClass& state = boost::get(boost::vertex_name, graph, *it);
-    const auto expected =
-        state_class::Scheduling::structural_enabled(net, state.marking);
+    const auto expected = state_class::Scheduling::structural_enabled(net, state.marking);
     ASSERT_EQ(state.struct_enabled, expected);
 
     StateClass rebuilt = state;

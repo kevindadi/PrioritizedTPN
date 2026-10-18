@@ -1,7 +1,6 @@
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <cstddef>
+#include <gtest/gtest.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -20,6 +19,7 @@ namespace {
 
 using state_class::BranchConstraint;
 using state_class::ClockKind;
+using state_class::contains;
 using state_class::DBM;
 using state_class::FifoFiringRule;
 using state_class::MetricsReport;
@@ -29,7 +29,6 @@ using state_class::StateClass;
 using state_class::StateClassReachabilityGraph;
 using state_class::TaskChain;
 using state_class::TaskMetrics;
-using state_class::contains;
 
 tdg::TDG parse_tdg(const std::string& json) {
   tdg::TDG tdg;
@@ -116,11 +115,9 @@ HandTask add_hand_task(petri::PTPN& net, const std::string& name, int wcet, int 
   HandTask task;
   task.name = name;
   task.entry = net.add_place(name + "_entry", 1, true);
-  task.get_core =
-      net.add_transition(name + "_get_core", petri::TimeInterval(0, 0), 0, core, false);
+  task.get_core = net.add_transition(name + "_get_core", petri::TimeInterval(0, 0), 0, core, false);
   task.ready = net.add_place(name + "_ready", 1, true);
-  task.exec =
-      net.add_transition(name + "_exec", petri::TimeInterval(wcet, wcet), 0, core, false);
+  task.exec = net.add_transition(name + "_exec", petri::TimeInterval(wcet, wcet), 0, core, false);
   task.exit = net.add_place(name + "_exit", 1, true);
   net.set_pre_arc(task.entry, task.get_core, 1);
   net.set_post_arc(task.get_core, task.ready, 1);
@@ -311,11 +308,10 @@ TEST(FifoMultiCoreTest, PerCoreTiesEnumerateCartesianProduct) {
 
   FifoFiringRule rule(net);
   const std::vector<PolicyBranch> branches =
-      rule.branches(initials.front().struct_enabled, net,
-                    PolicyContext{net, &initials.front()});
+      rule.branches(initials.front().struct_enabled, net, PolicyContext{net, &initials.front()});
   ASSERT_EQ(branches.size(), 4u);
   for (const PolicyBranch& branch : branches) {
-    EXPECT_EQ(branch.active.size(), 2u);      // one get_core per core
+    EXPECT_EQ(branch.active.size(), 2u);       // one get_core per core
     EXPECT_EQ(branch.constraints.size(), 2u);  // one same-core pair per core
   }
 }
@@ -574,7 +570,7 @@ TEST(FifoMultiCoreTest, RejectsUnsupportedMultiCoreModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "num_cpus >= 1");
+                  "num_cpus >= 1");
 
   // Task core outside the declared core range.
   expect_rejected(R"({
@@ -585,7 +581,7 @@ TEST(FifoMultiCoreTest, RejectsUnsupportedMultiCoreModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "outside [0, 2)");
+                  "outside [0, 2)");
 
   // More than one core per CPU (per-core parallelism is not modeled).
   expect_rejected(R"({
@@ -596,7 +592,7 @@ TEST(FifoMultiCoreTest, RejectsUnsupportedMultiCoreModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "cores_per_cpu == 1");
+                  "cores_per_cpu == 1");
 
   // Locks.
   expect_rejected(R"({
@@ -608,7 +604,7 @@ TEST(FifoMultiCoreTest, RejectsUnsupportedMultiCoreModels) {
                "time": [[1, 1]], "locks": ["m"]}],
     "edges": []
   })",
-                 "does not include locks");
+                  "does not include locks");
 
   // Fork/join.
   expect_rejected(R"({
@@ -622,7 +618,7 @@ TEST(FifoMultiCoreTest, RejectsUnsupportedMultiCoreModels) {
     ],
     "edges": []
   })",
-                 "fork/join");
+                  "fork/join");
 
   // Dependency-driven release between tasks on different cores.
   expect_rejected(R"({
@@ -638,7 +634,7 @@ TEST(FifoMultiCoreTest, RejectsUnsupportedMultiCoreModels) {
     ],
     "edges": [{"source": "A", "target": "B", "label": "10"}]
   })",
-                 "dependency-driven releases");
+                  "dependency-driven releases");
 
   // Capacity above one (queued jobs are outside the supported class).
   expect_rejected(R"({
@@ -650,7 +646,7 @@ TEST(FifoMultiCoreTest, RejectsUnsupportedMultiCoreModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "task_place_capacity == 1");
+                  "task_place_capacity == 1");
 
   // More than one initial job for a task.
   expect_rejected(R"({
@@ -661,7 +657,7 @@ TEST(FifoMultiCoreTest, RejectsUnsupportedMultiCoreModels) {
                "time": [[1, 1]], "locks": []}],
     "edges": []
   })",
-                 "at most one initial job");
+                  "at most one initial job");
 
   // A periodic release that overlaps a mid-chain job is rejected at the
   // successor state instead of being queued into the single job slot.
@@ -699,9 +695,9 @@ TEST(FifoMultiCoreTest, RejectsChainTransitionOnWrongCore) {
   net.set_pre_arc(ready, exec);
   net.set_post_arc(exec, exit);
   net.set_initial_marking(entry, 1);
-  net.set_task_chain("A", {petri::NodeRef::of(entry), petri::NodeRef::of(get_core),
-                           petri::NodeRef::of(ready), petri::NodeRef::of(exec),
-                           petri::NodeRef::of(exit)});
+  net.set_task_chain(
+      "A", {petri::NodeRef::of(entry), petri::NodeRef::of(get_core), petri::NodeRef::of(ready),
+            petri::NodeRef::of(exec), petri::NodeRef::of(exit)});
   petri::TaskInfo info;
   info.core = 0;  // transitions are on core 1
   info.wcet = 1;
