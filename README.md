@@ -9,6 +9,7 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 - Parse the **PTPN domain language** (`.ptpn`) directly, skipping TDG conversion
 - **State-class reachability analysis** with canonicalization (`equality`, `max-lower`, `intersection`)
 - **Sound upper-bound zone merging** (`--reduction upper-bound`): one-sided zone-inclusion merging for smaller graphs; WCRT stays a certified upper bound, `wcrt_lb` is reported as unavailable
+- Optional **WCRT time-horizon reduction** (`--horizon N`) that bounds SCG expansion and reports truncation/approximation explicitly
 - **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, metrics JSON, Romeo CTS, PToPNer `.ppn`
 - Dedicated **`export`** subcommands for Romeo and PToPNer workflows
 
@@ -170,6 +171,7 @@ ctest --test-dir build --output-on-failure
 | `--canonicalization` | `equality` (default), `max-lower`, or `intersection` |
 | `--keep-suspension-clocks` | Keep `w_t` in the DBM (default: project it out; exact optimization) |
 | `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
+| `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified. See [docs/ptopner/metrics.md](docs/ptopner/metrics.md#time-horizon-reduction) |
 | `--no-analysis` | Skip state-class reachability analysis |
 | `--debug` | Enable debug logging |
 | `-v, --version` | Show version |

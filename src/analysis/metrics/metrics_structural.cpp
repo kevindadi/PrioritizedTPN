@@ -23,6 +23,11 @@ void MetricsAnalyzer::compute_structural(MetricsReport& report) {
   }
 
   // Illegitimate sinks: no successor while a task chain still holds a token.
+  // Under horizon truncation a boundary class has no out-edges by construction,
+  // so sink detection would report false deadlocks; it is disabled instead.
+  if (!report.deadlock_analysis_certified) {
+    return;
+  }
   for (size_t v = 0; v < num_vertices_; ++v) {
     if (!out_edges_[v].empty()) {
       continue;

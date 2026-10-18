@@ -58,6 +58,63 @@ first, the later (larger) class is added as a separate vertex; the graph remains
 an over-approximation, just with less reduction. `--extrapolation` is an
 alternative upper-bound mode that bounds unbounded clocks; the two modes can be
 compared on a case-by-case basis, and either may produce fewer states.
+||||||| 3d2c07c
+## Time-horizon reduction
+
+For WCRT-oriented runs the SCG exploration can be bounded by a wall-clock time
+horizon `H`:
+
+```bash
+./build/ptpn tdg -f model.json --horizon 1000 --export-metrics metrics.json
+```
+
+`--horizon N` is disabled by default. When enabled, every vertex tracks the
+**minimum accumulated lower-bound dwell** from the initial class over all paths
+discovered so far (`dwell_min` is a sound lower bound on the time spent in the
+source class before each firing, so the sum along a path is a lower bound on the
+elapsed time of that path). Exploration is then ordered by that accumulated time
+(a Dijkstra-style worklist; edge weights are non-negative). A state class whose
+minimum accumulated time already exceeds `H` is still **recorded together with
+its incoming edges**, but it is never expanded; no state is deleted, and a state
+reached along several paths is kept with its minimum time. Without `--horizon`
+the original exhaustive BFS is used unchanged.
+
+**Soundness for WCRT.** The reduction preserves WCRT values when `H` is a valid
+upper bound on the accumulated time of **every prefix of the response paths of
+interest**, measured from the initial class. This is stricter than bounding the
+response time itself when releases do not happen at `t = 0`: TDG lowering emits
+the first periodic release at `t = period`, so a model with a periodic task of
+period `P` requires approximately `H >= P + WCRT` (first-release offset plus the
+response time) before its response metrics are certified. With a smaller `H`
+the activation may be cut before completion and the tool reports an
+approximate (possibly under-estimated) WCRT instead of an exact value.
+
+**What is reported under pruning.** If any class was pruned:
+
+- `exact` is `false` in the metrics report and JSON;
+- the JSON gains a `horizon` object with `bound`, `truncated`, `pruned_states`
+  and `deadlock_analysis_certified`;
+- deadlock detection, schedulability and steady-cycle/SCC analysis are **not
+  certified** and are skipped. `deadlock_analysis_certified` is `false`,
+  `deadlock_states` is empty, `"schedulable"` is serialized as `null`, and
+  `has_steady_cycle`/`recurrent_scc_size`/`graph_busy_fraction` are reported as
+  zero/absent. (Boundary classes are sinks by construction, so running those
+  analyses on the pruned graph would produce false deadlocks.) The analytic
+  utilisation interval depends only on task metadata and is still reported.
+- The `[SCG]` log line reports `horizon_pruned=K`, and the SCG statistics expose
+  `horizon_truncated`/`horizon_pruned_states`.
+
+Certification of timing values additionally requires
+`--canonicalization equality` and no `--extrapolation`; the pipeline prints a
+warning if a horizon is combined with another canonicalization mode. The
+horizon only affects the state-class exploration performed for metrics/WCRT; it
+does not change active-set (priority) semantics.
+
+For benchmarking, pick `H` from a known WCRT upper bound plus the first-release
+offset, then compare states, edges and WCRT against the exhaustive run. Tasks
+whose complete response path lies inside `H` should reproduce the exhaustive
+interval; tasks cut by the horizon may be under-reported and the whole report is
+marked approximate.
 
 ## The single graph change: per-edge dwell time
 
@@ -194,6 +251,8 @@ For each lock resource place (held ⇔ token count is 0):
   "exact": true, "wcrt_lb_valid": true, "states": N, "transitions": M,
   "bounded": true, "schedulable": true,
   "has_steady_cycle": true, "recurrent_scc_size": K, "hyperperiod": H,
+  "horizon": { "bound": H, "truncated": false, "pruned_states": 0,
+               "deadlock_analysis_certified": true },
   "deadlock_states": [...],
   "tasks": [ { "name", "core", "priority", "wcet", "bcet", "period", "deadline",
                "observed", "activations", "wcrt", "wcrt_lb", "wcrt_interval_tight",
@@ -207,7 +266,9 @@ For each lock resource place (held ⇔ token count is 0):
 
 Unbounded time values (`inf`) are serialised as JSON `null`. `max_preemptions`
 is `-1` when unbounded. When `wcrt_lb_valid` is `false`, each task's `wcrt_lb`
-is serialised as `null`.
+is serialised as `null`. The `horizon` object is present only when `--horizon`
+is enabled; `schedulable` is `null` whenever horizon pruning left the graph
+incomplete (see [Time-horizon reduction](#time-horizon-reduction)).
 
 ## Soundness conventions
 
@@ -217,12 +278,18 @@ is serialised as `null`.
   lift) a sound lower bound. The exact value lies in `[wcrt_lb, wcrt]`.
 - `exact` is true only when the graph is complete
   (`--canonicalization equality`, no `--extrapolation`, no
-  `--reduction upper-bound`, not truncated). With extrapolation,
-  canonicalization merging or upper-bound zone merging, timing values are
-  bounds and the flag is false.
+  `--reduction upper-bound`, not truncated, and no horizon pruning). With
+  extrapolation, canonicalization merging, or upper-bound zone merging, timing
+  values are bounds and the flag is false.
 - Under `--reduction upper-bound`, `wcrt` is a sound upper bound and
   `wcrt_lb_valid` is false. The lower bound is computed only on an exact
   (unmerged) graph.
+- A `--horizon` cut is sound for WCRT only when `H` bounds the accumulated time
+  of every prefix of the response path of interest (including any first-release
+  offset such as `t = period`). Under pruning the report is explicitly
+  non-exact, and deadlock/schedulability/SCC results are not certified
+  (`deadlock_analysis_certified = false`, `schedulable = null`). See
+  [Time-horizon reduction](#time-horizon-reduction).
 - Task-level metrics require TDG-sourced `task_info`; a direct `.ptpn` model
   produces structural and net-level metrics only.
 - The SCG enumerates every admissible equal-priority active set; worst-case

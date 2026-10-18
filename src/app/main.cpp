@@ -55,6 +55,13 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
   cmd->add_flag("--keep-suspension-clocks", opts.keep_suspension_clocks,
                 "Keep suspension clocks w_t in the state-class zone (default: "
                 "project them out; exact for reachability and metrics)");
+  cmd->add_option("--horizon", opts.time_horizon,
+                  "Bound SCG exploration by a WCRT time horizon N: state classes "
+                  "whose accumulated lower-bound dwell exceeds N are recorded but "
+                  "not expanded (default: off). Sound for WCRT when N is an upper "
+                  "bound on the response time of interest; deadlock/SCC results "
+                  "are not certified when pruning occurs")
+      ->check(CLI::NonNegativeNumber);
   add_export_target_options(cmd, opts.exports);
 }
 

@@ -293,6 +293,20 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       spdlog::info("[SCG] k-extrapolation enabled (k={})",
                    reachability_graph.extrapolation_bound());
     }
+    if (opts.time_horizon.has_value()) {
+      reachability_graph.set_time_horizon(opts.time_horizon.value());
+      spdlog::info(
+          "[SCG] WCRT time horizon enabled (H={}): classes whose accumulated "
+          "lower-bound dwell exceeds H are recorded but not expanded",
+          opts.time_horizon.value());
+      if (canonicalization != state_class::CanonicalizationMode::EQUALITY) {
+        spdlog::warn(
+            "[SCG] Time horizon is combined with canonicalization '{}'; WCRT "
+            "values are not certified even when the horizon itself is large "
+            "enough (use --canonicalization equality)",
+            opts.canonicalization_mode);
+      }
+    }
     const auto scg_start = PipelineClock::now();
     const size_t state_count = reachability_graph.build(opts.max_states);
     const auto& reachability_stats = reachability_graph.get_statistics();
@@ -302,7 +316,20 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
                         ", dedup_hits=" + to_string(reachability_stats.dedup_hits) +
                         ", zone_merges=" + to_string(reachability_stats.zone_merges) +
                         ", merged_states=" + to_string(reachability_stats.merged_states) +
+                        (reachability_stats.horizon_truncated
+                             ? ", horizon_pruned=" +
+                                   to_string(reachability_stats.horizon_pruned_states)
+                             : "") +
                         (reachability_stats.truncated ? ", truncated" : ""));
+    if (reachability_stats.horizon_truncated) {
+      spdlog::warn(
+          "[SCG] Time horizon pruned expansion of {} state classes; WCRT values "
+          "are approximate unless H is a valid upper bound on the response time "
+          "of interest, and deadlock/SCC results are NOT certified",
+          reachability_stats.horizon_pruned_states);
+    } else if (opts.time_horizon.has_value()) {
+      spdlog::info("[SCG] No class exceeded the time horizon; graph is exhaustive");
+    }
     if (reachability_stats.truncated) {
       spdlog::warn(
           "[SCG] Reachability graph truncated at {} states; use --max-states "
@@ -327,18 +354,22 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
     if (!opts.exports.metrics_json.empty()) {
       // Metrics are exact only for the complete, un-abstracted graph. Zone
       // extrapolation preserves reachable markings but relaxes timing bounds,
-      // upper-bound zone merging over-approximates the zone space, and
-      // truncation omits part of the state space.
+      // upper-bound zone merging over-approximates the zone space, truncation
+      // omits part of the state space, and a horizon cut makes WCRT sound only
+      // under the caller's H >= WCRT assumption.
+      const bool horizon_truncated = opts.time_horizon.has_value() &&
+                                     reachability_stats.horizon_truncated;
       const bool exact = canonicalization == state_class::CanonicalizationMode::EQUALITY &&
                          !opts.extrapolation && !upper_bound_merging &&
-                         !reachability_stats.truncated;
+                         !reachability_stats.truncated && !horizon_truncated;
       if (!exact) {
         spdlog::warn(
             "[METRICS] Metrics are approximate (canonicalization='{}', "
-            "extrapolation={}, reduction='{}', truncated={}); timing values are "
-            "bounds, not exact values",
+            "extrapolation={}, reduction='{}', truncated={}, "
+            "horizon_truncated={}); timing values are bounds, not exact values",
             opts.canonicalization_mode, opts.extrapolation, opts.reduction_mode,
-            reachability_stats.truncated ? "true" : "false");
+            reachability_stats.truncated ? "true" : "false",
+            horizon_truncated ? "true" : "false");
       }
       if (upper_bound_merging) {
         spdlog::warn(
@@ -349,13 +380,27 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       state_class::MetricsAnalyzer analyzer(reachability_graph.get_graph(), ptpn,
                                             reachability_graph.get_initial_vertex(), exact,
                                             /*wcrt_lb_valid=*/!upper_bound_merging);
+      state_class::HorizonInfo horizon_info;
+      if (opts.time_horizon.has_value()) {
+        horizon_info.enabled = true;
+        horizon_info.bound = opts.time_horizon.value();
+        horizon_info.truncated = reachability_stats.horizon_truncated;
+        horizon_info.pruned_states = reachability_stats.horizon_pruned_states;
+      }
+      analyzer.set_horizon_info(horizon_info);
       const state_class::MetricsReport report = analyzer.analyze();
       if (state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
         log_step_timing("Metrics analysis", elapsed_ms(metrics_start));
         spdlog::info("[OUTPUT] Metrics exported to: {}", opts.exports.metrics_json);
-        spdlog::info("[METRICS] schedulable={}, bounded={}, deadlocks={}",
-                     report.schedulable ? "true" : "false", report.bounded ? "true" : "false",
-                     report.deadlock_states.size());
+        if (report.deadlock_analysis_certified) {
+          spdlog::info("[METRICS] schedulable={}, bounded={}, deadlocks={}",
+                       report.schedulable ? "true" : "false",
+                       report.bounded ? "true" : "false", report.deadlock_states.size());
+        } else {
+          spdlog::warn(
+              "[METRICS] deadlock/schedulability/SCC results are not certified "
+              "(time horizon truncated the state space); schedulability=unknown");
+        }
       } else {
         spdlog::warn("[OUTPUT] Failed to export metrics");
         return 1;
