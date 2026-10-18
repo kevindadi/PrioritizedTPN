@@ -8,10 +8,12 @@
 #include <vector>
 
 #include "analysis/dbm/dbm.h"
+#include "model/petri.h"
 
 namespace state_class {
 
 constexpr size_t NO_TRANSITION = std::numeric_limits<size_t>::max();
+constexpr size_t NO_TASK = std::numeric_limits<size_t>::max();
 
 // Sorted vector of transition ids used as a lightweight ordered set: far more
 // compact and copy-friendly than std::set for the small, read-mostly enabling
@@ -25,25 +27,63 @@ inline bool contains(const TransitionSet& set, size_t value) {
 // Every column/row of the joint DBM corresponds to one timed variable.
 enum class ClockKind {
   Zero,        // the reference variable x0 (always lives at index 0)
+  Release,     // r_i: time since the current job of task i was released
   Execution,   // h_t: how long transition t has effectively been running
   Suspension,  // w_t: how long suspendable transition t has been suspended
 };
 
 // Maps a DBM column index back to the variable it represents.
+//
+// `transition` identifies Execution/Suspension clocks; `task` identifies
+// Release clocks (an ordinal into the name-sorted task list produced by
+// build_task_chains). Exactly one of the two is meaningful for a non-Zero
+// clock; the unused field is NO_TRANSITION/NO_TASK.
 struct ClockVar {
   ClockKind kind = ClockKind::Zero;
   size_t transition = NO_TRANSITION;
+  size_t task = NO_TASK;
 
   bool operator==(const ClockVar& other) const {
-    return kind == other.kind && transition == other.transition;
+    return kind == other.kind && transition == other.transition && task == other.task;
   }
 
   bool operator<(const ClockVar& other) const {
     if (kind != other.kind)
       return kind < other.kind;
-    return transition < other.transition;
+    if (transition != other.transition)
+      return transition < other.transition;
+    return task < other.task;
   }
 };
+
+// Static description of one task chain, derived from the lowered net
+// (`node_pn_map` + `task_info` + `periodic_transitions`). The list returned by
+// build_task_chains is sorted by task name; the position in that list is the
+// task ordinal used by ClockVar::task and StateClass::release_clock_of_task.
+struct TaskChain {
+  std::string name;
+  int deadline = 0;
+  int period = 0;
+  size_t entry_place = NO_TRANSITION;
+  size_t exit_place = NO_TRANSITION;
+  size_t periodic_transition = NO_TRANSITION;
+  std::vector<petri::NodeRef> chain;
+  std::vector<size_t> places;
+  std::vector<size_t> transitions;
+};
+
+// Task chains of every task that has both a chain in node_pn_map and TaskInfo,
+// sorted by name (stable ordinals for the analysis layer).
+std::vector<TaskChain> build_task_chains(const petri::PTPN& net);
+
+// Number of tokens in the task chain, including the exit (completion) place.
+size_t task_chain_token_count(const TaskChain& task, const std::vector<int>& marking);
+
+// A job is in flight from its release (a token in the entry place) until its
+// final execution segment places a token in the exit place. Exit tokens that
+// await the end-of-task consumer are completed jobs and do not carry a release
+// clock.
+bool task_in_flight(const TaskChain& task, const std::vector<int>& marking);
 
 // One edge of the state-class graph: which transition fired, plus the feasible
 // firing window of its execution clock h_t at the moment it fires. The window
@@ -93,6 +133,10 @@ struct StateClass {
   std::vector<ClockVar> clock_vars;           // index -> variable; [0] is Zero
   std::vector<int> exec_clock_of_transition;  // transition -> h_t index or -1
   std::vector<int> susp_clock_of_transition;  // transition -> w_t index or -1
+  // Task ordinal (name-sorted build_task_chains order) -> r_task index or -1.
+  // Present only when release-clock tracking is enabled (EDF). A task has a
+  // release clock exactly while it has an in-flight job.
+  std::vector<int> release_clock_of_task;
 
   TransitionSet struct_enabled;    // E_struct(M)
   TransitionSet priority_enabled;  // E_pri-hat(M): selected active transitions
@@ -116,16 +160,33 @@ struct StateClass {
   [[nodiscard]] bool has_susp_clock(size_t transition) const {
     return susp_index(transition) > 0;
   }
+
+  [[nodiscard]] int release_index(size_t task) const {
+    return task < release_clock_of_task.size() ? release_clock_of_task[task] : -1;
+  }
+
+  [[nodiscard]] bool has_release_clock(size_t task) const {
+    return release_index(task) > 0;
+  }
 };
 
-// Rebuilds clock_vars and the per-transition clock index maps from
-// struct_enabled/suspended. The layout is canonical: one execution clock per
-// structurally enabled transition in ascending order, followed by its
-// suspension clock when the transition is suspended and
-// `keep_suspension_clocks` is set. Shared by the symbolic construction and the
-// symmetry canonicalizer so both agree bit for bit.
-void build_clock_layout(StateClass& state, size_t num_transitions,
-                        bool keep_suspension_clocks = false);
+// Rebuilds clock_vars and the per-transition/per-task clock index maps from
+// struct_enabled/suspended/marking. The layout is canonical:
+//
+//   x0,
+//   one release clock per in-flight task (ascending task ordinal, only when
+//   `include_release_clocks` is set),
+//   one execution clock per structurally enabled transition in ascending
+//   order, followed by its suspension clock when the transition is suspended
+//   and `keep_suspension_clocks` is set.
+//
+// Release clocks live immediately after x0, so their indices are independent
+// of the selected active set (and of whether suspension clocks are projected).
+// Shared by the symbolic construction and the symmetry canonicalizer so both
+// agree bit for bit.
+void build_clock_layout(StateClass& state, const petri::PTPN& net,
+                        bool keep_suspension_clocks = false,
+                        bool include_release_clocks = false);
 
 // Hashes the marking alone so candidates that might merge land in one bucket.
 struct MarkingHash {

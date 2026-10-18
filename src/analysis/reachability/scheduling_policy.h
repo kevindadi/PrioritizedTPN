@@ -11,14 +11,14 @@
 #include <utility>
 #include <vector>
 
+#include "analysis/reachability/state_class.h"
 #include "model/petri.h"
 
 namespace state_class {
 
-// `StateClass` is only referenced by pointer here (dynamic rules may read the
-// marking/zone of the state being expanded). Keeping the forward declaration
-// avoids an include cycle with state_class.h.
-class StateClass;
+// Policy decisions are expressed over the state-class clock layout: EDF reads
+// the per-task release clocks, and TransitionSet/TaskChain come from
+// state_class.h.
 
 // How a filtered-out transition is treated by the analysis engine.
 enum class PreemptionMode {
@@ -35,9 +35,43 @@ struct PolicyContext {
   const StateClass* state = nullptr;
 };
 
+// One difference constraint over release clocks attached to a scheduling
+// branch. It means `release[right] - release[left] <= bound`, i.e. the task at
+// `left` has an absolute deadline no later than the task at `right` when
+// `bound == D_right - D_left`. Task ids are ordinals into
+// build_task_chains(net) (sorted by task name).
+struct BranchConstraint {
+  size_t left_task = 0;
+  size_t right_task = 0;
+  int bound = 0;
+
+  bool operator==(const BranchConstraint& other) const {
+    return left_task == other.left_task && right_task == other.right_task &&
+           bound == other.bound;
+  }
+};
+
+// One admissible scheduling decision: the selected active transitions plus
+// the zone constraints that select the deadline ordering this decision
+// represents. Constraints are intersected with the successor zone before it is
+// hashed or deduplicated.
+struct PolicyBranch {
+  TransitionSet active;
+  std::vector<BranchConstraint> constraints;
+
+  bool operator==(const PolicyBranch& other) const {
+    return active == other.active && constraints == other.constraints;
+  }
+};
+
 // A scheduling policy expressed as a priority + admissibility function over
 // the transitions of a PTPN. Higher `effective_priority` means higher
 // scheduling priority. Implementations must be deterministic.
+//
+// Policies whose decisions depend on clock values that must stay explicit in
+// the state (EDF) override `branches()` and `uses_release_clocks()` instead of
+// encoding a fake scalar priority: the analysis graph then creates a release
+// clock per in-flight job and splits each zone by deadline order.
 class FiringRule {
  public:
   virtual ~FiringRule() = default;
@@ -50,6 +84,20 @@ class FiringRule {
   virtual bool admissible(const PolicyContext& context, size_t transition) const;
 
   virtual PreemptionMode preemption_mode() const = 0;
+
+  // True when the rule depends on the per-task release clocks and therefore
+  // the graph must include them in the clock layout and state identity.
+  virtual bool uses_release_clocks() const {
+    return false;
+  }
+
+  // Every admissible branch at a marking. The default implementation is the
+  // existing scalar-priority branch enumeration with no extra constraints.
+  // Rules that use release clocks override this; `context.state` then carries
+  // the prepared successor/source layout and zone.
+  virtual std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled,
+                                             const petri::PTPN& net,
+                                             const PolicyContext& context) const;
 };
 
 namespace detail {
@@ -196,6 +244,100 @@ class StaticPriorityRule : public FiringRule {
 
  private:
   PreemptionMode mode_;
+};
+
+// Earliest Deadline First under the release-clock state extension.
+//
+// Supported class (enforced by lowering and re-checked when the rule indexes a
+// net): TDG2PN-lowered nets with `num_cpus == 1`, all tasks on core 0,
+// `task_place_capacity == 1`, no locks, no fork/join, no task-to-task
+// dependency edges, at most one start token per task, and every task either
+// periodic with a positive period/deadline or started once at time 0 with a
+// positive deadline. Each task chain carries at most one in-flight job.
+//
+// A task is in flight from the release that places a token in its entry place
+// until its final execution segment places a token in its exit place. The
+// graph maintains one release clock r_i per in-flight task (ClockKind::Release,
+// reset to zero at release, rate 1 while the job is in flight, removed at
+// completion). The remaining deadline of job i is D_i - r_i.
+//
+// `branches()` selects the earliest-deadline task at a state. For every task i
+// that can be earliest in some valuation of the current zone it emits one
+// branch containing the control transitions plus i's structurally enabled
+// chain transitions, constrained by
+//
+//   D_i - r_i <= D_j - r_j  for every other in-flight task j
+//   <=>  r_j - r_i <= D_j - D_i      (BranchConstraint{i, j, D_j - D_i})
+//
+// The constraints are part of the successor zone before hashing, so orderings
+// are never fixed inside a shared DBM zone. Equal remaining deadlines make
+// both i and j feasible; both tie resolutions are emitted. At capacity one no
+// additional cutoff subset exists, so these are exactly the EDF choices.
+//
+// Periodic release (`_fire`) handling in the supported single-job class:
+//   - A release that fires while the task has no job starts a new job; its
+//     release clock is created at zero.
+//   - A release that fires while the job is still waiting at the entry is
+//     merged by the saturating task places (`task_place_capacity == 1`). It
+//     starts no second job and does not reset the release clock: the in-flight
+//     job keeps its original release instant and absolute deadline. This is
+//     the conservative reading of the lowered saturation semantics.
+//   - A release is not scheduled while a completed job's exit token is still
+//     pending. The completion consumer is zero-time and always enabled, so
+//     letting it fire first preserves every timing behavior while preventing
+//     an unconsumed completion token from merging with the next completion.
+//   - A release that fires while the job has left the entry but has not
+//     completed adds a second job token to the chain (the entry is empty, so
+//     saturation does not clamp it). The supported class has one in-flight job
+//     per task, so the resulting state is rejected with std::invalid_argument
+//     instead of modeling queued/overlapping releases. This is what a response
+//     time exceeding the period looks like on the lowered net.
+//
+// EDF has no scalar priority; `effective_priority()` throws so the analysis
+// can never silently fall back to a static deadline priority. Preemption uses
+// the resume encoding (RESUME): a preempted execution clock freezes while its
+// release clock keeps running.
+class EdfFiringRule : public FiringRule {
+ public:
+  EdfFiringRule() = default;
+  explicit EdfFiringRule(const petri::PTPN& net);
+
+  int effective_priority(const PolicyContext& context, size_t transition) const override;
+  bool admissible(const PolicyContext& context, size_t transition) const override {
+    return true;
+  }
+  PreemptionMode preemption_mode() const override {
+    return PreemptionMode::RESUME;
+  }
+  bool uses_release_clocks() const override {
+    return true;
+  }
+
+  std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled,
+                                     const petri::PTPN& net,
+                                     const PolicyContext& context) const override;
+
+  // Name-sorted task chains and transition -> task ordinal map. Exposed for
+  // diagnostics and tests.
+  [[nodiscard]] const std::vector<TaskChain>& tasks() const {
+    return tasks_;
+  }
+  [[nodiscard]] const std::vector<int>& task_of_transition() const {
+    return task_of_transition_;
+  }
+  // transition -> task ordinal for period-release (`_fire`) transitions, or -1.
+  [[nodiscard]] const std::vector<int>& task_of_periodic_transition() const {
+    return task_of_periodic_transition_;
+  }
+
+ private:
+  // Validates the supported class and builds the chain index.
+  void ensure_index(const petri::PTPN& net) const;
+
+  mutable const petri::PTPN* net_ = nullptr;
+  mutable std::vector<TaskChain> tasks_;
+  mutable std::vector<int> task_of_transition_;
+  mutable std::vector<int> task_of_periodic_transition_;
 };
 
 // Priority Inheritance Protocol as a dynamic firing rule.
@@ -416,11 +558,12 @@ class SrpFiringRule : public FiringRule {
 
 // Policy -> rule mapping:
 //   FIXED, FIXED_PRIOR_WITH_RESUME, RM, DM -> static priorities, RESUME
+//   EDF                                   -> EdfFiringRule, release clocks, RESUME
 //   PIP                                   -> PipFiringRule, RESUME
 //   PCP                                   -> PcpFiringRule, RESUME
 //   SRP                                   -> SrpFiringRule, RESUME
 //   FIXED_PRIOR_WITH_RESTART              -> static priorities, RESTART
-//   everything else                       -> static priorities, NON_PREEMPTIVE
+//   LLF, FIFO, UNKNOWN                    -> static priorities, NON_PREEMPTIVE
 //
 // The policy-only overload cannot precompute the dynamic protocols' task-chain
 // index; it returns a rule that lazily indexes `PolicyContext::net` on first

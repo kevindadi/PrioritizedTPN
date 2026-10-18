@@ -149,11 +149,12 @@ void expect_canonical_invariants(const petri::PTPN& net, const state_class::SCGr
     ASSERT_EQ(state.struct_enabled, expected);
 
     StateClass rebuilt = state;
-    state_class::build_clock_layout(rebuilt, net.num_transitions());
+    state_class::build_clock_layout(rebuilt, net);
     ASSERT_EQ(rebuilt.clock_vars.size(), state.clock_vars.size());
     for (size_t i = 0; i < rebuilt.clock_vars.size(); ++i) {
       ASSERT_EQ(rebuilt.clock_vars[i].kind, state.clock_vars[i].kind);
       ASSERT_EQ(rebuilt.clock_vars[i].transition, state.clock_vars[i].transition);
+      ASSERT_EQ(rebuilt.clock_vars[i].task, state.clock_vars[i].task);
     }
     ASSERT_EQ(state.zone.size(), state.clock_vars.size());
   }

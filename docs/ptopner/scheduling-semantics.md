@@ -37,16 +37,31 @@ struct PolicyContext {
   const StateClass* state = nullptr;
 };
 
+struct BranchConstraint {  // r[right] - r[left] <= bound
+  size_t left_task;
+  size_t right_task;
+  int bound;
+};
+struct PolicyBranch {
+  TransitionSet active;
+  std::vector<BranchConstraint> constraints;
+};
+
 class FiringRule {
  public:
   virtual int effective_priority(const PolicyContext&, size_t transition) const = 0;
   virtual bool admissible(const PolicyContext&, size_t transition) const;  // default true
   virtual PreemptionMode preemption_mode() const = 0;
+  virtual bool uses_release_clocks() const { return false; }
+  virtual std::vector<PolicyBranch> branches(const TransitionSet&, const petri::PTPN&,
+                                             const PolicyContext&) const;
 };
 ```
 
 `StaticPriorityRule` reads `TransitionId{t}.priority` from the net, admits every
-transition, and carries the policy's preemption mode.
+transition, and carries the policy's preemption mode. Its default `branches()`
+wraps `Scheduling::priority_branches` with empty constraints, so the
+static/RM/DM/PIP/PCP/SRP behavior is unchanged.
 `make_firing_rule(policy)` installs it by default, and
 `StateClassReachabilityGraph` constructs its rule from
 `net.schedule_policy()` (a directly parsed `.ptpn` defaults to `fixed`).
@@ -63,11 +78,13 @@ Current coverage:
 | `pip` | base `priority` + dynamic inheritance from the marking, see below | `RESUME` | analyzed |
 | `pcp` | base `priority` + static lock ceilings + dynamic admission/inheritance, see below | `RESUME` | analyzed |
 | `srp` | base `priority` as preemption level + dynamic global system-ceiling start gate, see below | `RESUME` | analyzed |
-| `edf`, `llf`, `fifo` | static | `NON_PREEMPTIVE` | **not implemented**; only the static rule applies |
+| `edf` | absolute deadlines from per-task release clocks, see below | `RESUME` | analyzed for the restricted single-core class |
+| `llf`, `fifo` | static | `NON_PREEMPTIVE` | **not implemented**; only the static rule applies |
 
-EDF/LLF/FIFO are accepted by the parser but must not be described as
-analyzed: they currently fall back to their static transition priorities and
-non-preemptive handling.
+LLF/FIFO are accepted by the parser but must not be described as analyzed:
+they currently fall back to their static transition priorities and
+non-preemptive handling. EDF is not a static-priority policy; the supported
+class and its restrictions are documented in the EDF section below.
 
 ### Priority Inheritance Protocol (`pip`)
 
@@ -393,6 +410,130 @@ during TDG lowering (`src/lower/tdg2pn/policy_priorities.*`):
   state-class engine then applies the computed static priorities through
   `StaticPriorityRule`.
 
+## EDF (restricted supported class)
+
+EDF is implemented by `EdfFiringRule` and is **not** a static deadline
+priority. Relative deadlines from `TaskInfo` are not enough: EDF orders jobs by
+their absolute deadlines `r_i + D_i`, which depend on when each job was
+released. The analysis therefore represents a per-job release clock in the
+state and splits each symbolic zone by deadline order.
+
+### Supported class
+
+The supported class is deliberately narrow. TDG lowering
+(`validate_edf_supported_class` in `src/lower/tdg2pn/tdg2pn.cpp`) rejects the
+whole model when any of these does not hold, and `EdfFiringRule::ensure_index`
+re-checks the lowered net:
+
+- `num_cpus == 1`, every task bound to core `0`.
+- No locks (`shared_locks` / task `locks` must be empty), no fork/join
+  (every real-core transition belongs to exactly one task chain).
+- `task_place_capacity == 1`; all task places saturate.
+- At most one start token per task (`configuration.start[].tokens <= 1`).
+- Every task has a positive absolute deadline (`deadline`, or an implicit
+  deadline when only a period is given) and is either periodic with a positive
+  period released by `_fire`, or a one-shot task started once at time 0.
+- No task-to-task TDG edge (dependency-driven release). Self-loops and dashed
+  periodic-release edges are not dependency releases.
+- The standard TDG2PN no-lock task chain: alternating place/transition,
+  `entry/get_core/ready/first-exec/.../exit`, at least 5 nodes.
+- No periodic release may fire while the same task's job is between core
+  acquisition and completion (see "Periodic releases" below).
+
+Unsupported models raise `std::invalid_argument` during lowering or analysis;
+they are never approximated by a static deadline priority.
+`EdfFiringRule::effective_priority` raises `std::logic_error`, so no code path
+can silently use a scalar priority for EDF.
+
+### State extension: release clocks
+
+`ClockKind::Release` extends the DBM layout with one clock `r_i` per task:
+
+- `r_i` is created when task `i` is released (periodic `_fire` or the initial
+  start token) and is removed when the final execution segment places the
+  completion token in the exit place. A pending exit token (before the
+  end-of-task consumer fires) is a completed job and carries no release clock.
+- `r_i` starts at zero at release and always advances at rate 1. It keeps
+  advancing while the job is preempted; only the execution clock of a
+  suspended segment freezes. This keeps the remaining deadline `D_i - r_i`
+  comparable across a preemption.
+- The clock layout is `x0`, then release clocks of in-flight tasks in ascending
+  task ordinal order, then execution clocks. Release-clock indices therefore do
+  not depend on the selected active set.
+- `StateClass::release_clock_of_task` maps task ordinal to DBM column (or `-1`)
+  and is part of the state identity (hashed and compared with the clock
+  layout). No release information lives in non-hashed metadata.
+- `r_i` and the deadline constraints are part of the zone. The initial class
+  pins every clock to zero. A successor keeps `r_i` for a job that remains in
+  flight, drops it on completion, and pins a freshly released job's clock to
+  zero.
+
+### Deadline-order branches
+
+At each state, `EdfFiringRule::branches` collects the structurally enabled
+chain transitions per in-flight task. A task `i` can be the earliest only if
+the current zone admits
+
+```
+D_i - r_i <= D_j - r_j  for every other in-flight task j
+<=>  r_j - r_i <= D_j - D_i
+```
+
+For each feasible candidate it emits one `PolicyBranch` whose active set is
+all control (`core < 0`) transitions plus that task's chain transitions, and
+whose `BranchConstraint{candidate, j, D_j - D_candidate}` list records the
+order. Equal remaining deadlines make multiple candidates feasible; every tie
+resolution is emitted. At capacity one there is no additional cutoff subset,
+so these are exactly the EDF choices.
+
+The engine intersects the constraints with the successor zone (using
+`DBM::tighten`) **before** hashing/deduplication. This is the key difference
+from a static deadline rank: one symbolic state may still contain several
+possible deadline orders, and the graph splits it instead of fixing an order
+inside a shared DBM. A branch whose ordering is impossible in the successor
+zone is dropped. If no candidate is feasible, the analysis raises an error
+rather than emitting a partial schedule.
+
+Because EDF has no scalar priority, the preemption filter is expressed by the
+branch's active set: the selected job's chain transitions run, the other
+in-flight jobs' chain transitions are suspended (resume semantics, frozen
+execution clock), and their release clocks keep running.
+
+### Periodic releases
+
+The lowered `_fire` transition consumes and re-adds the unit period token and
+posts one token to the task entry. In the supported single-job class its
+behavior is:
+
+- **Idle task:** the release creates a job with a fresh zero release clock.
+- **Job waiting at the entry:** the saturating capacity-1 entry place clamps
+  the post arc. The marking is unchanged and the release clock is *not* reset;
+  the pending job keeps its original absolute deadline. This is the
+  conservative merge of an overlapping periodic release.
+- **Completed job's exit token pending:** `_fire` is deferred until the
+  zero-time end-of-task consumer has removed the token. The consumer is always
+  enabled and consumes no time, so this preserves every timing behavior while
+  preventing a new completion from merging into the pending token.
+- **Job mid-chain (entry empty):** the post arc would create a second job token
+  in the same chain. That is outside the one-job supported class; the analysis
+  raises `std::invalid_argument` with an "ambiguous job layout" message
+  instead of modeling a queue. A response time exceeding the task period is
+  the typical cause.
+
+### Restrictions and diagnostics
+
+- `k-extrapolation` is rejected for release-clock states
+  (`set_extrapolation(true)` / enabling extrapolation before installing EDF
+  both throw). Relaxing deadline bounds would be unsound.
+- Task-symmetry reduction is not implemented for release-clock states. For the
+  single-core EDF class it would be trivial (no distinct cores to permute).
+- The SCG DOT export labels release clocks `r(K<ordinal>)`; execution clocks
+  remain `h(T<id>)`.
+- Tests: `test/test_edf.cpp` covers known EDF response times, a case where EDF
+  differs from RM/DM because of absolute deadlines, tie enumeration,
+  zone-dependent branch constraints, layout invariants, and the rejection
+  paths.
+
 ## When these sets are recomputed
 
 `StateClassReachabilityGraph::recompute_sets` (`src/analysis/reachability/state_class_layout.cpp`)
@@ -409,9 +550,9 @@ forward. Suspension state is recomputed only when the marking changes.
 
 ## Resume policies: engine-native preemption
 
-The `fixed_prior_with_resume` policy, the legacy `fixed` alias, `rm`/`dm`, and
-the dynamic `pip`/`pcp`/`srp` rules rely on the sets above to model preemption
-directly, instead of any structural encoding:
+The `fixed_prior_with_resume` policy, the legacy `fixed` alias, `rm`/`dm`, the
+dynamic `pip`/`pcp`/`srp` rules, and EDF rely on the sets above to model
+preemption directly, instead of any structural encoding:
 
 - It does NOT create the CPU-resource place. Instead it registers a parallelism
   bound of **1 for every real core** (`PTPN::core_parallelism`), so each branch
@@ -438,11 +579,15 @@ segments non-suspendable.
 ## Key files
 
 - `src/analysis/reachability/scheduling_policy.h` / `.cpp` — `FiringRule`,
-  `StaticPriorityRule`, `PipFiringRule`, `PcpFiringRule`, `SrpFiringRule`,
+  `StaticPriorityRule`, `EdfFiringRule`, `PipFiringRule`, `PcpFiringRule`,
+  `SrpFiringRule`, `PolicyBranch`/`BranchConstraint`,
   `detail::TaskLockTopology`, `PolicyContext`, `make_firing_rule`
+- `src/analysis/reachability/state_class.h` / `.cpp` — `ClockKind::Release`,
+  `TaskChain`, `build_task_chains`, `task_in_flight`, `release_clock_of_task`
 - `src/analysis/reachability/scheduling.cpp` — `structural_enabled`, `priority_branches`
 - `src/analysis/reachability/state_class_layout.cpp` / `state_class_firing.cpp` —
-  initial and successor branch enumeration with `PolicyContext`
+  initial and successor branch enumeration with `PolicyContext`, release-clock
+  layout/transfer, and branch-constraint intersection before hashing
 - `src/analysis/reachability/ptpn_analysis.cpp` — `recompute_sets`, `time_elapse`, `is_firable`, `fire`, `build`, `build_successor_zone`, `set_firing_rule`
 - `src/lower/tdg2pn/tdg2pn.cpp` — policy metadata on the PTPN, local TDG copy
 - `src/lower/tdg2pn/policy_priorities.cpp` — RM/DM priority computation

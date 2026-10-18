@@ -1,6 +1,8 @@
 #include "lower/tdg2pn/tdg2pn.h"
 
 #include <exception>
+#include <map>
+#include <set>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
@@ -15,6 +17,119 @@
 
 namespace converter {
 
+namespace {
+
+// EDF is only analyzed for a deliberately restricted, single-core,
+// independent-periodic-task class. Reject everything else here (with a
+// lowering-time message) instead of letting the state-class rule approximate
+// an unsupported model.
+void validate_edf_supported_class(const tdg::TDG& tdg) {
+  const std::string name = schedule_policy_to_string(SchedulePolicy::EDF);
+  if (tdg.num_cpus != 1) {
+    throw std::invalid_argument(name + " supports exactly one CPU; configuration has num_cpus = " +
+                                std::to_string(tdg.num_cpus));
+  }
+  if (tdg.task_place_capacity != 1) {
+    throw std::invalid_argument(
+        name + " requires task_place_capacity == 1 (one in-flight job per task), got " +
+        std::to_string(tdg.task_place_capacity));
+  }
+
+  std::map<std::string, int> period_of;
+  for (const auto& binding : tdg.periodic_tasks) {
+    if (binding.period <= 0) {
+      throw std::invalid_argument(name + " requires a positive period for periodic task '" +
+                                  binding.task + "', got " +
+                                  std::to_string(binding.period));
+    }
+    period_of[binding.task] = binding.period;
+  }
+
+  std::set<std::string> started;
+  for (const auto& start : tdg.start_tasks) {
+    if (start.tokens < 0 || start.tokens > 1) {
+      throw std::invalid_argument(
+          name + " requires at most one initial job per task; start binding for '" +
+          start.task + "' requests " + std::to_string(start.tokens) + " tokens");
+    }
+    if (start.tokens == 1) {
+      started.insert(start.task);
+    }
+  }
+
+  const auto check_task = [&](const std::string& task_name, const TaskNode& task) {
+    if (task.core != 0) {
+      throw std::invalid_argument(name + " supported class is single-core: task '" + task_name +
+                                  "' is bound to core " + std::to_string(task.core) +
+                                  " (expected core 0)");
+    }
+    if (!task.lock.empty()) {
+      throw std::invalid_argument(name + " supported class does not include locks; task '" +
+                                  task_name + "' declares locks");
+    }
+    const auto period_it = period_of.find(task_name);
+    const int period = period_it == period_of.end() ? 0 : period_it->second;
+    if (task.deadline <= 0 && period <= 0) {
+      throw std::invalid_argument(name + " requires a positive absolute deadline or period for "
+                                  "task '" + task_name + "'");
+    }
+    if (period <= 0 && started.find(task_name) == started.end()) {
+      throw std::invalid_argument(
+          name + " task '" + task_name +
+          "' is neither periodic (released by _fire) nor started at time 0");
+    }
+  };
+
+  for (const auto& node : tdg.all_task) {
+    if (const auto* task = as_task_node(node); task != nullptr) {
+      check_task(task->name, *task);
+    }
+  }
+  for (const auto& [task_name, node] : tdg.nodes_type) {
+    if (const auto* task = as_task_node(node); task != nullptr) {
+      check_task(task_name, *task);
+    }
+  }
+
+  for (const auto& [task_name, locks] : tdg.task_locks_map) {
+    if (!locks.empty()) {
+      throw std::invalid_argument(name + " supported class does not include locks; task '" +
+                                  task_name + "' declares locks");
+    }
+  }
+
+  for (const auto& [node_name, node] : tdg.nodes_type) {
+    if (is_fork_or_join(node)) {
+      throw std::invalid_argument(name +
+                                  " supported class does not include fork/join nodes: " +
+                                  node_name);
+    }
+  }
+
+  // A normal task-to-task edge lowers to a dependency-driven release bridge.
+  // Self-loops are annotations and dashed edges are handled by periodic
+  // bindings, so neither is a release edge.
+  for (const auto& edge : tdg.tdg_edges) {
+    if (edge.is_self_loop() || edge.is_dashed()) {
+      continue;
+    }
+    const auto source_it = tdg.nodes_type.find(edge.source);
+    const auto target_it = tdg.nodes_type.find(edge.target);
+    if (source_it == tdg.nodes_type.end() || target_it == tdg.nodes_type.end()) {
+      continue;
+    }
+    if (as_task_node(source_it->second) != nullptr &&
+        as_task_node(target_it->second) != nullptr) {
+      throw std::invalid_argument(
+          name + " supported class does not include dependency-driven releases: edge " +
+          edge.source + " -> " + edge.target +
+          " connects two tasks (independent periodic/one-shot tasks only)");
+    }
+  }
+}
+
+}  // namespace
+
 void TDG2PN::transform(const tdg::TDG& tdg, petri::PTPN& ptpn) {
   try {
     spdlog::info("[TDG2PN] Starting TDG to PTPN transformation");
@@ -23,6 +138,10 @@ void TDG2PN::transform(const tdg::TDG& tdg, petri::PTPN& ptpn) {
     // signature stays const and the caller's TDG is never mutated).
     tdg::TDG configured = tdg;
     detail::apply_policy_priorities(configured);
+
+    if (configured.policy == SchedulePolicy::EDF) {
+      validate_edf_supported_class(configured);
+    }
 
     // PIP, PCP and SRP infer lock ownership from the position of the single
     // job token in a task chain. A chain capacity above one admits queued jobs

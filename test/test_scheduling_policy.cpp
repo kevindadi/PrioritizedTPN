@@ -973,10 +973,20 @@ TEST(SchedulingPolicyTest, PolicyPreemptionModesMatchCurrentCoverage) {
   EXPECT_TRUE(srp_rule->admissible(context, 0));
   EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::SRP));
 
-  // Unimplemented policies (EDF/LLF/FIFO) fall back to the static rule and
-  // are explicitly non-preemptive; they are not otherwise analyzed.
-  for (const SchedulePolicy policy : {SchedulePolicy::EDF, SchedulePolicy::LLF,
-                                      SchedulePolicy::FIFO}) {
+  // EDF is analyzed dynamically through explicit release clocks and
+  // deadline-order branches; it uses resume-style preemption but no scalar
+  // static priority.
+  auto edf_rule = state_class::make_firing_rule(SchedulePolicy::EDF);
+  ASSERT_NE(edf_rule, nullptr);
+  EXPECT_NE(dynamic_cast<state_class::EdfFiringRule*>(edf_rule.get()), nullptr);
+  EXPECT_EQ(edf_rule->preemption_mode(), PreemptionMode::RESUME);
+  EXPECT_TRUE(edf_rule->admissible(context, 0));
+  EXPECT_TRUE(edf_rule->uses_release_clocks());
+  EXPECT_TRUE(converter::detail::is_resume_policy(SchedulePolicy::EDF));
+
+  // Unimplemented policies (LLF/FIFO) fall back to the static rule and are
+  // explicitly non-preemptive; they are not otherwise analyzed.
+  for (const SchedulePolicy policy : {SchedulePolicy::LLF, SchedulePolicy::FIFO}) {
     auto rule = state_class::make_firing_rule(policy);
     EXPECT_EQ(rule->preemption_mode(), PreemptionMode::NON_PREEMPTIVE);
     EXPECT_TRUE(rule->admissible(context, 0));

@@ -7,6 +7,30 @@
 
 namespace state_class {
 
+namespace {
+
+// Intersects the EDF deadline-order constraints with the successor zone.
+// Returns false when the branch is infeasible and must be dropped.
+bool apply_branch_constraints(StateClass& state,
+                              const std::vector<BranchConstraint>& constraints) {
+  for (const BranchConstraint& constraint : constraints) {
+    const int left = state.release_index(constraint.left_task);
+    const int right = state.release_index(constraint.right_task);
+    if (left <= 0 || right <= 0) {
+      throw std::invalid_argument(
+          "release-clock constraint references a task without an in-flight job");
+    }
+    // release[right] - release[left] <= bound.
+    if (!state.zone.tighten(static_cast<size_t>(right), static_cast<size_t>(left),
+                            constraint.bound)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
 StateClass StateClassReachabilityGraph::time_elapse(const StateClass& state) const {
   StateClass out = state;
   const size_t n = out.zone.size();
@@ -16,13 +40,20 @@ StateClass StateClassReachabilityGraph::time_elapse(const StateClass& state) con
 
   // Running clocks advance at rate 1; everything else (x0 and the frozen
   // execution clocks of priority-filtered-out transitions) stays put.
-  // V_run = { h_t : t in E_pri } U { w_t : t in suspended }.
+  // V_run = { r_i : i in flight } U { h_t : t in E_pri }
+  //         U { w_t : t in suspended }.
   std::vector<bool> running(n, false);
   for (size_t i = 1; i < n && i < out.clock_vars.size(); ++i) {
     const ClockVar& var = out.clock_vars[i];
     if (var.kind == ClockKind::Suspension) {
       // Only present when suspension-clock projection is disabled; such clocks
       // always advance with time.
+      running[i] = true;
+    } else if (var.kind == ClockKind::Release) {
+      // A release clock exists exactly while its job is in flight and measures
+      // wall-clock time since release; it always runs, even when the job is
+      // preempted. This is what keeps the remaining deadline D_i - r_i
+      // comparable across a preemption.
       running[i] = true;
     } else if (var.kind == ClockKind::Execution && contains(out.priority_enabled, var.transition)) {
       running[i] = true;  // active execution clocks advance
@@ -85,14 +116,23 @@ void StateClassReachabilityGraph::build_successor_zone(StateClass& successor, co
 
   // For each successor variable, find the matching column in `fired` if the
   // clock survives the firing (a persistent execution clock keeps its value; a
-  // still-suspended clock inherits its suspension clock). Everything else is
-  // freshly created and starts at zero.
+  // still-in-flight release clock keeps the job age; a still-suspended clock
+  // inherits its suspension clock). Everything else is freshly created and
+  // starts at zero.
   std::vector<int> source_index(n, -1);
   source_index[0] = 0;  // x0 maps to x0
   for (size_t i = 1; i < n; ++i) {
     const ClockVar& var = successor.clock_vars[i];
     const size_t t = var.transition;
-    if (var.kind == ClockKind::Execution) {
+    if (var.kind == ClockKind::Release) {
+      // Release clocks are keyed by task ordinal, not by transition. A task
+      // that is in flight in both source and successor keeps its clock (also
+      // when a periodic release merges into the running job). A task that was
+      // not in flight has no source clock and the fresh clock is pinned to
+      // zero, which is exactly the release instant. Completed jobs have no
+      // successor release clock, so their column is simply dropped.
+      source_index[i] = source.release_index(var.task);
+    } else if (var.kind == ClockKind::Execution) {
       if (t != fired_transition && source.has_exec_clock(t)) {
         source_index[i] = source.exec_index(t);
       }
@@ -151,28 +191,42 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
   const petri::Marking marking =
       petri::PTPN::fire(elapsed.marking, net_, petri::TransitionId{t});
   const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, marking);
-  // Context over a temporary state carrying the successor marking. The full
-  // clock layout/zone is built only after the branch is chosen; static rules
-  // must not read it. Dynamic rules will need the prepared successor state
-  // (marking + zone) when they are added.
-  StateClass successor_context;
-  successor_context.marking = marking;
-  const PolicyContext context{net_, &successor_context};
-  const std::vector<TransitionSet> branches =
-      Scheduling::priority_branches(struct_enabled, net_, *firing_rule_, context);
+
+  // Rules that read release clocks need a prepared successor state: the
+  // release-clock prefix depends only on the successor marking, so a probe
+  // built with the full structural set has the same release indices as every
+  // final branch. Its zone is the unsplit successor zone (surviving clocks
+  // carried over, fresh clocks zero); EDF tests each candidate ordering
+  // against it and emits the selected difference constraints.
+  StateClass prepared;
+  prepared.marking = marking;
+  if (firing_rule_->uses_release_clocks()) {
+    recompute_sets(prepared, struct_enabled);
+    build_layout(prepared);
+    build_successor_zone(prepared, fired, elapsed, t);
+  }
+  const PolicyContext context{net_, &prepared};
+  const std::vector<PolicyBranch> branches =
+      firing_rule_->branches(struct_enabled, net_, context);
 
   const int h_lower = -elapsed.zone.get_constraint(0, idx);
   const int firing_instant = std::max(lower, h_lower);
 
   result.reserve(branches.size());
-  for (const TransitionSet& active : branches) {
+  for (const PolicyBranch& branch : branches) {
     // Steps 3 & 4: scheduler sets and variable layout for this target branch,
     // then rebuild the zone carrying surviving clocks over from `fired`.
     StateClass successor;
     successor.marking = marking;
-    recompute_sets(successor, active);
+    recompute_sets(successor, branch.active);
     build_layout(successor);
     build_successor_zone(successor, fired, elapsed, t);
+    // Deadline-order constraints are part of the successor zone before it is
+    // hashed/deduplicated. A branch whose ordering is impossible after the
+    // firing is not a behavior of the net.
+    if (!apply_branch_constraints(successor, branch.constraints)) {
+      continue;
+    }
     successor.elapsed_time = elapsed.elapsed_time + std::max(0, firing_instant);
     result.push_back(std::move(successor));
   }

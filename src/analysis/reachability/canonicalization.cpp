@@ -12,6 +12,7 @@ namespace {
 // well so that the identity stays explicit and robust.
 bool same_layout(const StateClass& a, const StateClass& b) {
   return a.marking == b.marking && a.clock_vars == b.clock_vars &&
+         a.release_clock_of_task == b.release_clock_of_task &&
          a.priority_enabled == b.priority_enabled && a.suspended == b.suspended;
 }
 }  // namespace

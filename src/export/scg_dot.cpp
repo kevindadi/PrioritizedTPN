@@ -11,6 +11,23 @@ namespace scg_export {
 
 namespace {
 
+// Human-readable name of one DBM variable. Release clocks have no transition;
+// they are labelled with the task ordinal (the same ordinal used by
+// StateClass::release_clock_of_task).
+std::string clock_label(const state_class::ClockVar& var) {
+  switch (var.kind) {
+    case state_class::ClockKind::Zero:
+      return "x0";
+    case state_class::ClockKind::Release:
+      return "r(K" + std::to_string(var.task) + ")";
+    case state_class::ClockKind::Suspension:
+      return "w(T" + std::to_string(var.transition) + ")";
+    case state_class::ClockKind::Execution:
+      return "h(T" + std::to_string(var.transition) + ")";
+  }
+  return "?";
+}
+
 std::string escape_dot(const std::string& value) {
   std::string out;
   out.reserve(value.size());
@@ -129,9 +146,7 @@ std::string ScgFormatter::format_named_dbm(const state_class::StateClass& state)
   labels[0] = "x0";
   size_t cell_width = 6;
   for (size_t i = 1; i < state.zone.size() && i < state.clock_vars.size(); ++i) {
-    const state_class::ClockVar& var = state.clock_vars[i];
-    const std::string prefix = var.kind == state_class::ClockKind::Suspension ? "w" : "h";
-    labels[i] = prefix + "(T" + std::to_string(var.transition) + ")";
+    labels[i] = clock_label(state.clock_vars[i]);
     cell_width = std::max(cell_width, labels[i].size() + 2);
   }
 
@@ -181,11 +196,7 @@ std::vector<std::string> ScgFormatter::format_zone_constraints(const state_class
   const std::string ge = html ? "&ge;" : ">=";
   const std::string minus = html ? "&minus;" : "-";
 
-  auto clock_name = [&](size_t i) {
-    const state_class::ClockVar& var = state.clock_vars[i];
-    const std::string prefix = var.kind == state_class::ClockKind::Suspension ? "w" : "h";
-    return prefix + "(T" + std::to_string(var.transition) + ")";
-  };
+  auto clock_name = [&](size_t i) { return clock_label(state.clock_vars[i]); };
 
   // Per-clock bounds: -D[0][i] <= x_i <= D[i][0].
   for (size_t i = 1; i < n && i < state.clock_vars.size(); ++i) {

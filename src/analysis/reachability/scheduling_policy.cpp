@@ -1,10 +1,13 @@
 #include "analysis/reachability/scheduling_policy.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 
+#include "analysis/reachability/scheduling.h"
 #include "analysis/reachability/state_class.h"
 
 namespace state_class {
@@ -335,6 +338,19 @@ bool FiringRule::admissible(const PolicyContext& /*context*/,
   return true;
 }
 
+std::vector<PolicyBranch> FiringRule::branches(const TransitionSet& struct_enabled,
+                                               const petri::PTPN& net,
+                                               const PolicyContext& context) const {
+  std::vector<TransitionSet> actives =
+      Scheduling::priority_branches(struct_enabled, net, *this, context);
+  std::vector<PolicyBranch> branches;
+  branches.reserve(actives.size());
+  for (TransitionSet& active : actives) {
+    branches.push_back(PolicyBranch{std::move(active), {}});
+  }
+  return branches;
+}
+
 int StaticPriorityRule::effective_priority(const PolicyContext& context,
                                            size_t transition) const {
   return context.net.get_transition(petri::TransitionId{transition}).priority;
@@ -343,6 +359,371 @@ int StaticPriorityRule::effective_priority(const PolicyContext& context,
 bool StaticPriorityRule::admissible(const PolicyContext& /*context*/,
                                     size_t /*transition*/) const {
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// EDF
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string task_name_or_ordinal(const std::vector<TaskChain>& tasks, size_t ordinal) {
+  return ordinal < tasks.size() ? tasks[ordinal].name : "#" + std::to_string(ordinal);
+}
+
+}  // namespace
+
+EdfFiringRule::EdfFiringRule(const petri::PTPN& net) {
+  ensure_index(net);
+}
+
+void EdfFiringRule::ensure_index(const petri::PTPN& net) const {
+  if (net_ == &net) {
+    return;
+  }
+
+  tasks_ = build_task_chains(net);
+  if (tasks_.empty()) {
+    throw std::invalid_argument(
+        "EDF supported class requires TDG2PN-lowered task metadata "
+        "(task_info/node_pn_map); this net has no task chains");
+  }
+  task_of_transition_.assign(net.num_transitions(), -1);
+  task_of_periodic_transition_.assign(net.num_transitions(), -1);
+
+  if (!net.lock_places().empty()) {
+    throw std::invalid_argument(
+        "EDF supported class does not include locks, but the net declares "
+        "shared lock resources");
+  }
+
+  const std::vector<int>& initial = net.get_marking();
+  for (size_t ordinal = 0; ordinal < tasks_.size(); ++ordinal) {
+    const TaskChain& task = tasks_[ordinal];
+    const auto info_it = net.task_info().find(task.name);
+    if (info_it == net.task_info().end()) {
+      throw std::invalid_argument("EDF task '" + task.name +
+                                  "' has no TaskInfo metadata");
+    }
+    if (!info_it->second.locks.empty()) {
+      throw std::invalid_argument("EDF supported class does not include locks; task '" +
+                                  task.name + "' declares locks");
+    }
+    if (info_it->second.deadline <= 0) {
+      throw std::invalid_argument("EDF requires a positive absolute deadline for task '" +
+                                  task.name + "'");
+    }
+
+    // Standard no-lock lowering chain: entry, get_core, ready, then alternating
+    // exec/place pairs, ending in the exit place.
+    if (task.chain.size() < 5 || task.chain.size() % 2 == 0 ||
+        !task.chain.front().is_place() || !task.chain.back().is_place()) {
+      throw std::invalid_argument(
+          "EDF supported class requires the standard lowered task chain for '" + task.name +
+          "' (alternating place/transition, at least 5 nodes)");
+    }
+    for (size_t position = 0; position < task.chain.size(); ++position) {
+      const bool want_place = position % 2 == 0;
+      if (task.chain[position].is_place() != want_place) {
+        throw std::invalid_argument(
+            "EDF supported class requires the standard lowered task chain for '" + task.name +
+            "' (chain positions must alternate place/transition)");
+      }
+    }
+    if (task.entry_place == NO_TRANSITION || task.exit_place == NO_TRANSITION) {
+      throw std::invalid_argument("EDF task '" + task.name + "' has no entry/exit place");
+    }
+
+    // The supported class fixes task_place_capacity == 1. A release that fires
+    // while the job waits at the entry is clamped by the saturating place; a
+    // release that fires mid-chain is rejected later by the chain-token guard
+    // instead of being queued.
+    for (size_t place_index : task.places) {
+      if (place_index >= net.num_places()) {
+        throw std::invalid_argument("EDF task '" + task.name +
+                                    "' references an out-of-range place");
+      }
+      const auto& place = net.get_place(petri::PlaceId{place_index});
+      if (place.capacity != 1 || !place.saturate) {
+        throw std::invalid_argument(
+            "EDF requires task_place_capacity == 1 with saturating task places; task '" +
+            task.name + "' uses a place with capacity " +
+            std::to_string(place.capacity) + (place.saturate ? "" : " (non-saturating)"));
+      }
+    }
+
+    for (size_t transition : task.transitions) {
+      if (transition >= net.num_transitions()) {
+        throw std::invalid_argument("EDF task '" + task.name +
+                                    "' references an out-of-range transition");
+      }
+      const auto& lowered = net.get_transition(petri::TransitionId{transition});
+      if (lowered.core != 0) {
+        throw std::invalid_argument(
+            "EDF supported class is single-core: task '" + task.name +
+            "' has a chain transition on core " + std::to_string(lowered.core) +
+            " (expected core 0)");
+      }
+      if (task_of_transition_[transition] >= 0) {
+        throw std::invalid_argument(
+            "EDF task chains share transition T" + std::to_string(transition) +
+            "; the standard lowering gives every task its own chain");
+      }
+      task_of_transition_[transition] = static_cast<int>(ordinal);
+    }
+
+    const bool has_periodic = task.periodic_transition != NO_TRANSITION;
+    if (has_periodic) {
+      if (task.periodic_transition >= net.num_transitions()) {
+        throw std::invalid_argument("EDF task '" + task.name +
+                                    "' has an out-of-range periodic release transition");
+      }
+      const auto& release =
+          net.get_transition(petri::TransitionId{task.periodic_transition});
+      if (release.core >= 0) {
+        throw std::invalid_argument(
+            "EDF periodic release for task '" + task.name +
+            "' must be a control transition (core < 0), got core " +
+            std::to_string(release.core));
+      }
+      if (release.time_interval.left_open || release.time_interval.right_open ||
+          release.time_interval.earliest != release.time_interval.latest ||
+          release.time_interval.latest <= 0) {
+        throw std::invalid_argument(
+            "EDF supported class requires an exact positive release period for task '" +
+            task.name + "' (a _fire transition with interval [P,P], P > 0)");
+      }
+      if (task.period <= 0) {
+        throw std::invalid_argument("EDF periodic task '" + task.name +
+                                    "' has no positive TaskInfo::period");
+      }
+      if (task_of_periodic_transition_[task.periodic_transition] >= 0) {
+        throw std::invalid_argument(
+            "EDF periodic release transition T" + std::to_string(task.periodic_transition) +
+            " is shared by multiple tasks");
+      }
+      task_of_periodic_transition_[task.periodic_transition] = static_cast<int>(ordinal);
+    } else if (task.period > 0) {
+      throw std::invalid_argument(
+          "EDF task '" + task.name +
+          "' declares a period but the net has no periodic release transition");
+    }
+
+    const size_t chain_tokens = task_chain_token_count(task, initial);
+    if (chain_tokens > 1) {
+      throw std::invalid_argument(
+          "EDF supports at most one initial job per task; task '" + task.name + "' starts " +
+          std::to_string(chain_tokens) + " tokens");
+    }
+    if (chain_tokens == 1 && initial[task.entry_place] <= 0) {
+      throw std::invalid_argument(
+          "EDF initial job for task '" + task.name +
+          "' must be at the task entry (one-shot start at time 0), not mid-chain");
+    }
+    if (!has_periodic && chain_tokens == 0) {
+      throw std::invalid_argument(
+          "EDF task '" + task.name +
+          "' is neither periodic (released by _fire) nor started at time 0");
+    }
+  }
+
+  // Every real-core transition must belong to exactly one task chain. Control
+  // transitions (core < 0) are outside the CPU scheduler.
+  for (size_t transition = 0; transition < net.num_transitions(); ++transition) {
+    const int core = net.get_transition(petri::TransitionId{transition}).core;
+    if (core >= 0 && task_of_transition_[transition] < 0) {
+      throw std::invalid_argument(
+          "EDF supported class does not include real-core transition T" +
+          std::to_string(transition) + " outside a task chain (fork/join or hand-built net)");
+    }
+  }
+
+  // Only the task's own periodic release may put a token into its entry place
+  // from a control transition. Anything else (a TDG task-to-task bridge, a
+  // fork/join release, a hand-built releaser) is a dependency-driven release,
+  // which is outside the independent-task supported class.
+  for (size_t transition = 0; transition < net.num_transitions(); ++transition) {
+    if (net.get_transition(petri::TransitionId{transition}).core >= 0) {
+      continue;  // chain transitions are handled by the ownership check above
+    }
+    const int periodic_task = task_of_periodic_transition_[transition];
+    for (const auto& [place, weight] : net.post_arcs()[transition]) {
+      (void)weight;
+      for (size_t ordinal = 0; ordinal < tasks_.size(); ++ordinal) {
+        if (place != tasks_[ordinal].entry_place) {
+          continue;
+        }
+        if (periodic_task == static_cast<int>(ordinal)) {
+          continue;  // the task's own _fire release
+        }
+        throw std::invalid_argument(
+            "EDF supported class does not include dependency-driven releases: control "
+            "transition T" +
+            std::to_string(transition) + " releases task '" + tasks_[ordinal].name +
+            "' without being its periodic _fire transition");
+      }
+    }
+  }
+
+  net_ = &net;
+}
+
+int EdfFiringRule::effective_priority(const PolicyContext& /*context*/,
+                                      size_t /*transition*/) const {
+  throw std::logic_error(
+      "EDF does not have a scalar static priority; scheduling is represented by "
+      "release clocks and deadline-order branches");
+}
+
+std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_enabled,
+                                                  const petri::PTPN& net,
+                                                  const PolicyContext& context) const {
+  ensure_index(net);
+  if (context.state == nullptr) {
+    throw std::invalid_argument(
+        "EDF branch selection requires a prepared state class with release clocks");
+  }
+  const StateClass& state = *context.state;
+  if (state.marking.size() != net.num_places()) {
+    throw std::invalid_argument("EDF state marking does not match the net");
+  }
+  if (state.release_clock_of_task.size() != tasks_.size()) {
+    throw std::invalid_argument(
+        "EDF state does not carry the release-clock layout for every task");
+  }
+
+  TransitionSet control;
+  std::vector<TransitionSet> enabled_per_task(tasks_.size());
+  for (size_t transition : struct_enabled) {
+    const int core = net.get_transition(petri::TransitionId{transition}).core;
+    if (core < 0) {
+      const int periodic_task = transition < task_of_periodic_transition_.size()
+                                    ? task_of_periodic_transition_[transition]
+                                    : -1;
+      if (periodic_task >= 0) {
+        const TaskChain& task = tasks_[static_cast<size_t>(periodic_task)];
+        // A completed job is announced by an exit token. Defer the next release
+        // until the zero-time consumer has removed it: this preserves timing
+        // and prevents a later completion from merging into the pending token.
+        if (task.exit_place < state.marking.size() && state.marking[task.exit_place] > 0) {
+          continue;
+        }
+        // If the job is still waiting at the entry, the release's post arc is
+        // clamped by the saturating capacity-1 place: the release is merged
+        // into the pending job and does not reset its release clock. If the
+        // job has left the entry but not completed, the post arc creates a
+        // second job token in the chain; the chain-token guard below rejects
+        // that overlapping-release successor instead of approximating a queue.
+      }
+      control.push_back(transition);
+      continue;
+    }
+    const int ordinal = transition < task_of_transition_.size()
+                            ? task_of_transition_[transition]
+                            : -1;
+    if (ordinal < 0) {
+      throw std::invalid_argument(
+          "EDF cannot schedule real-core transition T" + std::to_string(transition) +
+          " because it does not belong to a task chain");
+    }
+    enabled_per_task[static_cast<size_t>(ordinal)].push_back(transition);
+  }
+
+  // Candidate jobs: every in-flight task must have an enabled chain transition
+  // (no blocking exists in the supported class). A task without an in-flight
+  // job must not expose a chain transition; the only chain token it can hold is
+  // a completed exit token consumed by a control transition.
+  std::vector<size_t> candidates;
+  for (size_t ordinal = 0; ordinal < tasks_.size(); ++ordinal) {
+    const size_t chain_tokens = task_chain_token_count(tasks_[ordinal], state.marking);
+    if (chain_tokens > 1) {
+      throw std::invalid_argument(
+          "EDF job layout is ambiguous: task '" + tasks_[ordinal].name + "' has " +
+          std::to_string(chain_tokens) +
+          " tokens in its task chain; the supported class allows one job per task "
+          "(a periodic release fired while the previous job was still in flight)");
+    }
+    const bool in_flight = task_in_flight(tasks_[ordinal], state.marking);
+    const bool has_enabled = !enabled_per_task[ordinal].empty();
+    if (in_flight && !has_enabled) {
+      throw std::invalid_argument(
+          "EDF job layout is ambiguous: in-flight task '" + tasks_[ordinal].name +
+          "' has no structurally enabled chain transition");
+    }
+    if (!in_flight && has_enabled) {
+      throw std::invalid_argument(
+          "EDF job layout is ambiguous: task '" + tasks_[ordinal].name +
+          "' has an enabled chain transition but no in-flight job/release clock");
+    }
+    if (in_flight) {
+      candidates.push_back(ordinal);
+    }
+  }
+
+  std::vector<PolicyBranch> result;
+  if (candidates.empty()) {
+    // Only control (environment) transitions can fire.
+    std::sort(control.begin(), control.end());
+    result.push_back(PolicyBranch{std::move(control), {}});
+    return result;
+  }
+
+  for (size_t candidate : candidates) {
+    const int candidate_clock = state.release_index(candidate);
+    if (candidate_clock <= 0) {
+      throw std::invalid_argument(
+          "EDF state is missing the release clock of in-flight task '" +
+          task_name_or_ordinal(tasks_, candidate) + "'");
+    }
+
+    // A candidate is feasible when the zone admits a valuation in which its
+    // absolute deadline is no later than every other in-flight job's:
+    //   D_i - r_i <= D_j - r_j  <=>  r_j - r_i <= D_j - D_i.
+    DBM trial = state.zone;
+    std::vector<BranchConstraint> constraints;
+    bool feasible = true;
+    for (size_t other : candidates) {
+      if (other == candidate) {
+        continue;
+      }
+      const int other_clock = state.release_index(other);
+      if (other_clock <= 0) {
+        throw std::invalid_argument(
+            "EDF state is missing the release clock of in-flight task '" +
+            task_name_or_ordinal(tasks_, other) + "'");
+      }
+      const long long bound = static_cast<long long>(tasks_[other].deadline) -
+                              static_cast<long long>(tasks_[candidate].deadline);
+      if (bound < std::numeric_limits<int>::min() ||
+          bound > std::numeric_limits<int>::max()) {
+        throw std::invalid_argument("EDF deadline difference does not fit in an int");
+      }
+      if (!trial.tighten(static_cast<size_t>(other_clock),
+                         static_cast<size_t>(candidate_clock),
+                         static_cast<int>(bound))) {
+        feasible = false;
+        break;
+      }
+      constraints.push_back(BranchConstraint{
+          candidate, other, static_cast<int>(bound)});
+    }
+    if (!feasible) {
+      continue;
+    }
+
+    TransitionSet active = control;
+    active.insert(active.end(), enabled_per_task[candidate].begin(),
+                  enabled_per_task[candidate].end());
+    std::sort(active.begin(), active.end());
+    result.push_back(PolicyBranch{std::move(active), std::move(constraints)});
+  }
+
+  if (result.empty()) {
+    throw std::runtime_error(
+        "EDF deadline ordering is inconsistent with the state zone: no candidate "
+        "can be earliest");
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -705,6 +1086,9 @@ std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy) {
     case SchedulePolicy::FIXED_PRIOR_WITH_RESTART:
       return std::make_unique<StaticPriorityRule>(PreemptionMode::RESTART);
     case SchedulePolicy::EDF:
+      // Net-aware behavior is installed lazily from PolicyContext::net; the
+      // release-clock metadata is validated on first index build.
+      return std::make_unique<EdfFiringRule>();
     case SchedulePolicy::LLF:
     case SchedulePolicy::FIFO:
     case SchedulePolicy::UNKNOWN:
@@ -715,6 +1099,9 @@ std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy) {
 
 std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy,
                                              const petri::PTPN& net) {
+  if (policy == SchedulePolicy::EDF) {
+    return std::make_unique<EdfFiringRule>(net);
+  }
   if (policy == SchedulePolicy::PIP) {
     return std::make_unique<PipFiringRule>(net);
   }

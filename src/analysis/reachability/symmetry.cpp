@@ -892,6 +892,7 @@ std::vector<long long> orbit_key(const StateClass& state) {
     key.push_back(static_cast<long long>(var.kind));
     key.push_back(var.transition == NO_TRANSITION ? -1
                                                   : static_cast<long long>(var.transition));
+    key.push_back(var.task == NO_TASK ? -1 : static_cast<long long>(var.task));
   }
   key.push_back(static_cast<long long>(state.priority_enabled.size()));
   for (size_t transition : state.priority_enabled) {
@@ -1112,13 +1113,25 @@ StateClass TaskSymmetry::apply(const StateClass& state,
                   [](const ClockVar& variable) {
                     return variable.kind == ClockKind::Suspension;
                   });
-  build_clock_layout(out, net_.num_transitions(), keep_suspension_clocks);
+  const bool include_release_clocks =
+      std::any_of(state.clock_vars.begin(), state.clock_vars.end(),
+                  [](const ClockVar& variable) {
+                    return variable.kind == ClockKind::Release;
+                  });
+  build_clock_layout(out, net_, keep_suspension_clocks, include_release_clocks);
 
   const size_t clock_count = out.clock_vars.size();
   DBM zone(clock_count);
   std::vector<size_t> source_index(clock_count, 0);
   for (size_t i = 1; i < clock_count; ++i) {
     const ClockVar& variable = out.clock_vars[i];
+    if (variable.kind == ClockKind::Release) {
+      // Release clocks are keyed by task ordinal, but NetPermutation does not
+      // carry a task permutation. The supported EDF class is single-core, so
+      // no non-identity task permutation can be generated; if one ever reaches
+      // here, returning the original state is the safe (non-reducing) fallback.
+      return state;
+    }
     const size_t source_transition = element.transition_inverse[variable.transition];
     const int source_clock = variable.kind == ClockKind::Execution
                                  ? state.exec_index(source_transition)

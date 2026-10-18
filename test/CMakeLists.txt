@@ -27,6 +27,7 @@ add_executable(ptpn_test
   test_conversion.cpp
   test_time_horizon.cpp
   test_scheduling_policy.cpp
+  test_edf.cpp
   test_allocation.cpp
   # Exposes write_wcet_json so the WCET export schema is covered directly.
   ${CMAKE_SOURCE_DIR}/src/app/pipeline.cpp

@@ -25,6 +25,11 @@ void StateClassReachabilityGraph::set_firing_rule(std::unique_ptr<FiringRule> ru
   if (!rule) {
     throw std::invalid_argument("firing rule must not be null");
   }
+  if (extrapolation_enabled_ && rule->uses_release_clocks()) {
+    throw std::invalid_argument(
+        "k-extrapolation is not sound for release-clock (EDF) states; disable "
+        "extrapolation before installing this rule");
+  }
   firing_rule_ = std::move(rule);
 }
 
@@ -55,6 +60,11 @@ size_t StateClassReachabilityGraph::MarkingActiveHash::operator()(
 }
 
 void StateClassReachabilityGraph::set_extrapolation(bool enabled) {
+  if (enabled && firing_rule_ && firing_rule_->uses_release_clocks()) {
+    throw std::invalid_argument(
+        "k-extrapolation is not sound for release-clock (EDF) states: relaxing "
+        "release-clock bounds can merge different deadline orderings");
+  }
   extrapolation_enabled_ = enabled;
   if (!enabled) {
     return;
@@ -302,6 +312,20 @@ StateClassReachabilityGraph::expand_vertex(SCVertex u, size_t max_states) {
 }
 
 size_t StateClassReachabilityGraph::build(size_t max_states) {
+  // Release-clock states carry absolute job deadlines in the DBM. Neither
+  // k-extrapolation (which would relax those bounds) nor the task-symmetry
+  // quotient (which would have to permute release clocks and tasks) is
+  // implemented for them; reject rather than silently approximate.
+  if (firing_rule_->uses_release_clocks()) {
+    if (extrapolation_enabled_) {
+      throw std::invalid_argument(
+          "k-extrapolation is not sound for release-clock (EDF) states");
+    }
+    if (symmetry_applied()) {
+      throw std::invalid_argument(
+          "task-symmetry reduction is not implemented for release-clock (EDF) states");
+    }
+  }
   graph_.clear();
   vertices_by_marking_.clear();
   vertices_by_hash_.clear();

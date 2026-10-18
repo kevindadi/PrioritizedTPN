@@ -75,6 +75,11 @@ lock-hold, and exit places) use **saturating** capacity semantics:
   these policies with `task_place_capacity != 1` (and with start bindings
   requesting more than one token for a task), because queued job tokens would
   make the chain-position ownership inference ambiguous.
+- `edf` also supports only the default value `1`. Note that saturation clamps
+  a release only when the target place is already full: a `_fire` that arrives
+  while the job token is between core acquisition and completion would add a
+  second token at the empty entry. EDF rejects that successor as an ambiguous
+  job layout instead of modeling a queued release (see the policy list below).
 
 Resource places are **not** saturating: core places (capacity =
 `cores_per_cpu`), lock places (capacity 1), and the periodic control place
@@ -167,10 +172,24 @@ Analysis coverage in this phase:
   guarantee is claimed for them. The ceiling is global on multi-core nets (a
   conservative variant of classical uniprocessor SRP). See
   `docs/ptopner/scheduling-semantics.md`.
-- `edf`, `llf`, and `fifo` are accepted by the parser but are **not
-  implemented** as scheduling semantics. They fall back to the static
-  transition priorities with non-preemptive handling and must not be treated as
-  analyzed.
+- `edf` implements Earliest Deadline First for a deliberately restricted class,
+  **not** as a static deadline priority. Lowering accepts only: `num_cpus == 1`
+  (all tasks on core `0`), no locks, no fork/join, no task-to-task dependency
+  edges, `task_place_capacity == 1`, at most one start token per task, and
+  every task either periodic with a positive period released by `_fire` or a
+  one-shot task started at time 0; every task needs a positive absolute
+  deadline. The state class adds a release clock per in-flight job and an
+  absolute-deadline order constraint to the DBM zone, enumerating every feasible
+  earliest-deadline task (ties included). A periodic release that fires while
+  the previous job is mid-chain is rejected with `std::invalid_argument` (no
+  queued jobs); a release while the job waits at the entry is a conservative
+  merge that does not reset its deadline. `k-extrapolation` and symmetry
+  reduction are rejected for EDF states. See
+  `docs/ptopner/scheduling-semantics.md` for the full supported class and
+  semantics.
+- `llf` and `fifo` are accepted by the parser but are **not implemented** as
+  scheduling semantics. They fall back to the static transition priorities with
+  non-preemptive handling and must not be treated as analyzed.
 
 ## `nodes`
 
@@ -191,7 +210,7 @@ Supported node types:
 | `type`          | string           | yes      | Node type                                                                   |
 | `priority`      | integer          | no       | Task priority, default `100`; ignored by `rm`/`dm`, which compute priorities |
 | `core`          | integer          | no       | Assigned core id, starting from `0`; default `0`                            |
-| `deadline`      | integer          | no       | Absolute deadline in the `time` unit; `0`/absent means implicit (= period). DM uses it as its priority key when `> 0`. |
+| `deadline`      | integer          | no       | Absolute deadline in the `time` unit; `0`/absent means implicit (= period). DM uses it as its priority key when `> 0`; EDF requires a positive absolute deadline per task (explicit or implicit). |
 | `allowed_cores` | array of integers | no       | Core-allocation domain; see below. Absent means the task is fixed to `core` |
 | `wcet_kind`     | string           | no       | WCET provenance class, default `model`; see below                           |
 | `wcet_method`   | string           | no       | Free-form provenance, e.g. `OTAWA`, `MBPTA`, `llm-estimate`                 |
