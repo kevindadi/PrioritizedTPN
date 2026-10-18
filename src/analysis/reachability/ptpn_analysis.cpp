@@ -17,7 +17,16 @@ void hash_combine(size_t& seed, size_t value) {
 }
 }  // namespace
 
-StateClassReachabilityGraph::StateClassReachabilityGraph(const petri::PTPN& net) : net_(net) {}
+StateClassReachabilityGraph::StateClassReachabilityGraph(const petri::PTPN& net) : net_(net) {
+  set_firing_rule(make_firing_rule(net.schedule_policy()));
+}
+
+void StateClassReachabilityGraph::set_firing_rule(std::unique_ptr<FiringRule> rule) {
+  if (!rule) {
+    throw std::invalid_argument("firing rule must not be null");
+  }
+  firing_rule_ = std::move(rule);
+}
 
 void StateClassReachabilityGraph::set_canonicalization_mode(CanonicalizationMode mode) {
   mode_ = mode;

@@ -335,6 +335,7 @@ class ConeBuilder {
 
   PTPN materialize() {
     PTPN projected;
+    projected.set_schedule_policy(net_.schedule_policy());
     std::vector<PlaceId> place_map(num_places_);
     std::vector<char> place_mapped(num_places_, 0);
     for (size_t p = 0; p < num_places_; ++p) {

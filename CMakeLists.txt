@@ -198,6 +198,7 @@ add_library(ptpn_lowering STATIC
     src/lower/tdg2pn/resource_lowering.cpp
     src/lower/tdg2pn/task_metadata.cpp
     src/lower/tdg2pn/preemption.cpp
+    src/lower/tdg2pn/policy_priorities.cpp
 )
 target_link_libraries(ptpn_lowering
     PUBLIC
@@ -278,6 +279,7 @@ add_library(ptpn_reachability STATIC
     src/analysis/reachability/state_class_firing.cpp
     src/analysis/reachability/canonicalization.cpp
     src/analysis/reachability/scheduling.cpp
+    src/analysis/reachability/scheduling_policy.cpp
     src/analysis/reachability/symmetry.cpp
 )
 target_link_libraries(ptpn_reachability

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "analysis/reachability/canonicalization.h"
+#include "analysis/reachability/scheduling_policy.h"
 #include "analysis/reachability/state_class.h"
 #include "analysis/reachability/symmetry.h"
 #include "model/petri.h"
@@ -43,6 +44,11 @@ enum class ReductionMode {
 class StateClassReachabilityGraph {
  public:
   explicit StateClassReachabilityGraph(const petri::PTPN& net);
+
+  // Replaces the policy rule. The constructor installs
+  // make_firing_rule(net_.schedule_policy()), so ordinary callers never need to
+  // touch this; it exists for tests and future dynamic policies.
+  void set_firing_rule(std::unique_ptr<FiringRule> rule);
 
   void set_canonicalization_mode(CanonicalizationMode mode);
   [[nodiscard]] CanonicalizationMode get_canonicalization_mode() const;
@@ -189,6 +195,9 @@ class StateClassReachabilityGraph {
 
  private:
   const petri::PTPN& net_;
+  // Scheduling policy semantics (priority + admissibility). Defaults to the
+  // static rule derived from net_.schedule_policy().
+  std::unique_ptr<FiringRule> firing_rule_;
   SCGraph graph_;
   SCVertex initial_vertex_ = 0;
   Statistics stats_;

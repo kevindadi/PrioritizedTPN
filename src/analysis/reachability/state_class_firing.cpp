@@ -151,7 +151,15 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
   const petri::Marking marking =
       petri::PTPN::fire(elapsed.marking, net_, petri::TransitionId{t});
   const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, marking);
-  const std::vector<TransitionSet> branches = Scheduling::priority_branches(struct_enabled, net_);
+  // Context over a temporary state carrying the successor marking. The full
+  // clock layout/zone is built only after the branch is chosen; static rules
+  // must not read it. Dynamic rules will need the prepared successor state
+  // (marking + zone) when they are added.
+  StateClass successor_context;
+  successor_context.marking = marking;
+  const PolicyContext context{net_, &successor_context};
+  const std::vector<TransitionSet> branches =
+      Scheduling::priority_branches(struct_enabled, net_, *firing_rule_, context);
 
   const int h_lower = -elapsed.zone.get_constraint(0, idx);
   const int firing_instant = std::max(lower, h_lower);

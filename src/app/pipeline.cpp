@@ -239,7 +239,12 @@ int load_tdg_from_json(const string& input_file, tdg::TDG& tdg, parse::Parser& p
 
 int build_ptpn_from_tdg(tdg::TDG& tdg, petri::PTPN& ptpn) {
   spdlog::info("\n[PTPN] Converting TDG to PTPN...");
-  converter::TDG2PN::transform(tdg, ptpn);
+  try {
+    converter::TDG2PN::transform(tdg, ptpn);
+  } catch (const std::exception& error) {
+    spdlog::error("[PTPN] TDG to PTPN conversion failed: {}", error.what());
+    return 1;
+  }
   spdlog::info("[PTPN] PTPN conversion completed");
   spdlog::info("  Places: {}", ptpn.num_places());
   spdlog::info("  Transitions: {}", ptpn.num_transitions());
@@ -791,7 +796,9 @@ int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t init
 
   petri::PTPN ptpn;
   const auto lowering_start = PipelineClock::now();
-  build_ptpn_from_tdg(tdg, ptpn);
+  if (build_ptpn_from_tdg(tdg, ptpn) != 0) {
+    return 1;
+  }
   log_step_timing("TDG2PN lowering", elapsed_ms(lowering_start));
 
   return run_ptpn_postprocess(ptpn, "TDG", opts, pipeline_start, initial_memory);
@@ -884,7 +891,9 @@ int run_export_ptopner(const ExportCommandOptions& opts) {
   }
 
   petri::PTPN ptpn;
-  build_ptpn_from_tdg(tdg, ptpn);
+  if (build_ptpn_from_tdg(tdg, ptpn) != 0) {
+    return 1;
+  }
   return export_ppn_from_ptpn(ptpn, opts.output_file);
 }
 

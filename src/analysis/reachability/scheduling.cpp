@@ -40,25 +40,32 @@ TransitionSet Scheduling::structural_enabled(const petri::PTPN& net,
 }
 
 std::vector<TransitionSet> Scheduling::priority_branches(const TransitionSet& struct_enabled,
-                                                         const petri::PTPN& net) {
-  // Every transition competes within its core group, identified by the `core`
+                                                         const petri::PTPN& net,
+                                                         const FiringRule& rule,
+                                                         const PolicyContext& context) {
+  // First drop transitions the policy declares inadmissible. Every remaining
+  // transition competes within its core group, identified by the `core`
   // attribute. The control core (-1) is not CPU-scheduled: all of its
   // maximal-priority transitions form one choice and remain concurrently
   // enabled (ordinary TPN semantics for control).
   std::map<int, std::vector<size_t>> per_core;
   for (size_t t : struct_enabled) {
+    if (!rule.admissible(context, t)) {
+      continue;
+    }
     per_core[net.get_transition(petri::TransitionId{t}).core].push_back(t);
   }
 
   // Cartesian product of the per-core choices.
   std::vector<TransitionSet> branches(1);
   for (auto& [core, group] : per_core) {
-    // Highest priority first, ties by transition index only to make the
-    // enumeration order deterministic.
+    // Highest effective priority first, ties by transition id only to make the
+    // enumeration order deterministic. Ties are still all enumerated below;
+    // the id ordering never selects a winner.
     std::vector<size_t> sorted = group;
     std::sort(sorted.begin(), sorted.end(), [&](size_t a, size_t b) {
-      const int pa = net.get_transition(petri::TransitionId{a}).priority;
-      const int pb = net.get_transition(petri::TransitionId{b}).priority;
+      const int pa = rule.effective_priority(context, a);
+      const int pb = rule.effective_priority(context, b);
       if (pa != pb) {
         return pa > pb;
       }
@@ -69,17 +76,16 @@ std::vector<TransitionSet> Scheduling::priority_branches(const TransitionSet& st
     const int capacity = net.parallelism_of_core(core);
     if (capacity <= 0) {
       // Control core: keep every transition at the group's maximal priority.
-      const int max_priority =
-          net.get_transition(petri::TransitionId{sorted.front()}).priority;
+      const int max_priority = rule.effective_priority(context, sorted.front());
       TransitionSet top;
       for (size_t t : sorted) {
-        if (net.get_transition(petri::TransitionId{t}).priority == max_priority) {
+        if (rule.effective_priority(context, t) == max_priority) {
           top.push_back(t);
         }
       }
       choices.push_back(std::move(top));
     } else if (sorted.size() <= static_cast<size_t>(capacity)) {
-      // Enough slots for every structurally enabled transition.
+      // Enough slots for every admissible transition.
       choices.push_back(sorted);
     } else {
       // Fixed-priority dispatch with K slots: the transitions strictly above
@@ -87,12 +93,11 @@ std::vector<TransitionSet> Scheduling::priority_branches(const TransitionSet& st
       // every equal-priority tie at the cutoff. For K = 1 this is exactly the
       // set of maximal-priority candidates.
       const int cutoff =
-          net.get_transition(petri::TransitionId{sorted[static_cast<size_t>(capacity) - 1]})
-              .priority;
+          rule.effective_priority(context, sorted[static_cast<size_t>(capacity) - 1]);
       TransitionSet mandatory;
       std::vector<size_t> tied;
       for (size_t t : sorted) {
-        const int priority = net.get_transition(petri::TransitionId{t}).priority;
+        const int priority = rule.effective_priority(context, t);
         if (priority > cutoff) {
           mandatory.push_back(t);
         } else if (priority == cutoff) {

@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "model/types.h"
+
 namespace petri {
 
 constexpr int INF = std::numeric_limits<int>::max();
@@ -352,6 +354,13 @@ class PTPN {
     task_info_[task] = std::move(info);
   }
 
+  // Scheduling policy metadata. The analysis layer uses it to select the
+  // firing rule (see analysis/reachability/scheduling_policy.h). A directly
+  // parsed `.ptpn` net keeps the default FIXED policy.
+  void set_schedule_policy(SchedulePolicy policy) {
+    schedule_policy_ = policy;
+  }
+
   void clear_lowering_metadata() {
     node_start_end_map_.clear();
     node_pn_map_.clear();
@@ -438,6 +447,10 @@ class PTPN {
 
   [[nodiscard]] const std::unordered_map<std::string, TaskInfo>& task_info() const {
     return task_info_;
+  }
+
+  [[nodiscard]] SchedulePolicy schedule_policy() const {
+    return schedule_policy_;
   }
 
   // How many transitions may run simultaneously on `core_id`. The control core
@@ -583,6 +596,7 @@ class PTPN {
   std::unordered_map<std::string, TransitionId> periodic_transitions_;
   std::unordered_map<int, int> core_parallelism_;
   std::unordered_map<std::string, TaskInfo> task_info_;
+  SchedulePolicy schedule_policy_ = SchedulePolicy::FIXED;
   size_t node_index_ = 0;
 };
 

@@ -78,7 +78,11 @@ std::vector<StateClass> StateClassReachabilityGraph::compute_initial_classes() {
   base.elapsed_time = 0.0;
 
   const TransitionSet struct_enabled = Scheduling::structural_enabled(net_, base.marking);
-  const std::vector<TransitionSet> branches = Scheduling::priority_branches(struct_enabled, net_);
+  // The initial class has a marking but no zone/layout yet. Static rules only
+  // read the net; dynamic rules must tolerate the missing zone.
+  const PolicyContext context{net_, &base};
+  const std::vector<TransitionSet> branches =
+      Scheduling::priority_branches(struct_enabled, net_, *firing_rule_, context);
 
   std::vector<StateClass> out;
   out.reserve(branches.size());
