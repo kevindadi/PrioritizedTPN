@@ -30,6 +30,8 @@ struct TaskNode {
   std::string name;
   int core = 0;
   int priority = 100;
+  // Absolute deadline; 0 means "not specified" (lowering uses the period).
+  int deadline = 0;
   std::vector<std::pair<int, int>> time;
   bool is_lock = false;
   std::vector<std::string> lock;

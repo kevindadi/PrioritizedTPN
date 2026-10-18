@@ -70,7 +70,17 @@ void TDG::load_from_parser(const parse::Parser& parser, bool log_nodes) {
   periodic_tasks = parser.get_periodic_tasks();
 
   for (const auto& json_node : parser.get_nodes()) {
-    register_node(*this, json_node.to_node_type(), log_nodes);
+    const NodeType node_type = json_node.to_node_type();
+    if (const TaskNode* task = std::get_if<TaskNode>(&node_type)) {
+      if (json_node.has_allowed_cores) {
+        task_allowed_cores[task->name] = json_node.allowed_cores;
+      } else {
+        task_allowed_cores[task->name] = {task->core};
+      }
+      task_wcet_provenance[task->name] = {
+          json_node.wcet_kind, json_node.wcet_method, json_node.wcet_artifact};
+    }
+    register_node(*this, node_type, log_nodes);
   }
 
   tdg_edges.clear();

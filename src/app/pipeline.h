@@ -5,7 +5,12 @@
 #include <optional>
 #include <string>
 
+#include "analysis/allocation/allocation.h"
 #include "model/types.h"
+
+namespace tdg {
+class TDG;
+}
 
 namespace app {
 
@@ -54,13 +59,31 @@ struct ExportCommandOptions {
   bool debug_mode = false;
 };
 
+struct AllocationCommandOptions {
+  std::string input_file;
+  std::string output_file;
+  size_t max_candidates = 64;
+  size_t candidate_max_states = 200000;
+  allocation::Objective objective = allocation::Objective::MAX_WCRT;
+  bool require_certified_wcet = false;
+  bool debug_mode = false;
+  std::optional<SchedulePolicy> policy_override;
+};
+
 size_t get_memory_usage();
+
+// Writes the per-task WCET summary JSON (interval, segment count, and WCET
+// provenance) for `graph` to `output_path`. The top-level `all_certified` flag
+// is true only when every task's provenance kind is "certified". Returns false
+// if the file cannot be opened.
+bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path);
 
 int run_tdg_pipeline(const std::string& input_file, PipelineOptions opts, size_t initial_memory);
 int run_ptpn_pipeline(const std::string& input_file, const PipelineOptions& opts,
                       size_t initial_memory);
 int run_export_romeo(const ExportCommandOptions& opts);
 int run_export_ptopner(const ExportCommandOptions& opts);
+int run_allocation(const AllocationCommandOptions& opts);
 
 }  // namespace app
 

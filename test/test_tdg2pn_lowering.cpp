@@ -55,6 +55,40 @@ const char* kSelfLoopGraph = R"({
 
 }  // namespace
 
+TEST(Tdg2pnLoweringTest, ExplicitDeadlineIsPropagatedToTaskInfo) {
+  const std::string explicit_deadline = R"({
+    "graph": {"name": "Deadline"},
+    "configuration": {
+      "num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed",
+      "periodic": [{"task": "A", "period": 10}]
+    },
+    "nodes": [
+      {"id": "A", "type": "task", "priority": 1, "core": 0, "deadline": 6,
+       "time": [[2, 2]], "locks": []}
+    ],
+    "edges": []
+  })";
+  const petri::PTPN explicit_net = lower(explicit_deadline);
+  const auto& explicit_info = explicit_net.task_info().at("A");
+  EXPECT_EQ(explicit_info.period, 10);
+  EXPECT_EQ(explicit_info.deadline, 6);
+
+  const std::string implicit_deadline = R"({
+    "graph": {"name": "Deadline"},
+    "configuration": {
+      "num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed",
+      "periodic": [{"task": "A", "period": 10}]
+    },
+    "nodes": [
+      {"id": "A", "type": "task", "priority": 1, "core": 0,
+       "time": [[2, 2]], "locks": []}
+    ],
+    "edges": []
+  })";
+  const petri::PTPN implicit_net = lower(implicit_deadline);
+  EXPECT_EQ(implicit_net.task_info().at("A").deadline, 10);
+}
+
 TEST(Tdg2pnLoweringTest, SelfLoopEdgeIsIgnored) {
   const petri::PTPN plain = lower(kBaseGraph);
   const petri::PTPN looped = lower(kSelfLoopGraph);

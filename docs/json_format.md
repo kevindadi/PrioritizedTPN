@@ -48,8 +48,8 @@ This document defines the JSON format used to describe a task dependency graph (
 
 | Field                 | Type    | Required | Description                                                                         |
 | --------------------- | ------- | -------- | ----------------------------------------------------------------------------------- |
-| `num_cpus`            | integer | yes      | Number of CPUs                                                                      |
-| `cores_per_cpu`       | integer | yes      | Number of cores per CPU                                                             |
+| `num_cpus`            | integer | yes      | Number of real core resources (valid task core ids are `0 .. num_cpus-1`)            |
+| `cores_per_cpu`       | integer | yes      | Per-core capacity parameter; values > 1 are not modeled as extra cores (see below)   |
 | `shared_locks`        | array   | yes      | Global lock names used by task nodes                                                |
 | `policy`              | string  | no       | Scheduling policy, default is `fixed`                                               |
 | `task_place_capacity` | integer | no       | Capacity of every task-chain place (entry/ready/segment/hold/exit); default `1`. See below. |
@@ -101,21 +101,62 @@ Supported node types:
 
 | Type    | Description                      | Required fields                                     |
 | ------- | -------------------------------- | --------------------------------------------------- |
-| `task`  | Executable task node             | `id`, `type`, `priority`, `core`, `time`, `locks`   |
+| `task`  | Executable task node             | `id`, `type`, `time`, `locks` (optional: `priority`, `core`, `deadline`, `allowed_cores`, WCET provenance) |
 | `fork`  | Fork node (a control transition) | `id`, `type` (optional: `time`, `core`, `priority`) |
 | `join`  | Join node (a control transition) | `id`, `type` (optional: `time`, `core`, `priority`) |
 | `empty` | Empty node                       | `id`, `type`                                        |
 
 ### Task fields
 
-| Field      | Type    | Description                         |
-| ---------- | ------- | ----------------------------------- |
-| `id`       | string  | Unique node identifier              |
-| `type`     | string  | Node type                           |
-| `priority` | integer | Task priority                       |
-| `core`     | integer | Assigned core id, starting from `0` |
-| `time`     | array   | Execution time segments             |
-| `locks`    | array   | Lock list                           |
+| Field           | Type             | Required | Description                                                                 |
+| --------------- | ---------------- | -------- | --------------------------------------------------------------------------- |
+| `id`            | string           | yes      | Unique node identifier                                                      |
+| `type`          | string           | yes      | Node type                                                                   |
+| `priority`      | integer          | no       | Task priority, default `100`                                                |
+| `core`          | integer          | no       | Assigned core id, starting from `0`; default `0`                            |
+| `deadline`      | integer          | no       | Absolute deadline in the `time` unit; `0`/absent means implicit (= period)  |
+| `allowed_cores` | array of integers | no       | Core-allocation domain; see below. Absent means the task is fixed to `core` |
+| `wcet_kind`     | string           | no       | WCET provenance class, default `model`; see below                           |
+| `wcet_method`   | string           | no       | Free-form provenance, e.g. `OTAWA`, `MBPTA`, `llm-estimate`                 |
+| `wcet_artifact` | string           | no       | Hash or path of the binary/source the WCET refers to                        |
+| `time`          | array            | yes      | Execution time segments                                                     |
+| `locks`         | array            | yes      | Lock list                                                                   |
+
+### Core-allocation domains
+
+`allowed_cores` declares the set of real cores a task may be allocated to. It
+must be a non-empty array of distinct integers in `0 .. num_cpus - 1`.
+`cores_per_cpu` is a per-core capacity parameter; it does not create additional
+core ids (multi-core parallelism per CPU is intentionally not modeled).
+
+- If `allowed_cores` is absent, the domain is the singleton `{core}` (and
+  `core` defaults to `0`), preserving the original fixed-core semantics.
+- If `allowed_cores` is present and `core` is absent, `core` is initialized to
+  `allowed_cores[0]`.
+- If both are present, `core` must be an element of `allowed_cores`.
+
+The domain is consumed by the `ptpn allocate` subcommand, which evaluates
+candidate assignments with the exact state-class analysis. Normal `tdg`/`ptpn`
+runs still use only the single `core` value; they do not search the domain.
+
+### WCET provenance and trust boundary
+
+`wcet_kind` classifies where the task's WCET came from:
+
+| Kind        | Meaning                                                       |
+| ----------- | ------------------------------------------------------------- |
+| `model`     | Default; derived from the input time intervals                |
+| `certified` | Backed by a certified WCET analysis                           |
+| `measured`  | Measured on hardware or a simulator                           |
+| `estimated` | Estimated (e.g. by an LLM or a heuristic)                     |
+
+Only `certified` is a certification. `measured`, `estimated`, and `model` WCETs
+must not be reported as certified. The WCET export's `all_certified` flag is
+`true` only when every task has kind `certified`; a graph with no provenance
+fields reports `model` for every task and therefore `all_certified: false`.
+
+`wcet_method` and `wcet_artifact` are optional free-form strings for audit
+trails; they do not change analysis semantics.
 
 ### Fork / Join fields
 
@@ -259,6 +300,34 @@ Special cases:
 }
 ```
 
+## WCET summary export
+
+`--export-wcet PATH` writes a per-task summary of the parsed TDG:
+
+```json
+{
+  "all_certified": false,
+  "tasks": [
+    {
+      "id": 0,
+      "interval": [4, 7],
+      "name": "TaskA",
+      "segments": 2,
+      "wcet": 7,
+      "wcet_artifact": "sha256:abc",
+      "wcet_kind": "certified",
+      "wcet_method": "OTAWA"
+    }
+  ]
+}
+```
+
+- `wcet` is the sum of the upper bounds of all time segments (unchanged from
+  earlier versions); `interval` adds the sum of the lower bounds.
+- `wcet_kind`, `wcet_method`, and `wcet_artifact` mirror the input provenance
+  (defaults: `model`, empty, empty).
+- `all_certified` is `true` only when every task's `wcet_kind` is `certified`.
+
 ## Validation rules
 
 Errors:
@@ -266,6 +335,11 @@ Errors:
 - Duplicate node ids
 - Unknown node types
 - Invalid core indices
+- Empty, duplicate, or out-of-range `allowed_cores`
+- `core` not contained in `allowed_cores` when both are present
+- Unknown `wcet_kind` values
+- Negative `deadline` values
+- `num_cpus` or `cores_per_cpu` below 1
 - Edges referencing unknown nodes
 - Undefined locks
 - Invalid lock prefixes
@@ -289,8 +363,10 @@ Warnings:
 Valid core ids for tasks are in:
 
 ```text
-0 .. num_cpus * cores_per_cpu - 1
+0 .. num_cpus - 1
 ```
 
+`cores_per_cpu` is a per-core capacity parameter, not a multiplier for core
+ids; the lowering creates exactly `num_cpus` real-core resource places.
 `fork`/`join` nodes additionally accept `-1` (the control core), which is their
 default when `core` is omitted.

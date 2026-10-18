@@ -1,12 +1,15 @@
 #include <cstddef>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
+#include "app/pipeline.h"
 #include "export/export_dot.h"
 #include "export/scg_dot.h"
 #include "lower/tdg2pn/tdg2pn.h"
@@ -159,4 +162,61 @@ TEST(PipelineGolden, PtopnerPpnMatchesGolden) {
   const auto result = ptopner_export::export_ptpn_to_ppn_file(ptpn, out);
   ASSERT_TRUE(result.success) << result.error_message;
   expect_matches_golden(out, "test/golden/no-period.ppn");
+}
+
+TEST(PipelineGolden, WcetJsonReportsIntervalsProvenanceAndCertification) {
+  tdg::TDG tdg(1, 2);
+
+  TaskNode certified;
+  certified.name = "Certified";
+  certified.time = {{1, 2}, {3, 5}};
+  tdg.all_task.emplace_back(certified);
+  tdg.task_wcet_provenance["Certified"] = {"certified", "OTAWA", "sha256:abc"};
+
+  // No provenance entry: the export must fall back to kind "model".
+  TaskNode modeled;
+  modeled.name = "Modeled";
+  modeled.time = {{0, 7}};
+  tdg.all_task.emplace_back(modeled);
+
+  const std::string out = testing::TempDir() + "ptpn_test_wcet.json";
+  ASSERT_TRUE(app::write_wcet_json(tdg, out));
+
+  nlohmann::json exported;
+  {
+    std::ifstream in(out);
+    ASSERT_TRUE(in.is_open());
+    in >> exported;
+  }
+
+  EXPECT_FALSE(exported["all_certified"].get<bool>());
+  ASSERT_EQ(exported["tasks"].size(), 2);
+
+  const auto& certified_json = exported["tasks"][0];
+  EXPECT_EQ(certified_json["id"], 0);
+  EXPECT_EQ(certified_json["name"], "Certified");
+  EXPECT_EQ(certified_json["wcet"], 7);
+  EXPECT_EQ(certified_json["interval"], nlohmann::json::array({4, 7}));
+  EXPECT_EQ(certified_json["segments"], 2);
+  EXPECT_EQ(certified_json["wcet_kind"], "certified");
+  EXPECT_EQ(certified_json["wcet_method"], "OTAWA");
+  EXPECT_EQ(certified_json["wcet_artifact"], "sha256:abc");
+
+  const auto& modeled_json = exported["tasks"][1];
+  EXPECT_EQ(modeled_json["name"], "Modeled");
+  EXPECT_EQ(modeled_json["wcet"], 7);
+  EXPECT_EQ(modeled_json["interval"], nlohmann::json::array({0, 7}));
+  EXPECT_EQ(modeled_json["wcet_kind"], "model");
+  EXPECT_EQ(modeled_json["wcet_method"], "");
+  EXPECT_EQ(modeled_json["wcet_artifact"], "");
+
+  // All tasks certified is the only case that sets the top-level flag.
+  tdg.task_wcet_provenance["Modeled"] = {"certified", "OTAWA", "sha256:def"};
+  const std::string all_certified_path = testing::TempDir() + "ptpn_test_wcet_certified.json";
+  ASSERT_TRUE(app::write_wcet_json(tdg, all_certified_path));
+  std::ifstream in(all_certified_path);
+  ASSERT_TRUE(in.is_open());
+  nlohmann::json all_certified;
+  in >> all_certified;
+  EXPECT_TRUE(all_certified["all_certified"].get<bool>());
 }

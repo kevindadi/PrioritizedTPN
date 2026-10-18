@@ -312,6 +312,21 @@ target_link_libraries(ptpn_reductions
     ptpn_petri
 )
 
+# Deterministic core-allocation explorer: evaluates candidate assignments with
+# the exact state-class analysis and reports feasible/Pareto allocations.
+add_library(ptpn_allocation STATIC
+    src/analysis/allocation/allocation.cpp
+)
+target_link_libraries(ptpn_allocation
+    PUBLIC
+    ptpn_metrics
+    ptpn_lowering
+    ptpn_tdg
+    PRIVATE
+    nlohmann_json::nlohmann_json
+    spdlog::spdlog
+)
+
 # Aggregate facade kept for the executables and tests.
 add_library(PTPN_core INTERFACE)
 target_link_libraries(PTPN_core
@@ -330,6 +345,7 @@ target_link_libraries(PTPN_core
     ptpn_reachability
     ptpn_metrics
     ptpn_reductions
+    ptpn_allocation
     spdlog::spdlog
     fmt::fmt
 )

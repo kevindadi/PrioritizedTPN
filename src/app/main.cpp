@@ -1,4 +1,5 @@
 #include <CLI/CLI.hpp>
+#include <cstddef>
 #include <spdlog/spdlog.h>
 #include <string>
 
@@ -17,6 +18,16 @@ SchedulePolicy parse_policy_option(const string& policy) {
                                "fifo, rm, dm, edf, llf, pip, pcp, or srp");
   }
   return parsed;
+}
+
+allocation::Objective parse_objective_option(const string& objective) {
+  if (objective == "max-utilization") {
+    return allocation::Objective::MAX_UTILIZATION;
+  }
+  if (objective == "max-load") {
+    return allocation::Objective::MAX_LOAD;
+  }
+  return allocation::Objective::MAX_WCRT;
 }
 
 void add_export_target_options(CLI::App* cmd, app::ExportTargets& exports) {
@@ -90,6 +101,7 @@ int main(int argc, char* argv[]) {
       "Usage:\n"
       "  ptpn tdg -f <input.json> [--export-scg graph.dot] ...\n"
       "  ptpn ptpn -f <model.ptpn> [--romeo out.cts] ...\n"
+      "  ptpn allocate -f <input.json> -o <report.json> [--objective ...]\n"
       "  ptpn export romeo -f <input> -o <out.cts> [--policy ...]\n"
       "  ptpn export ptopner -f <input> -o <out.ppn>\n"
       "\n"
@@ -99,10 +111,13 @@ int main(int argc, char* argv[]) {
   app::PipelineOptions ptpn_opts;
   app::ExportCommandOptions romeo_export_opts;
   app::ExportCommandOptions ptopner_export_opts;
+  app::AllocationCommandOptions allocation_opts;
   string tdg_file;
   string ptpn_file;
+  string allocation_objective = "max-wcrt";
   string tdg_policy_string;
   string ptopner_policy_string;
+  string allocation_policy_string;
   bool romeo_no_core_places = false;
   bool export_romeo_no_core_places = false;
 
@@ -147,6 +162,53 @@ int main(int argc, char* argv[]) {
       "max-lower\n"
       "  ptpn ptpn -f model.ptpn --no-analysis --export-ptpn net.dot");
 
+  auto* allocate_cmd = app.add_subcommand(
+      "allocate", "Search deterministic core allocations with the exact PTPN analysis");
+  allocate_cmd->add_option("-f,--file", allocation_opts.input_file,
+                           "Input TDG JSON file")->required(true);
+  allocate_cmd->add_option("-o,--output", allocation_opts.output_file,
+                           "Output allocation report JSON")->required(true);
+  allocate_cmd
+      ->add_option("--objective", allocation_objective,
+                   "Objective to minimize: max-wcrt, max-utilization, or max-load "
+                   "(default: max-wcrt)")
+      ->check(CLI::IsMember({"max-wcrt", "max-utilization", "max-load"}))
+      ->transform([&allocation_opts](const string& value) {
+        allocation_opts.objective = parse_objective_option(value);
+        return value;
+      });
+  allocate_cmd
+      ->add_option("--max-candidates", allocation_opts.max_candidates,
+                   "Maximum number of candidate assignments analyzed (default: 64)")
+      ->check(CLI::Range(std::size_t{1}, std::size_t{1000000}));
+  allocate_cmd
+      ->add_option("--candidate-max-states", allocation_opts.candidate_max_states,
+                   "State-class graph bound per candidate (default: 200000)")
+      ->check(CLI::PositiveNumber);
+  allocate_cmd->add_flag("--require-certified-wcet",
+                         allocation_opts.require_certified_wcet,
+                         "Only consider allocations whose WCET provenance is certified");
+  allocate_cmd->add_flag("--debug", allocation_opts.debug_mode,
+                         "Enable debug logging (including per-candidate analysis logs)");
+  allocate_cmd
+      ->add_option("--policy", allocation_policy_string,
+                   "Override the TDG scheduling policy before allocation analysis")
+      ->transform([&allocation_opts](const string& value) {
+        allocation_opts.policy_override = parse_policy_option(value);
+        return value;
+      });
+  allocate_cmd->footer(
+      "Examples:\n"
+      "  ptpn allocate -f input.json -o allocation.json\n"
+      "  ptpn allocate -f input.json -o allocation.json --objective max-load\n"
+      "  ptpn allocate -f input.json -o allocation.json --max-candidates 32 "
+      "--candidate-max-states 50000\n"
+      "  ptpn allocate -f input.json -o allocation.json --require-certified-wcet\n"
+      "\n"
+      "The search evaluates candidate assignments with the exact state-class "
+      "analysis and reports feasible and Pareto allocations. Fails (exit 1) only "
+      "on input or output errors; an empty best allocation is reported in JSON.");
+
   auto* export_cmd = app.add_subcommand("export", "Export to Romeo or PToPNer formats");
   export_cmd->require_subcommand(1);
 
@@ -187,6 +249,8 @@ int main(int argc, char* argv[]) {
     debug_mode = tdg_opts.debug_mode;
   } else if (ptpn_cmd->parsed()) {
     debug_mode = ptpn_opts.debug_mode;
+  } else if (allocate_cmd->parsed()) {
+    debug_mode = allocation_opts.debug_mode;
   } else if (export_romeo_cmd->parsed()) {
     debug_mode = romeo_export_opts.debug_mode;
   } else if (export_ptopner_cmd->parsed()) {
@@ -210,6 +274,9 @@ int main(int argc, char* argv[]) {
   }
   if (ptpn_cmd->parsed()) {
     return app::run_ptpn_pipeline(ptpn_file, ptpn_opts, initial_memory);
+  }
+  if (allocate_cmd->parsed()) {
+    return app::run_allocation(allocation_opts);
   }
   if (export_romeo_cmd->parsed()) {
     romeo_export_opts.romeo_explicit_core_places = !export_romeo_no_core_places;

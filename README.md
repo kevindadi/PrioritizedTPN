@@ -12,6 +12,9 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 - Optional **per-task cone decomposition** (`--reduction cone`): analyze each task on its dependency/contention cone; per-task timing and local-deadlock metrics match the full graph, but whole-net deadlock detection is unavailable and connected DAGs may not shrink
 - Optional **WCRT time-horizon reduction** (`--horizon N`) that bounds SCG expansion and reports truncation/approximation explicitly
 - Conservative **symmetry reduction** (`--reduction symmetry`) for verified isomorphic tasks on distinct cores
+- **Core-allocation search** (`ptpn allocate`) over per-task `allowed_cores`, evaluating candidates with the exact state-class analysis and reporting feasible/Pareto assignments with an optimality status
+- **LLM front-end prototype** (`tools/llm/`): natural-language task spec → validated task model → measured wall-clock interval → TDG JSON; measured values are explicitly not certified WCET
+- Task `deadline` and WCET provenance (`wcet_kind`, `wcet_method`, `wcet_artifact`) in TDG JSON
 - **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, metrics JSON, Romeo CTS, PToPNer `.ppn`
 - Dedicated **`export`** subcommands for Romeo and PToPNer workflows
 
@@ -223,6 +226,69 @@ work when every cone equals the full net. A partial-order/persistent-set mode
 was prototyped and **withdrawn**: on L-Bench 100t it reduced the graph from
 545708 to 87325 states while lowering some reported WCRTs (for example 5 → 4
 and 5 → 3), so it pruned genuinely longest paths and is not sound for WCRT.
+
+### Core-Allocation Search (`ptpn allocate`)
+
+Tasks may declare an allocation domain:
+
+```json
+{"id": "T1", "type": "task", "core": 0, "allowed_cores": [0, 1],
+ "deadline": 80, "time": [[2, 3]], "locks": [],
+ "wcet_kind": "measured", "wcet_method": "target-board run"}
+```
+
+Valid core ids are `0 .. num_cpus-1` (`cores_per_cpu` is a capacity parameter,
+not an extra range of core ids). `deadline` is an absolute deadline; `0` or
+absent means the implicit deadline (the period).
+
+`ptpn allocate` copies the TDG for each candidate assignment, writes the chosen
+cores, lowers with `TDG2PN`, and runs the exact SCG/metrics analysis with
+equality canonicalization, suspension-clock projection, and no reduction:
+
+```bash
+./build/ptpn allocate -f input.json -o allocation.json \
+    --objective max-load --max-candidates 64
+```
+
+The report contains:
+
+- `search`: strategy (`exhaustive`/`heuristic`), whether the assignment domain
+  was exhausted, domain size, evaluated/feasible counts, truncation, and reason;
+- `best`: the highest-ranked feasible candidate (or `null`);
+- `assignment`: the winning `{task, core}` list;
+- `pareto`: non-dominated feasible candidates on WCRT, utilization, and load;
+- `timing_model`: per-task WCET provenance and `all_certified`.
+
+Feasibility requires an untruncated, bounded, deadlock-free, schedulable
+analysis. `--require-certified-wcet` restricts `best` to tasks whose
+`wcet_kind` is `certified`; measured/estimated/model timing is still analyzed
+and reported but cannot win under that gate. See
+[docs/ptopner/allocation.md](docs/ptopner/allocation.md) for the full schema and
+ranking rules.
+
+### LLM Front-End Prototype (`tools/llm`)
+
+The prototype turns a validated task specification into LLM-proposed C
+programs, compiles and runs them in a temporary directory, and emits a TDG with
+`wcet_kind: "measured"`:
+
+```bash
+python -m tools.llm generate --spec spec.json --out model.json \
+    --execute --runs 20 --timeout 5 --tdg-out graph.json
+```
+
+`--response-file` replays a saved model response without network access.
+`--dry-run` prints the deterministic prompt.
+
+**Trust boundary:** the LLM is an untrusted proposer. Its output is schema
+validated; generated programs run only with `--execute`, with a timeout and
+best-effort resource limits. The measured min/max wall-clock interval includes
+process startup, has no confidence bound, and is **not a WCET upper bound**.
+Do not use `wcet_kind=measured` for hard real-time claims; certified timing
+requires a sound static WCET tool or validated MBPTA. Locked tasks require
+`2 * lock_count + 1` per-segment measurements; the emitter rejects a single
+total interval for them. See
+[docs/llm-integration.md](docs/llm-integration.md).
 
 ### Symmetry Reduction (`--reduction symmetry`)
 

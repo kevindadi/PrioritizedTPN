@@ -29,7 +29,9 @@ void populate_task_info(petri::PTPN& ptpn, const tdg::TDG& tdg) {
     }
     const auto period_it = period_of.find(task->name);
     info.period = period_it == period_of.end() ? 0 : period_it->second;
-    info.deadline = info.period;  // implicit deadline = period
+    // An explicit deadline wins; otherwise the classic implicit deadline is
+    // the period (0 for aperiodic tasks, meaning "no deadline").
+    info.deadline = task->deadline > 0 ? task->deadline : info.period;
     const auto locks_it = tdg.task_locks_map.find(task->name);
     if (locks_it != tdg.task_locks_map.end()) {
       info.locks = locks_it->second;

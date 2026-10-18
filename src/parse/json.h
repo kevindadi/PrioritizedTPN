@@ -35,8 +35,20 @@ struct JsonNode {
   std::string type;
   int priority = 100;
   int core = 0;
-  bool has_priority = false;  // whether "priority" was present in the JSON
-  bool has_core = false;      // whether "core" was present in the JSON
+  // Absolute deadline in the same time unit as `time`; 0 means "unspecified"
+  // (the lowering then falls back to the periodic period).
+  int deadline = 0;
+  bool has_priority = false;       // whether "priority" was present in the JSON
+  bool has_core = false;           // whether "core" was present in the JSON
+  bool has_deadline = false;       // whether "deadline" was present in the JSON
+  bool has_allowed_cores = false;  // whether "allowed_cores" was present in the JSON
+  // Core-allocation domain (task nodes only). Empty when absent; the effective
+  // domain is then the singleton {core}.
+  std::vector<int> allowed_cores;
+  // WCET provenance (task nodes only). "model" is the default trust class.
+  std::string wcet_kind = "model";
+  std::string wcet_method;
+  std::string wcet_artifact;
   std::vector<std::pair<int, int>> time;
   std::vector<std::string> locks;
 

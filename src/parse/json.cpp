@@ -77,6 +77,10 @@ bool is_task_type(const std::string& type) {
   return type == kNodeTypeTask;
 }
 
+bool is_valid_wcet_kind(const std::string& kind) {
+  return kind == "model" || kind == "certified" || kind == "measured" || kind == "estimated";
+}
+
 // Returns true when any edge matches the given predicate.
 template <typename Predicate>
 bool any_edge(const parse::JsonGraph& graph, Predicate predicate) {
@@ -301,8 +305,24 @@ JsonNode Parser::parse_node_object(const json& node_obj) {
   node.type = node_obj.value("type", "");
   node.has_priority = node_obj.contains("priority");
   node.has_core = node_obj.contains("core");
+  node.has_deadline = node_obj.contains("deadline");
+  node.has_allowed_cores = node_obj.contains("allowed_cores");
   node.priority = node_obj.value("priority", node.priority);
   node.core = node_obj.value("core", node.core);
+  node.deadline = node_obj.value("deadline", node.deadline);
+
+  if (node.has_allowed_cores) {
+    node.allowed_cores = node_obj["allowed_cores"].get<std::vector<int>>();
+    // Without an explicit core, the initial allocation is the first core in
+    // the domain.
+    if (!node.has_core && !node.allowed_cores.empty()) {
+      node.core = node.allowed_cores.front();
+    }
+  }
+
+  node.wcet_kind = node_obj.value("wcet_kind", node.wcet_kind);
+  node.wcet_method = node_obj.value("wcet_method", node.wcet_method);
+  node.wcet_artifact = node_obj.value("wcet_artifact", node.wcet_artifact);
 
   if (node_obj.contains("time")) {
     for (const auto& time_range : node_obj["time"]) {
@@ -330,7 +350,16 @@ ValidationResult Parser::validate() const {
   const std::set<std::string> valid_types = {kNodeTypeTask, kNodeTypeFork, kNodeTypeJoin,
                                              kNodeTypeEmpty};
   const std::set<std::string> defined_locks(graph_.shared_locks.begin(), graph_.shared_locks.end());
-  const int max_core = graph_.num_cpus * graph_.cores_per_cpu - 1;
+  if (graph_.num_cpus < 1) {
+    result.add_error("num_cpus must be >= 1, got " + std::to_string(graph_.num_cpus));
+  }
+  if (graph_.cores_per_cpu < 1) {
+    result.add_error("cores_per_cpu must be >= 1, got " + std::to_string(graph_.cores_per_cpu));
+  }
+  // Lowering creates exactly num_cpus real-core resource places. The
+  // `cores_per_cpu` value is a per-core capacity parameter, not an additional
+  // range of core ids (see docs/ptopner/scheduling-semantics.md).
+  const int max_core = std::max(0, graph_.num_cpus - 1);
 
   std::set<std::string> node_ids;
   std::unordered_map<std::string, std::string> node_types;
@@ -349,6 +378,41 @@ ValidationResult Parser::validate() const {
       result.add_error("Invalid core number for node " + node.id + ": " +
                        std::to_string(node.core) + " (valid range: 0-" + std::to_string(max_core) +
                        ")");
+    }
+
+    if (node.type == kNodeTypeTask && node.has_deadline && node.deadline < 0) {
+      result.add_error("Invalid deadline for node " + node.id + ": " +
+                       std::to_string(node.deadline) + " (must be >= 0)");
+    }
+
+    if (node.type == kNodeTypeTask && node.has_allowed_cores) {
+      if (node.allowed_cores.empty()) {
+        result.add_error("Node " + node.id + " has an empty allowed_cores array");
+      }
+
+      std::set<int> seen_cores;
+      for (const int allowed_core : node.allowed_cores) {
+        if (allowed_core < 0 || allowed_core > max_core) {
+          result.add_error("Invalid allowed core for node " + node.id + ": " +
+                           std::to_string(allowed_core) + " (valid range: 0-" +
+                           std::to_string(max_core) + ")");
+        }
+        if (!seen_cores.insert(allowed_core).second) {
+          result.add_error("Duplicate allowed core for node " + node.id + ": " +
+                           std::to_string(allowed_core));
+        }
+      }
+
+      if (!node.allowed_cores.empty() && node.has_core &&
+          seen_cores.count(node.core) == 0) {
+        result.add_error("Core " + std::to_string(node.core) + " of node " + node.id +
+                         " is not in its allowed_cores domain");
+      }
+    }
+
+    if (node.type == kNodeTypeTask && !is_valid_wcet_kind(node.wcet_kind)) {
+      result.add_error("Invalid wcet_kind for node " + node.id + ": '" + node.wcet_kind +
+                       "' (expected model, certified, measured, or estimated)");
     }
 
     for (const auto& lock : node.locks) {
@@ -503,6 +567,7 @@ NodeType JsonNode::to_node_type() const {
     task.name = id;
     task.priority = priority;
     task.core = core;
+    task.deadline = deadline;
     task.time = time;
     task.lock = locks;
     task.task_type = TaskType::NORMAL;

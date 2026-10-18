@@ -19,6 +19,7 @@
 #include <spdlog/spdlog.h>
 #include <variant>
 
+#include "analysis/allocation/allocation.h"
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "analysis/reductions/cone_projection.h"
@@ -64,6 +65,50 @@ bool has_any_export(const ExportTargets& exports) {
          !exports.ppn_file.empty() || !exports.tina_file.empty();
 }
 
+// Temporarily raises the global log level (used to keep per-candidate lowering
+// and analysis logging out of the default allocation output). Restores the
+// previous level on scope exit, including through early returns.
+class ScopedLogLevel {
+ public:
+  explicit ScopedLogLevel(spdlog::level::level_enum level)
+      : previous_level_(spdlog::default_logger()->level()) {
+    spdlog::set_level(level);
+  }
+  ~ScopedLogLevel() {
+    spdlog::set_level(previous_level_);
+  }
+
+  ScopedLogLevel(const ScopedLogLevel&) = delete;
+  ScopedLogLevel& operator=(const ScopedLogLevel&) = delete;
+
+ private:
+  spdlog::level::level_enum previous_level_;
+};
+
+string format_allocation_assignment(
+    const vector<pair<string, int>>& assignment) {
+  string text;
+  for (const auto& [task, core] : assignment) {
+    if (!text.empty()) {
+      text += ", ";
+    }
+    text += task + "->" + to_string(core);
+  }
+  return text.empty() ? "(empty)" : text;
+}
+
+const char* allocation_objective_name(allocation::Objective objective) {
+  switch (objective) {
+    case allocation::Objective::MAX_UTILIZATION:
+      return "max-utilization";
+    case allocation::Objective::MAX_LOAD:
+      return "max-load";
+    case allocation::Objective::MAX_WCRT:
+    default:
+      return "max-wcrt";
+  }
+}
+
 bool should_run_analysis(const PipelineOptions& opts) {
   if (!opts.exports.scg_dot.empty() || !opts.exports.metrics_json.empty()) {
     return true;
@@ -83,39 +128,6 @@ InputFormat resolve_input_format(const fs::path& input_path, const string& forma
     return InputFormat::PTPN;
   }
   return InputFormat::TDG;
-}
-
-bool write_wcet_json(const tdg::TDG& tdg, const fs::path& output_path) {
-  nlohmann::json wcet = nlohmann::json::object();
-  wcet["tasks"] = nlohmann::json::array();
-
-  size_t task_id = 0;
-  for (const auto& node : tdg.all_task) {
-    if (!holds_alternative<TaskNode>(node)) {
-      continue;
-    }
-
-    const auto& task = get<TaskNode>(node);
-    int task_wcet = 0;
-    for (const auto& interval : task.time) {
-      task_wcet += interval.second;
-    }
-
-    wcet["tasks"].push_back({
-        {"id", task_id++},
-        {"name", task.name},
-        {"wcet", task_wcet},
-        {"segments", task.time.size()},
-    });
-  }
-
-  ofstream out(output_path);
-  if (!out.is_open()) {
-    return false;
-  }
-
-  out << wcet.dump(2) << '\n';
-  return true;
 }
 
 state_class::CanonicalizationMode parse_canonicalization(const string& mode) {
@@ -642,6 +654,54 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
 
 }  // namespace
 
+bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path) {
+  nlohmann::json wcet = nlohmann::json::object();
+  wcet["tasks"] = nlohmann::json::array();
+
+  bool all_certified = true;
+  size_t task_id = 0;
+  for (const auto& node : graph.all_task) {
+    if (!holds_alternative<TaskNode>(node)) {
+      continue;
+    }
+
+    const auto& task = get<TaskNode>(node);
+    int wcet_lo = 0;
+    int wcet_hi = 0;
+    for (const auto& interval : task.time) {
+      wcet_lo += interval.first;
+      wcet_hi += interval.second;
+    }
+
+    tdg::WcetProvenance provenance;
+    if (const auto it = graph.task_wcet_provenance.find(task.name);
+        it != graph.task_wcet_provenance.end()) {
+      provenance = it->second;
+    }
+    all_certified = all_certified && provenance.kind == "certified";
+
+    wcet["tasks"].push_back({
+        {"id", task_id++},
+        {"name", task.name},
+        {"wcet", wcet_hi},
+        {"interval", nlohmann::json::array({wcet_lo, wcet_hi})},
+        {"segments", task.time.size()},
+        {"wcet_kind", provenance.kind},
+        {"wcet_method", provenance.method},
+        {"wcet_artifact", provenance.artifact},
+    });
+  }
+  wcet["all_certified"] = all_certified;
+
+  ofstream out(output_path);
+  if (!out.is_open()) {
+    return false;
+  }
+
+  out << wcet.dump(2) << '\n';
+  return true;
+}
+
 size_t get_memory_usage() {
 #if defined(_WIN32)
   PROCESS_MEMORY_COUNTERS pmc;
@@ -826,6 +886,67 @@ int run_export_ptopner(const ExportCommandOptions& opts) {
   petri::PTPN ptpn;
   build_ptpn_from_tdg(tdg, ptpn);
   return export_ppn_from_ptpn(ptpn, opts.output_file);
+}
+
+int run_allocation(const AllocationCommandOptions& opts) {
+  spdlog::info("[ALLOC] Loading TDG JSON: {}", opts.input_file);
+
+  parse::Parser parser;
+  tdg::TDG tdg(1, 1);
+  if (load_tdg_from_json(opts.input_file, tdg, parser) != 0) {
+    return 1;
+  }
+  apply_policy_override(tdg, opts.policy_override);
+
+  allocation::Options search_options;
+  search_options.max_candidates = opts.max_candidates;
+  search_options.candidate_max_states = opts.candidate_max_states;
+  search_options.objective = opts.objective;
+  search_options.require_certified_wcet = opts.require_certified_wcet;
+
+  allocation::SearchReport report;
+  {
+    // Per-candidate lowering/analysis logs at info level are suppressed unless
+    // --debug was requested. The final summary below is logged after the guard
+    // restores the previous level.
+    optional<ScopedLogLevel> quiet;
+    if (!opts.debug_mode) {
+      quiet.emplace(spdlog::level::warn);
+    }
+    report = allocation::search_allocations(tdg, search_options);
+  }
+
+  if (!allocation::save_report_json(report, opts.output_file)) {
+    cerr << "ERROR: Failed to write allocation report: " << opts.output_file << endl;
+    return 1;
+  }
+
+  spdlog::info("[ALLOC] Strategy: {} (complete={}), objective={}",
+               report.strategy == allocation::Strategy::EXHAUSTIVE ? "exhaustive" : "heuristic",
+               report.complete ? "true" : "false",
+               allocation_objective_name(report.objective));
+  spdlog::info("[ALLOC] Domain size: {}, evaluated: {}, feasible: {}{}", report.domain_size,
+               report.evaluated, report.feasible_count,
+               report.truncated ? " (search truncated)" : "");
+  if (report.best.has_value()) {
+    const allocation::CandidateSummary& best = report.best.value();
+    spdlog::info("[ALLOC] Best assignment: {}",
+                 format_allocation_assignment(best.assignment));
+    if (best.max_wcrt_infinite) {
+      spdlog::info("[ALLOC] max_wcrt: infinite, max_core_load: {}", best.max_core_load);
+    } else {
+      spdlog::info("[ALLOC] max_wcrt: {}, max_core_load: {}", best.max_wcrt,
+                   best.max_core_load);
+    }
+    if (best.utilization_complete) {
+      spdlog::info("[ALLOC] max_utilization: {:.6f}", best.max_utilization);
+    }
+    spdlog::info("[ALLOC] Pareto allocations: {}", report.pareto.size());
+  } else {
+    spdlog::info("[ALLOC] No best allocation: {}", report.reason);
+  }
+  spdlog::info("[OUTPUT] Allocation report exported to: {}", opts.output_file);
+  return 0;
 }
 
 }  // namespace app

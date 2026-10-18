@@ -24,6 +24,12 @@ default), with no `--extrapolation`, no state-merging reduction
 other modes merge or omit state classes and the tool prints an "approximate"
 warning.
 
+`exact` describes the **state-space analysis**, not the WCET provenance. A
+report can be exact while its input `time` intervals are measured or estimated
+rather than certified. Inspect `wcet_kind`/`wcet_method` in `--export-wcet`, or
+use `ptpn allocate` whose report includes `timing_model.all_certified` and a
+per-task provenance list.
+
 ## Upper-bound zone merging (`--reduction upper-bound`)
 
 The default analysis keeps every distinct state class. The opt-in

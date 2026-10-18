@@ -26,6 +26,9 @@ add_executable(ptpn_test
   test_parser_robustness.cpp
   test_conversion.cpp
   test_time_horizon.cpp
+  test_allocation.cpp
+  # Exposes write_wcet_json so the WCET export schema is covered directly.
+  ${CMAKE_SOURCE_DIR}/src/app/pipeline.cpp
 )
 
 target_link_libraries(ptpn_test
