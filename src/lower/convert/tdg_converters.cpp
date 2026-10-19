@@ -6,8 +6,10 @@
 #include <vector>
 
 #include "lower/tdg2pn/tdg2pn.h"
-#include "lower/tdg2ptopner/ptpn_to_ppn.h"
-#include "lower/tdg2ptopner/validate.h"
+#if defined(PTPN_ENABLE_COMPAT)
+#  include "lower/tdg2ptopner/ptpn_to_ppn.h"
+#  include "lower/tdg2ptopner/validate.h"
+#endif
 
 namespace lowering {
 
@@ -17,6 +19,7 @@ const tdg::TDG* as_tdg(const Model& input) {
   return std::get_if<tdg::TDG>(&input);
 }
 
+#if defined(PTPN_ENABLE_COMPAT)
 std::string join_errors(const std::vector<std::string>& errors) {
   std::string joined;
   for (const auto& error : errors) {
@@ -27,6 +30,7 @@ std::string join_errors(const std::vector<std::string>& errors) {
   }
   return joined;
 }
+#endif
 
 }  // namespace
 
@@ -61,6 +65,7 @@ ConversionResult TdgToPtpnConverter::convert(const Model& input,
   return ConversionResult::success(std::move(ptpn));
 }
 
+#if defined(PTPN_ENABLE_COMPAT)
 ModelKind TdgToRomeoConverter::from() const {
   return ModelKind::TDG;
 }
@@ -127,5 +132,7 @@ ConversionResult TdgToPpnConverter::convert(const Model& input,
     return ConversionResult::failure(e.what());
   }
 }
+
+#endif  // defined(PTPN_ENABLE_COMPAT)
 
 }  // namespace lowering

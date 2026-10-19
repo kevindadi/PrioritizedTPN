@@ -81,8 +81,10 @@ bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path);
 int run_tdg_pipeline(const std::string& input_file, PipelineOptions opts, size_t initial_memory);
 int run_ptpn_pipeline(const std::string& input_file, const PipelineOptions& opts,
                       size_t initial_memory);
+#if defined(PTPN_ENABLE_COMPAT)
 int run_export_romeo(const ExportCommandOptions& opts);
 int run_export_ptopner(const ExportCommandOptions& opts);
+#endif
 int run_allocation(const AllocationCommandOptions& opts);
 
 }  // namespace app

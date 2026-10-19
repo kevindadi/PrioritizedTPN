@@ -20,6 +20,7 @@ class TdgToPtpnConverter : public Converter {
 // TDG -> Romeo: the direct encoder. It deliberately does not route through
 // PTPN, so the scheduling-net / inhibitor-arc output stays byte-for-byte
 // identical to the existing tdg2romeo pipeline.
+#if defined(PTPN_ENABLE_COMPAT)
 class TdgToRomeoConverter : public Converter {
  public:
   [[nodiscard]] ModelKind from() const override;
@@ -39,6 +40,7 @@ class TdgToPpnConverter : public Converter {
   [[nodiscard]] ConversionResult convert(const Model& input,
                                          const ConversionOptions& options) const override;
 };
+#endif  // defined(PTPN_ENABLE_COMPAT)
 
 }  // namespace lowering
 

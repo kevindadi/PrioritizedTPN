@@ -1,8 +1,10 @@
-#include "lower/convert/ptpn_converters.h"
+#if defined(PTPN_ENABLE_COMPAT)
 
-#include <exception>
+#  include "lower/convert/ptpn_converters.h"
 
-#include "lower/tdg2ptopner/ptpn_to_ppn.h"
+#  include <exception>
+
+#  include "lower/tdg2ptopner/ptpn_to_ppn.h"
 
 namespace lowering {
 
@@ -38,3 +40,5 @@ ConversionResult PtpnToPpnConverter::convert(const Model& input,
 }
 
 }  // namespace lowering
+
+#endif  // defined(PTPN_ENABLE_COMPAT)

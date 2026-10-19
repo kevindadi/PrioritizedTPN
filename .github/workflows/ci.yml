@@ -33,7 +33,25 @@ jobs:
         run: |
           ./build/ptpn tdg -f example/motivating-examples/hw.json --no-analysis \
             --export-ptpn /tmp/hw.ptpn.dot --export-wcet /tmp/hw.wcet.json
-          ./build/ptpn export romeo -f example/s-bench/a.json -o /tmp/a.cts
+
+  compat-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libboost-all-dev
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPTPN_ENABLE_COMPAT=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
 
   format:
     runs-on: ubuntu-24.04

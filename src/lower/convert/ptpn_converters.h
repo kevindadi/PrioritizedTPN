@@ -3,6 +3,8 @@
 
 #include "lower/convert/conversion.h"
 
+#if defined(PTPN_ENABLE_COMPAT)
+
 namespace lowering {
 
 // PTPN -> PToPNer: maps the canonical net to the flat PPN model. Conditional:
@@ -17,5 +19,7 @@ class PtpnToPpnConverter : public Converter {
 };
 
 }  // namespace lowering
+
+#endif  // defined(PTPN_ENABLE_COMPAT)
 
 #endif  // LOWER_CONVERT_PTPN_CONVERTERS_H

@@ -118,6 +118,10 @@ Executables:
 - `build/ptpn` — main analyzer
 - `build/test/ptpn_test` — unit tests
 
+Romeo CTS (`.cts`) and PToPNer (`.ppn`) exports are optional: build with
+`-DPTPN_ENABLE_COMPAT=ON` to enable the `export romeo` / `export ptopner`
+subcommands and the `--romeo` / `--ppn` flags.
+
 `run.py` resolves the `ptpn` binary automatically:
 
 1. `--ptpn PATH` if you pass it explicitly
