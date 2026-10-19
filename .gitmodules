@@ -1,6 +1,0 @@
-[submodule "tools/PToPNer"]
-	path = tools/PToPNer
-	url = https://github.com/kevindadi/PToPNer
-[submodule "tools/romeo-2t"]
-	path = tools/romeo-2t
-	url = git@github.com:kevindadi/romeo-2t.git

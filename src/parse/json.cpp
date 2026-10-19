@@ -426,7 +426,7 @@ ValidationResult Parser::validate() const {
   }
   // Lowering creates exactly num_cpus real-core resource places. The
   // `cores_per_cpu` value is a per-core capacity parameter, not an additional
-  // range of core ids (see docs/ptopner/scheduling-semantics.md).
+  // range of core ids (see docs/scheduling-semantics.md).
   const int max_core = std::max(0, graph_.num_cpus - 1);
 
   std::set<std::string> node_ids;

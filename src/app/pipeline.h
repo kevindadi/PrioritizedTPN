@@ -38,9 +38,6 @@ struct ExportTargets {
   std::string ptpn_dot;
   std::string scg_dot;
   std::string metrics_json;
-  std::string romeo_file;
-  std::string ppn_file;
-  std::string tina_file;
 };
 
 struct PipelineOptions {
@@ -62,20 +59,13 @@ struct PipelineOptions {
   // certified once pruning occurs. Disabled by default.
   std::optional<int> time_horizon;
   std::optional<SchedulePolicy> policy_override;
-  std::string romeo_format = "scheduling-net";
-  bool romeo_explicit_core_places = true;
   DiagnosticsOptions diagnostics;
   ExportTargets exports;
 };
 
-struct ExportCommandOptions {
+struct CheckCommandOptions {
   std::string input_file;
-  std::string output_file;
-  std::string input_format = "tdg";
-  std::string romeo_format = "scheduling-net";
-  bool romeo_explicit_core_places = true;
-  std::optional<SchedulePolicy> policy_override;
-  bool debug_mode = false;
+  DiagnosticsOptions diagnostics;
 };
 
 struct AllocationCommandOptions {
@@ -110,10 +100,6 @@ int run_rtsl_pipeline(const std::string& input_file, PipelineOptions opts, size_
                       ptpn::Diagnostics* diagnostics = nullptr);
 int run_ptpn_pipeline(const std::string& input_file, const PipelineOptions& opts,
                       size_t initial_memory, ptpn::Diagnostics* diagnostics = nullptr);
-#if defined(PTPN_ENABLE_COMPAT)
-int run_export_romeo(const ExportCommandOptions& opts);
-int run_export_ptopner(const ExportCommandOptions& opts);
-#endif
 int run_allocation(const AllocationCommandOptions& opts, ptpn::Diagnostics* diagnostics = nullptr);
 
 }  // namespace app

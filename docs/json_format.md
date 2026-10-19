@@ -96,9 +96,8 @@ Resource places are **not** saturating: core places (capacity =
 `{task}_period` keep the strict blocking semantics, since dropping a resource
 token would be unsound.
 
-Note: the saturation flag is an analysis-time semantic and is not carried by
-the Romeo CTS / PToPNer `.ppn` exports; those exports only see the plain
-capacity value.
+Note: the saturation flag is an analysis-time semantic; the model field only
+carries the plain capacity value.
 
 ### Scheduling policies
 
@@ -123,8 +122,7 @@ Analysis coverage in this phase:
 - `rm` and `dm` compute static priorities at lowering time (RM: shortest period
   wins; DM: shortest explicit deadline, falling back to the period). For these
   two policies the JSON `priority` field is **ignored**. They use the same
-  resume-style preemption and resource lowering as `fixed`; see
-  `docs/ptopner/scheduling-semantics.md`.
+  resume-style preemption and resource lowering as `fixed`.
 - `pip` implements the Priority Inheritance Protocol. Each task starts from its
   input `priority`, and the analysis engine dynamically raises a lock holder's
   effective priority to that of its highest-priority waiter (transitively,
@@ -137,8 +135,7 @@ Analysis coverage in this phase:
   suspendable execution segments). `pip` requires `task_place_capacity == 1`;
   lowering rejects larger values. States with zero or multiple tokens in a task
   chain, or inconsistent lock ownership, are outside the supported class and
-  fall back defensively (no inheritance for the affected task/lock). See
-  `docs/ptopner/scheduling-semantics.md`.
+  fall back defensively (no inheritance for the affected task/lock).
 - `pcp` implements the Priority Ceiling Protocol using the input `priority`
   values unchanged (it does **not** combine with the RM/DM priority
   computation in this phase). `ceiling(L)` is the maximum base priority among
@@ -160,7 +157,7 @@ Analysis coverage in this phase:
   lowering rejects larger values. Unsupported or inconsistent markings (zero
   or multiple tokens in a chain, multiple claimants for one lock) fall back
   defensively without inheritance; no WCRT upper-bound guarantee is claimed
-  for those states. See `docs/ptopner/scheduling-semantics.md`.
+  for those states.
 - `srp` implements the Stack Resource Policy using the input `priority` values
   unchanged (no combination with the RM/DM priority computation): the
   preemption level and scheduling priority are both the input `priority`.
@@ -180,8 +177,7 @@ Analysis coverage in this phase:
   rejects larger values. Unsupported or ambiguous markings skip the start
   gate defensively and are not certified SRP-exact; no WCRT upper-bound
   guarantee is claimed for them. The ceiling is global on multi-core nets (a
-  conservative variant of classical uniprocessor SRP). See
-  `docs/ptopner/scheduling-semantics.md`.
+  conservative variant of classical uniprocessor SRP).
 - `edf` implements Earliest Deadline First for a deliberately restricted,
   statically partitioned class, **not** as a static deadline priority.
   Multi-core EDF schedules each real core independently: a branch selects the
@@ -200,9 +196,7 @@ Analysis coverage in this phase:
   jobs); a release while the job waits at the entry is a conservative merge
   that does not reset its deadline. `k-extrapolation` and symmetry reduction
   are rejected for EDF states. FIFO and LLF are statically partitioned
-  multi-core policies in the same way; see below. See
-  `docs/ptopner/scheduling-semantics.md` for the full supported class and
-  semantics.
+  multi-core policies in the same way; see below.
 - `fifo` implements First In First Out for a deliberately restricted,
   statically partitioned class, **not** as a static priority and **not** as a
   preemptive policy. Each real core runs its own independent FIFO order: a
@@ -228,9 +222,7 @@ Analysis coverage in this phase:
   chain is rejected with `std::invalid_argument`; there is at most one
   in-flight job per task. A release while the job waits at the entry merges
   without resetting its arrival clock. `k-extrapolation` is rejected for FIFO
-  states, and symmetry reduction is not applied to them. See
-  `docs/ptopner/scheduling-semantics.md` for the full supported class and
-  semantics.
+  states, and symmetry reduction is not applied to them.
 - `llf` implements Event-driven Least Laxity First for a deliberately
   restricted, statically partitioned class, **not** classical continuous-time
   LLF and **not** a static priority. Each real core chooses its own
@@ -260,9 +252,7 @@ Analysis coverage in this phase:
   discrete state-class events: the engine does not preempt inside
   `time_elapse` at a laxity crossing, and a preemption on one core does not
   delay another core. `k-extrapolation` and symmetry reduction (when it would
-  actually be applied) are rejected for LLF states. See
-  `docs/ptopner/scheduling-semantics.md` for the full supported class and
-  semantics.
+  actually be applied) are rejected for LLF states.
 
 ## `nodes`
 
