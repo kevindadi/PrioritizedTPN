@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "app/pipeline.h"
+#include "app/common.h"
 #include "cli/command.h"
 #include "common/diagnostics.h"
 

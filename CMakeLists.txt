@@ -304,35 +304,118 @@ add_library(ptpn_allocation STATIC
 )
 target_link_libraries(ptpn_allocation
     PUBLIC
-    ptpn_metrics
-    ptpn_lowering
     ptpn_tdg
     PRIVATE
+    ptpn_metrics
+    ptpn_lowering
     nlohmann_json::nlohmann_json
     spdlog::spdlog
 )
 
-# Application layer: the CLI-free TDG/RTSL/PTPN pipelines, allocation search
-# driver and the RTSL check entry point. This library must not depend on CLI11.
-add_library(ptpn_app STATIC
-    src/app/pipeline.cpp
+# Application layer: CLI-free pipelines and command entry points. The layer is
+# split by responsibility so `check` only needs the RTSL front-end, and the
+# pipeline/analysis/allocation targets never expose CLI11.
+#
+# Shared options, legacy diagnostics rendering and process memory accounting.
+add_library(ptpn_app_common STATIC
+    src/app/common.cpp
+)
+target_include_directories(ptpn_app_common PUBLIC src)
+target_link_libraries(ptpn_app_common
+    PUBLIC
+    ptpn_diagnostics
+    ptpn_types
+)
+
+# Input front-ends: RTSL (lex/parse/validate/lower) and TDG JSON loading.
+# They share only the model/diagnostics layers.
+add_library(ptpn_app_input STATIC
+    src/app/rtsl_input.cpp
+    src/app/tdg_input.cpp
+)
+target_link_libraries(ptpn_app_input
+    PUBLIC
+    ptpn_app_common
+    ptpn_dsl
+    ptpn_tdg
+    PRIVATE
+    ptpn_json
+    spdlog::spdlog
+)
+
+# `ptpn check`: parse and validate only; deliberately independent of lowering,
+# analysis and allocation.
+add_library(ptpn_app_check STATIC
     src/app/check_cmd.cpp
 )
-target_include_directories(ptpn_app PUBLIC src)
-target_link_libraries(ptpn_app
+target_link_libraries(ptpn_app_check
     PUBLIC
-    ptpn_allocation
+    ptpn_app_common
+    PRIVATE
+    ptpn_app_input
+    ptpn_dsl
     ptpn_diagnostics
+    nlohmann_json::nlohmann_json
+)
+# The check path must stay independent of lowering, analysis and allocation.
+get_target_property(_ptpn_app_check_interface ptpn_app_check INTERFACE_LINK_LIBRARIES)
+if(_ptpn_app_check_interface MATCHES "ptpn_(allocation|lowering|metrics|reachability)")
+    message(FATAL_ERROR "ptpn_app_check must not pull analysis/allocation dependencies")
+endif()
+
+# Analysis orchestration, analysis-result diagnostics, lowering adaptation and
+# the WCET export shared by the TDG and RTSL paths.
+add_library(ptpn_app_analysis STATIC
+    src/app/analysis.cpp
+    src/app/analysis_diagnostics.cpp
+    src/app/exports.cpp
+    src/app/lowering.cpp
+)
+target_link_libraries(ptpn_app_analysis
+    PUBLIC
+    ptpn_app_common
+    PRIVATE
     ptpn_dsl
     ptpn_export
-    ptpn_json
     ptpn_lowering
     ptpn_metrics
-    ptpn_parser
+    ptpn_petri
     ptpn_reachability
     ptpn_reductions
     ptpn_tdg
     nlohmann_json::nlohmann_json
+    spdlog::spdlog
+)
+
+# Core-allocation driver. Kept separate so the check path never links the
+# allocation search or its lowering/metrics dependencies.
+add_library(ptpn_app_allocation STATIC
+    src/app/allocation_cmd.cpp
+)
+target_link_libraries(ptpn_app_allocation
+    PUBLIC
+    ptpn_allocation
+    ptpn_app_common
+    PRIVATE
+    ptpn_app_input
+    ptpn_json
+    ptpn_tdg
+    spdlog::spdlog
+)
+
+# Public application entry points for the TDG/RTSL/PTPN pipelines.
+add_library(ptpn_app STATIC
+    src/app/pipelines.cpp
+)
+target_link_libraries(ptpn_app
+    PUBLIC
+    ptpn_app_common
+    PRIVATE
+    ptpn_app_analysis
+    ptpn_app_input
+    ptpn_json
+    ptpn_parser
+    ptpn_tdg
     spdlog::spdlog
 )
 
@@ -354,9 +437,13 @@ target_link_libraries(PTPN_core
     ptpn_metrics
     ptpn_reductions
     ptpn_allocation
+    ptpn_app_common
+    ptpn_app_input
+    ptpn_app_check
+    ptpn_app_analysis
+    ptpn_app_allocation
     ptpn_app
     spdlog::spdlog
-    fmt::fmt
 )
 
 # CLI layer: CLI11 option registration and dispatch for the `ptpn`
@@ -373,6 +460,8 @@ target_include_directories(ptpn_cli PUBLIC src)
 target_link_libraries(ptpn_cli
     PUBLIC
     ptpn_app
+    ptpn_app_allocation
+    ptpn_app_check
     CLI11::CLI11
 )
 
@@ -380,7 +469,7 @@ target_link_libraries(ptpn_cli
 add_executable(ptpn
     src/cli/main.cpp
 )
-target_link_libraries(ptpn PRIVATE ptpn_cli CLI11::CLI11)
+target_link_libraries(ptpn PRIVATE ptpn_cli CLI11::CLI11 spdlog::spdlog)
 
 # Test subdirectory
 add_subdirectory(test)
