@@ -115,8 +115,10 @@ system demo {
 ./build/ptpn check -f example/introduction/demo.rtsl --diagnostics json
 
 # 2. Fill the pending `measured by llm` task directly in the source:
-#      time measured by llm { runs 10, timeout 2 }   (before)
-#      time [2, 4] estimated by "llm"                 (after)
+#      time measured by llm { runs 10, timeout 2 }          (before)
+#      time [ [1, 1], [1, 2], [1, 1] ] estimated by "llm"    (after; fusion
+#          holds one lock, so 2*lock_count+1 = 3 segments — the pending
+#          entry's expected_segments says how many)
 #    Use `certified by "<tool>"` only for a real bound. Re-run `ptpn check`
 #    until result.pending_measurements is empty.
 

@@ -29,9 +29,13 @@ Reference docs: `docs/usage.md`, `docs/install.md`, `docs/json_format.md`.
 4. **Fill pending timing.** If `result.pending_measurements` is non-empty,
    fill each listed task directly in the `.rtsl` source: replace
    `time measured by llm { ... }` with an interval such as
-   `time [2, 4] estimated by "llm"`. Estimated values must never be presented
-   as a certified bound; if the user supplies a real bound, write
-   `certified by "<tool>"` instead. Re-run
+   `time [2, 4] estimated by "llm"`. A pending entry's `expected_segments`
+   says how many intervals are required — locked tasks need
+   `2 * lock_count + 1` segments, written as a nested list:
+   `time [ [1, 1], [1, 2], [1, 1] ] estimated by "llm"` (a wrong segment
+   count is `E-VAL-015`; bare adjacent intervals are `E-SYN-102`). Estimated
+   values must never be presented as a certified bound; if the user supplies
+   a real bound, write `certified by "<tool>"` instead. Re-run
    `build/ptpn check -f model.rtsl --diagnostics json` until
    `result.pending_measurements` is empty. While tasks remain pending,
    `ptpn rtsl` and `ptpn allocate` reject the model with `E-VAL-213`.
@@ -50,7 +54,7 @@ Reference docs: `docs/usage.md`, `docs/install.md`, `docs/json_format.md`.
 | Code | Action |
 |---|---|
 | `E-SYN-1xx` | Syntax/lexing error. Rewrite the reported line using the expected tokens; check units (`ms`, `s`) and string escapes. |
-| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-218` (`core any`) means use `ptpn allocate` or an explicit core. |
+| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-015` means a locked task's segment count is wrong (need `2*lock_count+1` intervals). `E-VAL-218` (`core any`) means use `ptpn allocate` or an explicit core. |
 | `E-UNS-001` | The model is outside the chosen policy's supported class. EDF/FIFO/LLF require a static partition, `cores_per_cpu 1`, one in-flight job per task, no locks, and no dependency-driven releases; PIP/PCP/SRP require `task_place_capacity 1`. Simplify the model or change policy. |
 | `E-UNS-003` | Sporadic arrivals are not implemented. Replace with `periodic` using `period = mit` (densest arrival; conservative WCRT upper bound). |
 | `E-UNS-004` | Sub-millisecond (`us`) timing is unsupported. Use `ms` and adjust precision. |
