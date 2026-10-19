@@ -130,13 +130,8 @@ goldens only on libstdc++ builds.
 
 ## Formatting
 
-CI pins **clang-format 21.1.8** (installed with pip). Use that exact version;
-other versions produce different output. Check the tree with:
-
-```bash
-find src test -type f \( -name '*.cpp' -o -name '*.h' \) -print0 \
-  | xargs -0 clang-format --dry-run --Werror
-```
+There is no `.clang-format` config and no CI format gate (both were removed
+deliberately). Match the surrounding code style when editing.
 
 ## Docker
 
