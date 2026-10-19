@@ -225,7 +225,6 @@ ptpn ptpn -f example/common/simple.ptpn
 
 # Shared analysis options
 ptpn ptpn -f model.ptpn --max-states 50000 --canonicalization max-lower
-ptpn tdg -f model.json --ppn output.ppn --romeo output.cts
 ```
 
 ---

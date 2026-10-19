@@ -9,7 +9,7 @@ conventions.
 ## How to run
 
 ```bash
-./build/ptpn tdg  -f example/common/input.json --export-metrics metrics.json
+./build/ptpn tdg  -f example/p-bench/initial.json --export-metrics metrics.json
 ./build/ptpn ptpn -f model.ptpn               --export-metrics metrics.json
 
 # Sound upper bound with one-sided zone merging (fewer states, no wcrt_lb)
@@ -94,8 +94,9 @@ The opt-in symmetry mode quotients the SCG by permutations of tasks that are
 **proved isomorphic** on distinct real cores. Each candidate permutation must be
 verified as an automorphism of the whole net (markings, arc weights, capacities,
 intervals, priorities, suspension flags, periodic markers, and a consistent
-relabelling of cores with equal parallelism); see the README section for the
-supported scope. Every class is replaced by the lexicographically smallest
+relabelling of cores with equal parallelism); see the symmetry reduction
+section in [usage.md](../doc/usage.md) for the supported scope. Every class is
+replaced by the lexicographically smallest
 representative of its orbit, so the graph stores one vertex per symmetry class.
 
 Consequences for the metrics:

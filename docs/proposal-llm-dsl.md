@@ -8,12 +8,12 @@ Phases 0–4 已全部落地到 `ptpn` 分支；本文保留为原始设计，�
 
 | 阶段 | 内容 | 合入 |
 |---|---|---|
-| Phase 0 | Romeo/PToPNer 适配器降级为 opt-in compat | #50 |
+| Phase 0 | 外部格式适配器降级为 opt-in compat（后续已整体移除） | #50 |
 | Phase 1 | LLM 可消费的版本化诊断协议 | #51 |
 | Phase 2 | RTSL 词法 / panic-mode 语法 / 验证 + `ptpn check` | #52 |
 | Phase 3 | RTSL lowering、`ptpn rtsl`、`allocate` over `.rtsl` | #53 |
 | Phase 3 | 测时闭环（`tools.llm measure`）+ `rt-system` skill | #54 |
-| Phase 4 | README、规格/诊断同步、CI 冒烟与示例 | 本阶段 |
+| Phase 4 | README 与 doc/ 安装/使用文档、规格/诊断同步、CI 冒烟与示例 | 本阶段 |
 
 剩余 TODO（sporadic、interrupt 抢占、亚毫秒精度、fork/join 属性等）见
 [docs/rtsl-spec.md](rtsl-spec.md) §14。
@@ -23,14 +23,14 @@ Phases 0–4 已全部落地到 `ptpn` 分支；本文保留为原始设计，�
 - **C1 认证核心不可变**：`src/analysis/` 的 state-class 语义、canonicalization（`equality`/`max-lower`/`intersection`）、reduction（`upper-bound`/`cone`/`symmetry`）、metrics 的 `exact` 标志与 `wcrt_lb` 契约保持现状。DSL 只是**前端**，编译到 TDG 模型，绝不引入第二套分析语义。
 - **C2 技术栈不变**：C++17、CMake ≥ 3.27 + Ninja、Boost（graph/filesystem/thread/date_time）、FetchContent 依赖（nlohmann/json、CLI11、spdlog/fmt、GoogleTest）。DSL 解析器**手写递归下降**（词法 + 语法 + 精确位置跟踪 + panic-mode 恢复），零新增依赖——第三方解析库的报错位置与恢复策略通常不可控，而精确的多错误报告是本方案的核心卖点之一。
 - **C3 时序溯源端到端保留**：`WcetProvenance {model, certified, measured, estimated}`（`src/model/tdg.h` 已定义）。`measured ≠ certified` 的信任边界（`docs/llm-integration.md`）继续成立，`allocate --require-certified-wcet` 门控继续生效。
-- **C4 向后兼容**：现有 TDG JSON 路径、`.ptpn` 路径、CLI 选项、`run.py` 的 `[STATS]` 日志契约、golden 测试全部保持工作。RTSL 是新增入口；**RTSL 路径在进程内直接构建内存 TDG，不经过 JSON 文本往返**（TDG 模型保持 JSON 可序列化、不被 SourceMap 污染）。
+- **C4 向后兼容**：现有 TDG JSON 路径、`.ptpn` 路径、CLI 选项、`example/run.py` 的 `[STATS]` 日志契约、golden 测试全部保持工作。RTSL 是新增入口；**RTSL 路径在进程内直接构建内存 TDG，不经过 JSON 文本往返**（TDG 模型保持 JSON 可序列化、不被 SourceMap 污染）。
 - **C5 LLM 是不可信提议者**：LLM 的一切输出（RTSL 文本、生成的 C 代码、测量结果）都要过验证器；生成代码只在用户显式允许时编译运行（沙箱 + 超时 + 资源限制，沿用现有原型的机制）。
-- **C6 主线 CI 保持绿灯**：Romeo/PToPNer 适配从主线构建摘除，但保留一个 compile-only 防腐化作业，防止代码腐烂。
+- **C6 主线 CI 保持绿灯**：外部格式适配不进入主线构建；后续阶段已将其从仓库整体移除。
 - **C7 诊断协议单一、版本化**：同一份 JSON 协议（信封带 `protocol` + `version` 字段），stdout、文件、LLM 工具返回体只是三种传输方式，schema 只有一份，进 `docs/diagnostics.md`。版本升级策略：加字段 = 小版本；改语义/删字段 = 大版本，LLM 按信封版本号选择行为。
 
 ## 2. 现状问题
 
-1. **三套 lowering 平铺在主线**：`tdg2pn` / `tdg2romeo` / `tdg2ptopner` 同级构建、同级 CLI（`export` 子命令）、同级测试，但只有 `tdg2pn` 是分析主线，另两个只是外部工具（Romeo、PToPNer）的格式适配。
+1. **多套 lowering 平铺在主线**：分析主线 lowering 与两套外部格式适配同级构建、同级 CLI（`export` 子命令）、同级测试，但只有 `tdg2pn` 是分析主线，另两套只是外部工具的格式适配（后续已整体删除）。
 2. **错误处理是"日志文本 + 字符串 Result"**：`src/parse/json.cpp` 收集 `add_error(string)`，spdlog 打日志，`src/common/result.h` 的 `Result<T>` 只带字符串。没有错误码、分类、退出码协议、机器可读输出。LLM 无法可靠区分"语法错 / 语义错 / 性能问题 / 分析结论"。
 3. **tools/llm 原型与主线脱节**：输入是自造的 spec JSON schema（`tools/llm/schema.py`），不是项目输入格式；与 CLI 没有共同入口；错误修复循环不存在。
 4. **TDG JSON 是唯一输入格式**：无注释、无位置信息、provenance 字段散落，对人和 LLM 都不友好。
@@ -55,7 +55,7 @@ Phases 0–4 已全部落地到 `ptpn` 分支；本文保留为原始设计，�
 
 **主线**（默认构建、主线测试）：`src/dsl/`（新）、`src/parse/`、`src/model/`、`src/lower/tdg2pn/`、`src/analysis/`、`src/app/`、`tools/llm/`（升级）、`.claude/skills/rt-system/`（新）。
 
-**旁路**（`-DPTPN_ENABLE_COMPAT=ON` 才构建，主线测试不跑）：`src/lower/tdg2romeo/`、`src/lower/tdg2ptopner/`、CLI 的 `export romeo|ptopner` 子命令（条件注册）。`tools/PToPNer`、`tools/romeo-2t` 保持 submodule，仅作参考，不参与构建。
+**旁路**（`-DPTPN_ENABLE_COMPAT=ON` 才构建，主线测试不跑）：两套外部工具格式适配 lowering 及其 `export` 子命令（条件注册）；参考用外部工具 submodule 不参与构建。该旁路及相关 submodule 已在后续阶段整体移除。
 
 ## 4. RTSL 设计
 
@@ -266,7 +266,7 @@ system demo {
 
 ### 5.5 流分离
 
-- **stderr**：人读日志（spdlog，保持 `[STATS]` 格式不动——`run.py` 的 regex 契约，见 CLAUDE.md）；
+- **stderr**：人读日志（spdlog，保持 `[STATS]` 格式不动——`example/run.py` 的 regex 契约，见 CLAUDE.md）；
 - **stdout + `--diagnostics json`**：只输出诊断信封，作为 LLM 工具调用的返回体；
 - **`--diagnostics-file PATH`**：同一信封写文件。
 
@@ -309,17 +309,17 @@ Skill 文档中写死"错误码 → 动作"映射表与退出码优先级（5.4�
 | 层级 | 内容 | 状态 |
 |---|---|---|
 | 主线 `ptpn_test` | DSL 词法/语法/验证/lowering 的 golden 测试；**规范化命名稳定性测试**（上方插入/删除边后，其余隐式节点名不变）；**panic-mode 测试**（一个文件多个语法错误，断言全部报出且位置正确、级联被抑制）；**退出码优先级测试**（截断 + 死锁 → 6；仅截断 → 5）；**单位折算测试**（混合后缀/裸整数/time_unit）；诊断协议矩阵测试（每个 code 至少一条用例，断言 code、category、location、退出码）；现有 analysis/metrics/policy 测试全部保留 | 新增 + 不变 |
-| compat `ptpn_compat_test`（可选构建） | `test_tdg2romeo`、`test_conversion` 中 romeo/ppn 部分、`.cts`/`.ppn` golden | 移出主线（现有测试本就是纯 writer 测试、不执行外部工具，拆分只影响构建耦合） |
+| compat `ptpn_compat_test`（可选构建） | 外部格式适配的 writer 测试与 golden 文件 | 移出主线（现有测试本就是纯 writer 测试、不执行外部工具，拆分只影响构建耦合；后续已整体删除） |
 | `tools/llm/tests` | unittest 扩展：RTSL 校验、诊断信封解析、三模式测时、`.rtsl` 原位注入（区间注入后 runs/timeout 保留；artifact = 哈希 + 编译命令快照） | 扩展 |
 | Skill 冒烟 | 一个端到端 example（`demo.rtsl` → check → 测时注入 → analyze）作为脚本 | 新增 |
 
 ## 8. 迁移步骤（每步独立可合入、可回滚）
 
-- **Phase 0 — 旁路降级（约 1 天）**：CMake `PTPN_ENABLE_COMPAT`（默认 OFF）包住 `ptpn_romeo`/`ptpn_ptopner`/`ptpn_convert` 中相关部分；`main.cpp` 的 `export` 子命令与 `pipeline.cpp` 的 `--romeo/--ppn` 标志条件编译（注意 `pipeline.cpp` 被编进 `ptpn_test`，需要同样的宏）；`test/CMakeLists.txt` 拆分；CI 主线去掉 romeo/ppn 内容，新增 compile-only 防腐化作业。纯机械改动，不动语义。
+- **Phase 0 — 旁路降级（约 1 天）**：CMake `PTPN_ENABLE_COMPAT`（默认 OFF）包住外部格式适配的 target 与 `ptpn_convert` 中相关部分；`main.cpp` 的 `export` 子命令与 `pipeline.cpp` 的对应标志条件编译（注意 `pipeline.cpp` 被编进 `ptpn_test`，需要同样的宏）；`test/CMakeLists.txt` 拆分；CI 主线去掉外部格式适配内容，新增 compile-only 防腐化作业。纯机械改动，不动语义。
 - **Phase 1 — 诊断基础设施（2–3 天）**：`diagnostics.{h,cpp}` + 信封（协议版本）+ 退出码优先级；现有 JSON/`.ptpn` 路径接入；`docs/diagnostics.md` 错误码表。此阶段独立有价值，不依赖 DSL。
 - **Phase 2 — RTSL（1.5–2.5 周）**：`docs/rtsl-spec.md` 设计冻结 → 词法（单位后缀）/语法（panic-mode）→ 语义验证（含级联抑制）→ 进程内 lowering + SourceMap + 规范化命名 → `ptpn check` 子命令 → golden + 稳定性测试；**含 interrupt 语义冻结与 preemption 路径补测试、sporadic 保守建模落地**。
 - **Phase 3 — LLM 集成（约 1 周）**：tools/llm 改吃 RTSL + 三模式测时 + `.rtsl` 原位注入 + 诊断信封回传；`rt-system` skill 落地。
-- **Phase 4 — 文档/示例（2–3 天）**：README Input Modes 表加 RTSL 行、端到端示例、迁移现有 example 说明。
+- **Phase 4 — 文档/示例（2–3 天）**：`doc/usage.md` 的输入模式表加 RTSL 行、端到端示例、迁移现有 example 说明。
 
 ## 9. 已拍板的决策
 

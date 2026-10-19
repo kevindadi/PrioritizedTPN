@@ -363,7 +363,7 @@ python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json \
 
 Flow:
 
-1. Resolve the binary as `run.py` does: `--ptpn`, `$PTPN_BUILD_DIR`,
+1. Resolve the binary as `example/run.py` does: `--ptpn`, `$PTPN_BUILD_DIR`,
    `.ptpn-build-dir`, then `build/ptpn`.
 2. Run `ptpn check -f model.rtsl --diagnostics json`. A failed check prints the
    diagnostics human-readably and exits non-zero without touching the file.

@@ -121,7 +121,7 @@ kind 互斥：一个 task 只能有一种 kind；`periodic` + `interrupt` 组合
 
 ## 5. 时间与单位
 
-- **基准 ms**：所有模型时间在 lowering 时统一折算为 ms 整数（引擎时间不变，仍为整数 tick；RTSL 输入时 tick = ms，见 `docs/diagnostics.md` 无关、写入本文档与 README）。
+- **基准 ms**：所有模型时间在 lowering 时统一折算为 ms 整数（引擎时间不变，仍为整数 tick；RTSL 输入时 tick = ms，见 `docs/diagnostics.md` 无关、写入本文档与 `doc/usage.md`）。
 - 字面量后缀 `ms`/`s` 绝对；裸整数按 `time_unit` 折算。
 - **`us` 后缀** → E-UNS-004：低于基准分辨率，静默舍入对认证工具不可接受；亚毫秒建模需引擎 64 位时间（约束 C1），TODO。单位分类在**语义层**完成（词法只识别后缀），保证 `us` 报 E-UNS-004 而非语法错误。
 - `timeout`（测时配置）是**墙钟秒**（INT），不是模型时间。

@@ -282,7 +282,6 @@ the location of the offending task, implicit fork/join node, or policy.
 | Code | Trigger | Fix template |
 |---|---|---|
 | `E-UNS-001` | TDG lowering rejects the model as outside a policy's supported class (for example EDF/FIFO/LLF with locks, or PIP/PCP/SRP with more than one in-flight job). Subject is the first offending task/node/edge, or `policy:<name>`. | `simplify the model or choose a supported scheduling policy` |
-| `E-UNS-002` | `--romeo`/`--ppn` requested in a build without `PTPN_ENABLE_COMPAT`. | `rebuild with -DPTPN_ENABLE_COMPAT=ON or drop --romeo/--ppn` |
 | `E-UNS-003` | RTSL `sporadic` task; arbitrary arrivals are not implemented in v1. | `replace it with periodic { period = mit } (densest arrival; a conservative WCRT upper bound)` |
 | `E-UNS-004` | RTSL `us` sub-millisecond unit on any time value or on `time_unit`. | `use ms and adjust the model precision` |
 | `E-UNS-005` | **Hint:** RTSL `interrupt` task is lowered as a non-periodic task with the interrupt type marker; v1 does not implement interrupt preemption. | `no action needed; interrupt preemption semantics are planned` |

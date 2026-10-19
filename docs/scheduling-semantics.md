@@ -151,8 +151,6 @@ Supported class and defensive fallbacks:
 - **Layout.** Lock discovery relies on `TaskInfo::locks` and the TDG2PN chain
   layout. A chain that does not match the layout has no recognized
   acquire/release positions, which degrades to base priorities.
-- PToPNer export validation still accepts only `fixed_prior_with_restart`;
-  `pip` remains rejected for that backend.
 
 ### Priority Ceiling Protocol (`pcp`)
 
@@ -219,8 +217,6 @@ Supported class and defensive fallbacks:
   is claimed for such states, unlike the supported class.
 - Hand-written `.ptpn` nets default to `FIXED`, so `pcp` is only reachable
   through lowering.
-- PToPNer export validation still accepts only `fixed_prior_with_restart`;
-  `pcp` is rejected for that backend together with `pip`.
 
 ### Stack Resource Policy (`srp`)
 
@@ -293,8 +289,6 @@ Supported class and defensive fallbacks:
   SRP-exact and no WCRT upper-bound guarantee is claimed for them.
 - Hand-written `.ptpn` nets default to `FIXED`, so `srp` is only reachable
   through lowering.
-- PToPNer export validation still accepts only `fixed_prior_with_restart`;
-  `srp` is rejected for that backend together with `pip`/`pcp`.
 
 ### Per-core priority filtering (including the control core)
 
@@ -909,8 +903,8 @@ to model preemption directly, instead of any structural encoding:
   priority task on its core finishes (`build_successor_zone` preserves the
   surviving clock). This permits mid-segment preemption.
 
-The `fixed_prior_with_restart` policy and the PToPNer export path keep the
-structural CPU place and structural preemption sub-net unchanged. FIFO also
+The `fixed_prior_with_restart` policy keeps the structural CPU place and
+structural preemption sub-net unchanged. FIFO also
 keeps one structural CPU place per real core, but no preemption sub-net: its
 execution segments are simply non-suspendable, so a dispatched job runs to exit
 on its core. They register no parallelism bound, so the filter falls back to
@@ -942,18 +936,7 @@ segments non-suspendable.
 - `src/lower/tdg2pn/tdg2pn_common.h` — `is_resume_policy`
 - `src/lower/tdg2pn/resource_lowering.cpp` — resume-style resource lowering
 
-## Contrast with Roméo
-
-- Roméo keeps priority handling implicit inside timed symbolic firability checks
-  in `VZone::firable`. A lower-priority transition is excluded from the symbolic
-  firing set by DBM constraints.
-- This repository makes the same effect explicit as set operations on the state
-  class, enabling direct reasoning about which transitions are active, suspended,
-  or blocked, and why.
-- See `docs/romeo/priority-semantics.md` for the Roméo equivalent.
-
 ## Further reading
 
 - Formal semantics: `unconfirmed/ptpn-formal-semantics.tex`
-- State-class structure: `docs/ptopner/time-and-state-class.md`
-- Roméo contrast: `docs/romeo/priority-semantics.md`
+- State-class structure: `docs/time-and-state-class.md`

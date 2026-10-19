@@ -1,576 +1,81 @@
 # PTPN
 
-A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task dependency graphs (TDGs) into timed Petri nets with priorities, preemption, and locks, then explores **state-class reachability graphs** (DBM clock zones) for analysis and export.
+**PTPN** (Priority Timed Petri Net) is a real-time scheduling analyzer. It
+lowers task dependency graphs into timed Petri nets with priorities,
+preemption, and locks, then explores their **state-class reachability graphs**
+(DBM clock zones) to compute worst-case response times (WCRT) and
+schedulability results under explicit scheduling policies.
+
+Models can be written in **RTSL** — a unit-aware, declarative language for
+real-time task systems — as **TDG JSON**, or directly as **PTPN source**
+(`.ptpn`). RTSL and TDG inputs are lowered to a PTPN in process; the analysis
+engine then explores the timed state space. A companion **LLM measurement
+loop** can measure tasks declared `measured by llm` and inject the measured
+intervals back into the RTSL source.
 
 ## Features
 
-- **RTSL v1 front-end** (`.rtsl`): unit-aware, declarative source with panic-mode diagnostics and in-process lowering to TDG; `ptpn check` validates without lowering, `ptpn rtsl` runs the full pipeline
-- **LLM measurement loop** (`tools/llm measure`): measures `measured by llm` tasks and injects the intervals back into the `.rtsl` source
-- Parse and validate **TDG JSON** (tasks, fork/join, locks, dependencies, periodic release)
-- Lower TDGs into **PTPNs** (multi-core fixed/dynamic-priority scheduling, preemption, mutex/spin locks)
-- **Scheduling policies**: fixed/restart/resume, RM/DM, PIP/PCP/SRP, EDF, FIFO, and Event-driven LLF; EDF/FIFO/LLF support statically partitioned multi-core with explicit supported-class guards (see [Scheduling Policies](#scheduling-policies))
+- **RTSL v1 front-end** (`.rtsl`): unit-aware, declarative source with
+  panic-mode diagnostics and in-process lowering to TDG; validation-only and
+  full-pipeline modes
+- **LLM measurement loop** (`tools/llm measure`): measures `measured by llm`
+  tasks and injects the intervals back into the `.rtsl` source
+- Parse and validate **TDG JSON** (tasks, fork/join, locks, dependencies,
+  periodic release)
+- Lower TDGs into **PTPNs** (multi-core fixed/dynamic-priority scheduling,
+  preemption, mutex/spin locks)
+- **Scheduling policies**: fixed/restart/resume, RM/DM, PIP/PCP/SRP, EDF, FIFO,
+  and event-driven LLF; EDF/FIFO/LLF support statically partitioned multi-core
+  with explicit supported-class guards (see [scheduling
+  semantics](docs/scheduling-semantics.md))
 - Parse the **PTPN domain language** (`.ptpn`) directly, skipping TDG conversion
-- **State-class reachability analysis** with canonicalization (`equality`, `max-lower`, `intersection`)
-- **Sound upper-bound zone merging** (`--reduction upper-bound`): one-sided zone-inclusion merging for smaller graphs; WCRT stays a certified upper bound, `wcrt_lb` is reported as unavailable
-- Optional **per-task cone decomposition** (`--reduction cone`): analyze each task on its dependency/contention cone; per-task timing and local-deadlock metrics match the full graph, but whole-net deadlock detection is unavailable and connected DAGs may not shrink
-- Optional **WCRT time-horizon reduction** (`--horizon N`) that bounds SCG expansion and reports truncation/approximation explicitly
-- Conservative **symmetry reduction** (`--reduction symmetry`) for verified isomorphic tasks on distinct cores
-- **Core-allocation search** (`ptpn allocate`) over per-task `allowed_cores`, evaluating candidates with the exact state-class analysis and reporting feasible/Pareto assignments with an optimality status
-- **LLM tooling** (`tools/llm/`): RTSL measurement loop (mainline) plus the standalone natural-language spec → generated C → measured wall-clock interval → TDG JSON prototype; measured values are explicitly not certified WCET
-- Task `deadline` and WCET provenance (`wcet_kind`, `wcet_method`, `wcet_artifact`) in TDG JSON
-- **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, metrics JSON, Romeo CTS, PToPNer `.ppn`
-- Dedicated **`export`** subcommands for Romeo and PToPNer workflows
+- **State-class reachability analysis** with canonicalization (`equality`,
+  `max-lower`, `intersection`)
+- **Sound upper-bound zone merging**: one-sided zone-inclusion merging for
+  smaller graphs; WCRT stays a certified upper bound, `wcrt_lb` is reported as
+  unavailable
+- Optional **per-task cone decomposition**: analyze each task on its
+  dependency/contention cone; per-task timing and local-deadlock metrics match
+  the full graph, but whole-net deadlock detection is unavailable and connected
+  DAGs may not shrink
+- Optional **WCRT time-horizon reduction** that bounds SCG expansion and
+  reports truncation/approximation explicitly
+- Conservative **symmetry reduction** for verified isomorphic tasks on distinct
+  cores
+- **Core-allocation search** over per-task `allowed_cores`, evaluating
+  candidates with the exact state-class analysis and reporting feasible/Pareto
+  assignments with an optimality status
+- **LLM tooling** (`tools/llm/`): the RTSL measurement loop (mainline) plus the
+  standalone natural-language spec → generated C → measured wall-clock interval
+  → TDG JSON prototype; measured values are explicitly not certified WCET
+- Task `deadline` and WCET provenance (`wcet_kind`, `wcet_method`,
+  `wcet_artifact`) in TDG JSON
+- **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, and
+  metrics JSON
 
-## Input Modes
-
-| Mode | Command | Input | Pipeline |
-|------|---------|-------|----------|
-| **RTSL** | `ptpn rtsl -f model.rtsl` | RTSL v1 source (declarative front-end) | RTSL → AST/validation → TDG (in process) → PTPN → analysis |
-| **Check** | `ptpn check -f model.rtsl` | RTSL v1 source | RTSL → AST/validation only (no lowering) |
-| **Measurement** | `python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json` | RTSL with unmeasured `measured by llm` tasks | `ptpn check` envelope → generated C → measured intervals injected into `.rtsl` |
-| **TDG** | `ptpn tdg -f model.json` | Task dependency graph JSON | JSON → TDG → PTPN → analysis |
-| **Direct** | `ptpn ptpn -f model.ptpn` | PTPN source file | `.ptpn` → PTPN → analysis |
+## Pipeline
 
 ```text
-# RTSL path (primary human/LLM entry point; lowering stays in process)
-.rtsl ──► Lexer/Parser ──► AST/Validation ──► TDG (in memory) ──► PTPN ──► State-Class Analysis
-
-# TDG path (three parallel export/analysis pipelines)
-JSON ──► TDG ──► tdg2pn ──► PTPN ──► State-Class Analysis / DOT / metrics
-           │
-           ├──► tdg2romeo ──► Romeo .cts
-           └──► tdg2ptopner ──► PToPNer .ppn
-
-# Direct path
-.ptpn ──► Parser ──► PTPN ──► State-Class Analysis / DOT / metrics
+RTSL source (.rtsl) ──► lex / parse / validate ──► TDG (in memory) ─┐
+TDG JSON            ──► parse ───────────────────► TDG ─────────────┴──► tdg2pn ──► PTPN ──┐
+PTPN source (.ptpn) ──► parse ─────────────────────────────────────► PTPN ────────────────┤
+                                                                                          ▼
+                                        state-class reachability analysis (DBM clock zones,
+                                        priorities, preemption, scheduling policies)
+                                                                                          │
+                                                                                          ▼
+                                               WCRT / schedulability / metrics JSON
 ```
 
-RTSL time values are normalized to **milliseconds** (for RTSL input the engine
-tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks, as before.
-
-## Quick Start
-
-### Option A: Docker (Linux, vcpkg preconfigured)
-
-The [Dockerfile](Dockerfile) builds on Ubuntu 24.04, bootstraps vcpkg, installs Boost from [vcpkg.json](vcpkg.json), runs the test suite, and ships a minimal runtime image.
-
-```bash
-# Native platform (arm64-linux on Apple Silicon Docker, x64-linux on Intel)
-docker build -t ptpn .
-
-# Force x86_64 Linux
-docker build --platform linux/amd64 \
-  --build-arg VCPKG_TARGET_TRIPLET=x64-linux -t ptpn .
-
-# Analyze a TDG example
-docker run --rm -v "$PWD/example:/data" ptpn tdg \
-  -f /data/l-bench/input.json -m 1000 --export-scg /data/scg.dot
-```
-
-The runtime image contains `ptpn` and `ptpn_test` (`/usr/local/bin/`). Mount your inputs under `/data` (default `WORKDIR`).
-
-### Option B: Native Build
-
-#### Dependencies
-
-- C++17
-- CMake 3.27+
-- Ninja (recommended)
-- Boost (`graph`, `filesystem`, `thread`, `date_time`) — via **vcpkg** (recommended) or system packages
-
-**Linux (Debian/Ubuntu) — system Boost:**
-
-```bash
-sudo apt install libboost-all-dev ninja-build cmake g++
-```
-
-**macOS — Homebrew:**
-
-```bash
-brew install boost ninja cmake
-```
-
-**vcpkg (recommended, matches CI/Docker):**
-
-```bash
-git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
-~/vcpkg/bootstrap-vcpkg.sh
-export VCPKG_ROOT=~/vcpkg
-```
-
-On **Apple Silicon**, ensure the vcpkg triplet matches your host (avoid the `x64-osx` / `arm64` mismatch that breaks linking):
-
-```bash
-cmake -B build -G Ninja -DVCPKG_TARGET_TRIPLET=arm64-osx   # Apple Silicon
-cmake -B build -G Ninja -DVCPKG_TARGET_TRIPLET=x64-osx     # Intel Mac
-```
-
-CMake auto-detects vcpkg when `VCPKG_ROOT` is set and picks a host triplet if none is specified (see [CMakeLists.txt](CMakeLists.txt)).
-
-#### Build
-
-**Recommended** — helper script (bootstraps vcpkg if needed, writes `.ptpn-build-dir` so `run.py` finds the binary):
-
-```bash
-./build.py
-./build.py --test          # build + ctest
-./build.py --build-dir build-asan   # non-default build tree
-```
-
-**Manual CMake:**
-
-```bash
-cmake -B build -G Ninja
-cmake --build build
-```
-
-Executables:
-
-- `build/ptpn` — main analyzer
-- `build/test/ptpn_test` — unit tests
-
-Romeo CTS (`.cts`) and PToPNer (`.ppn`) exports are optional: build with
-`-DPTPN_ENABLE_COMPAT=ON` to enable the `export romeo` / `export ptopner`
-subcommands and the `--romeo` / `--ppn` flags.
-
-`run.py` resolves the `ptpn` binary automatically:
-
-1. `--ptpn PATH` if you pass it explicitly
-2. environment variable `PTPN_BUILD_DIR` (CMake build directory)
-3. `.ptpn-build-dir` at the repo root (written by `./build.py`)
-4. fallback: `build/ptpn`
-
-```bash
-# typical workflow — no --ptpn needed
-./build.py
-python3 run.py                      # every experiment (p/s/t-bench + l-bench)
-
-# custom build directory
-./build.py --build-dir build-asan
-export PTPN_BUILD_DIR=build-asan   # or rely on the updated .ptpn-build-dir marker
-python3 run.py
-```
-
-#### Run Tests
-
-```bash
-ctest --test-dir build --output-on-failure
-# or
-./build/test/ptpn_test
-```
-
-## RTSL Quick Start
-
-RTSL is the primary entry point for humans and LLMs. The model below is the
-committed [`example/introduction/demo.rtsl`](example/introduction/demo.rtsl):
-periodic and aperiodic tasks, a lock, a fork/join, and one `measured by llm`
-task that is deliberately left unmeasured.
-
-```rtsl
-system demo {
-  cpus 3
-  cores_per_cpu 1
-  time_unit ms
-  policy fixed
-
-  task sensor: periodic {
-    period 100ms
-    deadline 100ms
-    core 0
-    time [2, 3] estimated by "datasheet"
-  }
-
-  task fusion: aperiodic {
-    core 1
-    locks mutex1
-    time measured by llm { runs 10, timeout 2 }   // pending until measured
-  }
-
-  task logger: aperiodic {
-    core 2
-    time [1, 2] estimated
-  }
-
-  task display: normal {
-    core 2
-    time [1, 1] estimated
-  }
-
-  start sensor
-  end display
-
-  sensor -> {fusion, logger}
-  {fusion, logger} -> display
-}
-```
-
-```bash
-# 1. Parse + validate only (no lowering, no analysis). Exit 0; the envelope's
-#    result.pending_measurements lists the unmeasured task.
-./build/ptpn check -f example/introduction/demo.rtsl --diagnostics json
-
-# 2. Measure the `measured by llm` task and inject its interval in place.
-#    --tasks-json maps each pending task id to a natural-language description.
-#    --execute compiles and runs the proposed C; without it this is a dry run
-#    that writes nothing.
-cat > tasks.json <<'JSON'
-{"fusion": "merge one sensor sample and update the shared state"}
-JSON
-python -m tools.llm measure --rtsl example/introduction/demo.rtsl \
-    --tasks-json tasks.json --execute
-
-# 3. Full pipeline: lower in process, analyze, export metrics.
-./build/ptpn rtsl -f example/introduction/demo.rtsl \
-    --export-tdg /tmp/demo.tdg.json --export-metrics metrics.json
-
-# 4. The exported TDG is ordinary input for the JSON pipeline.
-./build/ptpn tdg -f /tmp/demo.tdg.json --no-analysis
-```
-
-RTSL time values are normalized to **milliseconds** (for RTSL input the engine
-tick is 1 ms). Bare integers use `time_unit` (default `ms`); `ms`/`s` suffixes
-are absolute; `us` is rejected as E-UNS-004. TDG JSON integers remain
-unit-agnostic engine ticks.
-
-Exit codes: `0` success; `2` syntax; `3` validation; `4` unsupported model
-class; `5` truncation/partial results; `6` a certified negative analysis
-result (deadlock or `wcrt_lb > deadline`); `1` internal error or CLI usage
-error. Without
-`--diagnostics` / `--diagnostics-file`, the CLI keeps its legacy streams and
-`0`/`1` exit codes. Models using `core any` must go through `ptpn allocate`.
-
-Spec and diagnostics: [docs/rtsl-spec.md](docs/rtsl-spec.md),
-[docs/diagnostics.md](docs/diagnostics.md). Measurement details:
-[docs/llm-integration.md](docs/llm-integration.md#rtsl-measurement-loop-toolsllm-measure).
-
-## Usage
-
-```bash
-# Analyze from TDG JSON (reachability only, no files written)
-./build/ptpn tdg -f example/p-bench/initial.json
-
-# Lower and analyze an RTSL model; export the lowered TDG JSON
-./build/ptpn rtsl -f model.rtsl --export-tdg lowered.json --export-metrics metrics.json
-
-# Validate an RTSL model without lowering (LLM/diagnostics workflow)
-./build/ptpn check -f model.rtsl --diagnostics json
-
-# Analyze from PTPN source
-./build/ptpn ptpn -f model.ptpn
-
-# Help
-./build/ptpn --help
-./build/ptpn tdg --help
-./build/ptpn rtsl --help
-./build/ptpn export romeo --help
-```
-
-### Subcommands
-
-| Subcommand | Purpose |
-|------------|---------|
-| `ptpn tdg` | Load TDG JSON, lower to PTPN, analyze and/or export |
-| `ptpn rtsl` | Load RTSL source, lower in process to TDG, then run the TDG analysis pipeline |
-| `ptpn check` | Lex, parse, and validate RTSL (no lowering or analysis) |
-| `ptpn ptpn` | Load `.ptpn` source, analyze and/or export |
-| `ptpn allocate` | Search core allocations from TDG JSON or RTSL (`core any` is expanded) |
-| `ptpn export romeo` | Export Romeo CTS from TDG JSON (`--format scheduling-net\|inhibitor-arc`) |
-| `ptpn export ptopner` | Export PToPNer `.ppn` (`-f` input, `-o` output) |
-
-### Common Options (`tdg` / `rtsl` / `ptpn`)
-
-| Option | Description |
-|--------|-------------|
-| `-f, --file` | Input file (required) |
-| `-m, --max-states` | Max states in reachability graph (default: `10000`) |
-| `--canonicalization` | `equality` (default), `max-lower`, or `intersection` |
-| `--keep-suspension-clocks` | Keep `w_t` in the DBM (default: project it out; exact optimization) |
-| `--reduction` | `none` (default), `upper-bound` (sound WCRT upper bound, `wcrt_lb` unavailable), `cone` (per-task cone analysis; no whole-net deadlock), or `symmetry` (verified isomorphic tasks on distinct cores; pooled timing metrics are conservative) |
-| `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
-| `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified. See [docs/ptopner/metrics.md](docs/ptopner/metrics.md#time-horizon-reduction) |
-| `--no-analysis` | Skip state-class reachability analysis |
-| `--diagnostics json` | Emit the versioned JSON diagnostics envelope on stdout and reserve stdout for it (available on `check`, `tdg`, `rtsl`, `ptpn`, and `allocate`) |
-| `--diagnostics-file PATH` | Write the same envelope to `PATH` |
-| `--debug` | Enable debug logging |
-| `-v, --version` | Show version |
-
-**Input-lowering options (`tdg` / `rtsl`):**
-
-| Option | Description |
-|--------|-------------|
-| `--policy` | Select the scheduling policy for lowering and analysis (see [Scheduling Policies](#scheduling-policies)) |
-
-**Exports (all opt-in — paths are exactly what you pass):**
-
-| Option | Output |
-|--------|--------|
-| `--export-tdg PATH` | TDG Graphviz DOT (`tdg`) or lowered TDG JSON round-trippable through `ptpn tdg` (`rtsl`) |
-| `--export-wcet PATH` | Per-task WCET summary JSON (`tdg`/`rtsl`) |
-| `--export-ptpn PATH` | PTPN structure Graphviz DOT |
-| `--export-scg PATH` | State-class reachability graph DOT |
-| `--export-metrics PATH` | Performance / schedulability metrics JSON |
-| `--romeo PATH` | Romeo CTS (via `tdg2romeo`, `tdg`/`rtsl`) |
-| `--ppn PATH` | PToPNer `.ppn` |
-| `--tina PATH` | Tina `.net` (not implemented) |
-
-> **Note:** Exports are **opt-in**. Running `ptpn tdg -f input.json` alone performs analysis but writes **no** output files unless you pass one or more export flags.
-
-### Reduction Defaults and Measured Effect
-
-The default is `--reduction none`: exhaustive state-class exploration with
-**suspension-clock projection** (on by default), which is exact and does not
-change the state count. All other reductions are opt-in because each trades
-exactness or scope for speed:
-
-| Mode | Effect on bundled models | Metrics status |
-|------|--------------------------|----------------|
-| `none` + w-projection | exact baseline; L-Bench 40t: 2718 states, 0.04 s | exact |
-| `symmetry` | 4 symmetric tasks: 96 → 19 states; 6 tasks: 792 → 34 states | `exact=false`; per-task WCRT/WCRT_LB preserved, secondary timing conservative |
-| `upper-bound` | L-Bench 40t: 2718 → 2713; 100t: 545708 → 545705 (slower: 58.5 s vs 53.1 s) | WCRT upper bound; `wcrt_lb` unavailable |
-| `cone` | L-Bench 40t: 40 cones × 2718 = 108720 summed states, 1.66 s vs 0.04 s | per-task timing exact; no whole-net deadlock |
-| `horizon H` | L-Bench 40t at H=50: 2718 → 2335 states with unchanged WCRT values | WCRT sound only for H ≥ response time; `wcrt_lb`, deadlock and SCC uncertified |
-
-Symmetry gives the largest reduction but only applies to verified isomorphic
-tasks on distinct cores, so it cannot be the default for general models.
-Upper-bound merging and horizon pruning are sound but provide little benefit on
-the bundled connected DAGs. Cone decomposition is exact per task but multiplies
-work when every cone equals the full net. A partial-order/persistent-set mode
-was prototyped and **withdrawn**: on L-Bench 100t it reduced the graph from
-545708 to 87325 states while lowering some reported WCRTs (for example 5 → 4
-and 5 → 3), so it pruned genuinely longest paths and is not sound for WCRT.
-
-### Core-Allocation Search (`ptpn allocate`)
-
-Tasks may declare an allocation domain:
-
-```json
-{"id": "T1", "type": "task", "core": 0, "allowed_cores": [0, 1],
- "deadline": 80, "time": [[2, 3]], "locks": [],
- "wcet_kind": "measured", "wcet_method": "target-board run"}
-```
-
-Valid core ids are `0 .. num_cpus-1` (`cores_per_cpu` is a capacity parameter,
-not an extra range of core ids). `deadline` is an absolute deadline; `0` or
-absent means the implicit deadline (the period).
-
-`ptpn allocate` copies the TDG for each candidate assignment, writes the chosen
-cores, lowers with `TDG2PN`, and runs the exact SCG/metrics analysis with
-equality canonicalization, suspension-clock projection, and no reduction:
-
-```bash
-./build/ptpn allocate -f input.json -o allocation.json \
-    --objective max-load --max-candidates 64
-```
-
-`allocate` also accepts an RTSL source (`-f model.rtsl`): `core any` is expanded
-to the full `0 .. num_cpus-1` domain before the search, so the same model can
-be checked (`ptpn check`), rejected for direct analysis (`ptpn rtsl`), or
-allocated without hand-editing cores.
-
-The report contains:
-
-- `search`: strategy (`exhaustive`/`heuristic`), whether the assignment domain
-  was exhausted, domain size, evaluated/feasible counts, truncation, and reason;
-- `best`: the highest-ranked feasible candidate (or `null`);
-- `assignment`: the winning `{task, core}` list;
-- `pareto`: non-dominated feasible candidates on WCRT, utilization, and load;
-- `timing_model`: per-task WCET provenance and `all_certified`.
-
-Feasibility requires an untruncated, bounded, deadlock-free, schedulable
-analysis. `--require-certified-wcet` restricts `best` to tasks whose
-`wcet_kind` is `certified`; measured/estimated/model timing is still analyzed
-and reported but cannot win under that gate. See
-[docs/ptopner/allocation.md](docs/ptopner/allocation.md) for the full schema and
-ranking rules.
-
-### LLM Integration (`tools/llm`)
-
-The **mainline** is the RTSL measurement loop. For models that declare
-`time ... measured by llm { ... }`, `ptpn check` reports the unmeasured tasks
-in `result.pending_measurements`; the measure command asks an LLM for one
-self-contained C program per execution segment, compiles and runs them, and
-injects the measured intervals plus a binary/compile-command artifact with a
-single span replacement:
-
-```bash
-python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json \
-    --execute
-```
-
-`--tasks-json` maps each pending task id to a natural-language description;
-`--response-file` replays a response offline; `--out` writes elsewhere;
-without `--execute` the command is a dry run and writes nothing. Integers are
-converted to the model's millisecond base by rounding up (any non-zero
-observation is at least 1 ms). See
-[docs/llm-integration.md](docs/llm-integration.md#rtsl-measurement-loop-toolsllm-measure).
-
-**Trust boundary:** the LLM is an untrusted proposer. Its output is schema
-validated; generated programs run only with `--execute`, with a timeout and
-best-effort resource limits. The measured min/max wall-clock interval includes
-process startup, has no confidence bound, and is **not a WCET upper bound**.
-Do not use `wcet_kind=measured` for hard real-time claims; certified timing
-requires a sound static WCET tool or validated MBPTA. Locked tasks require
-`2 * lock_count + 1` per-segment measurements; the emitter rejects a single
-total interval for them. See
-[docs/llm-integration.md](docs/llm-integration.md).
-
-#### Standalone generation prototype
-
-The older prototype turns a validated task specification into LLM-proposed C
-programs, compiles and runs them in a temporary directory, and emits a TDG
-with `wcet_kind: "measured"`:
-
-```bash
-python -m tools.llm generate --spec spec.json --out model.json \
-    --execute --runs 20 --timeout 5 --tdg-out graph.json
-```
-
-`--response-file` replays a saved model response without network access.
-`--dry-run` prints the deterministic prompt. The same trust boundary applies.
-
-### Symmetry Reduction (`--reduction symmetry`)
-
-The reduction quotients the state-class graph by permutations of **provably
-isomorphic tasks**. It is conservative and off by default.
-
-Candidate tasks must have identical signatures: chain node kinds and
-attributes, execution intervals, priority, core behaviour, lock names,
-period/deadline, periodic markers, and the external arcs attached to the chain
-(consumers, core/lock resources, dependency edges and the neighbouring task
-structure). Each candidate swap is then **verified as an automorphism of the
-whole net** before use: pre/post arcs and weights, place
-capacity/saturation/initial tokens, transition interval/priority/suspension,
-periodic transitions fixed, and a consistent relabelling of real cores with
-equal parallelism. The control core never moves.
-
-Supported scope (deliberately narrower than full task symmetry):
-
-- Only tasks bound to **distinct real cores** (`core >= 0`); at most one member
-  per core. Control-core tasks and tasks sharing a core are never permuted,
-  because on a shared core the canonical representative would hide which task
-  runs and per-task timing would no longer be recoverable.
-- A signature group is dropped when any of its lock names is also used by a
-  **non-isomorphic** task outside the group.
-- Periodic release transitions must stay fixed, so periodic tasks with distinct
-  release transitions are not permuted.
-
-Canonicalization applies to every identity-bearing field of a state class:
-marking, clock variables and the derived per-transition clock maps, enabled /
-priority / suspended transition sets, the DBM rows and columns, and the
-lexicographic state key. The lexicographically smallest representative of the
-orbit is used, and the reduction is active only when the verified group is
-non-trivial. `elapsed_time` and the graph-assigned `id` are metadata and are
-not permuted.
-
-Because a quotient state represents several concrete schedules, timing metrics
-are reported as **conservative bounds** (`exact=false` in the metrics JSON).
-Per-task values are pooled within each verified task group; on a correctly
-symmetric model they reproduce the unreduced per-task WCRT and WCRT lower
-bound. Heterogeneous tasks are never merged.
-
-```bash
-# 6 identical tasks on 6 distinct cores: 792 states -> 34 states
-./build/ptpn tdg -f example/symmetry/symmetric-6t-6c.json \
-  -m 10000000 --reduction symmetry --export-metrics metrics.json
-```
-
-### Scheduling Policies
-
-JSON `configuration.policy` and `--policy` accept values such as:
-
-| Policy | Native analysis status |
-|--------|------------------------|
-| `fixed` | Default fixed-priority lowering (resume-style native analysis) |
-| `fixed_prior_with_resume` | Engine-native preemption (recommended for analysis) |
-| `fixed_prior_with_restart` | Structural restart preemption (required for PToPNer export) |
-| `rm` | Rate-monotonic priorities computed at lowering; resume-style |
-| `dm` | Deadline-monotonic priorities computed at lowering; resume-style |
-| `pip` | Priority Inheritance Protocol, derived from the marking; resume-style |
-| `pcp` | Priority Ceiling Protocol: static lock ceilings, ceiling-based admission and transitive inheritance; resume-style |
-| `srp` | Stack Resource Policy: static lock ceilings, global system-ceiling start gate, no inheritance; resume-style |
-| `edf` | Earliest Deadline First using per-job release clocks and per-core deadline-order zone branches; statically partitioned multi-core |
-| `fifo` | Non-preemptive FIFO using per-job release clocks and per-core arrival-order branches; statically partitioned multi-core |
-| `llf` | **Event-driven LLF** using laxity clocks; **not** classical continuous-time LLF; statically partitioned multi-core, deterministic segments only |
-
-- **Native P-TPN analysis:** all policies above use the firing-rule template in
-  [docs/ptopner/scheduling-semantics.md](docs/ptopner/scheduling-semantics.md).
-  PIP/PCP/SRP are supported on TDG2PN-lowered nets with
-  `task_place_capacity == 1` and one in-flight job per task; PCP/SRP use a
-  global system ceiling (the classical protocols are uniprocessor).
-- **EDF/FIFO/LLF** support statically partitioned multi-core: tasks stay on
-  their declared cores, `cores_per_cpu == 1`, one in-flight job per task, and
-  no locks or dependency-driven releases. EDF and FIFO use release clocks; LLF
-  requires deterministic execution segments and is event-driven, not classical
-  LLF. Unsupported models are rejected explicitly. See the per-policy sections
-  in [docs/ptopner/scheduling-semantics.md](docs/ptopner/scheduling-semantics.md).
-- **Romeo `.cts` export:** uses `tdg2romeo` directly from TDG; scheduling policy in JSON does not affect Romeo encoding
-- **PToPNer `.ppn` export:** requires `fixed_prior_with_restart` (tdg2ptopner)
-
-### Examples
-
-```bash
-# TDG: analyze + export state-class graph and PTPN DOT
-./build/ptpn tdg -f example/l-bench/input.json \
-  --export-scg scg.dot --export-ptpn ptpn.dot -m 5000
-
-# TDG: larger benchmark (100 tasks, 20 cores, fork/join)
-./build/ptpn tdg -f example/l-bench/input-complex.json -m 10000
-
-# TDG: WCET summary only (no reachability)
-./build/ptpn tdg -f example/p-bench/initial.json \
-  --no-analysis --export-wcet wcet.json
-
-# TDG: statically partitioned multi-core EDF/FIFO/LLF
-# (supported-class models: no locks/dependency releases, one job per task)
-./build/ptpn tdg -f input.json --policy edf --export-metrics edf.json
-./build/ptpn tdg -f input.json --policy fifo --export-metrics fifo.json
-./build/ptpn tdg -f input.json --policy llf --export-metrics llf.json
-
-# TDG: Romeo export (scheduling-net, default)
-./build/ptpn export romeo -f example/p-bench/initial.json -o out.cts
-
-# TDG: Romeo export (inhibitor-arc style)
-./build/ptpn export romeo -f example/p-bench/initial.json -o out.cts --format inhibitor-arc
-
-# TDG pipeline with inline Romeo export
-./build/ptpn tdg -f example/p-bench/initial.json --no-analysis --romeo out.cts
-
-# PTPN: max-lower canonicalization + metrics
-./build/ptpn ptpn -f model.ptpn \
-  --canonicalization max-lower --export-metrics metrics.json
-
-# Standalone export subcommands
-./build/ptpn export romeo -f example/p-bench/initial.json -o out.cts
-./build/ptpn export ptopner -f example/p-bench/initial.json -o out.ppn \
-  --policy fixed_prior_with_restart
-
-# l-bench: scaling experiments (auto-finds build/ptpn via .ptpn-build-dir)
-python3 run.py --lbench-cases pipeline-40t-8c-5l -m 5000000 --extrapolation
-python3 run.py --reviewer-case -m 20000
-python3 run.py --skip-suites --validate-tdg-only
-
-# p/s/t-bench: export PTPN/SCG DOT, Romeo CTS, PToPNer .ppn
-python3 run.py
-python3 run.py --suites p-bench t-bench --profiles ptpn
-```
-
-## Example Inputs
-
-| Directory | Contents |
-|-----------|----------|
-| [example/introduction/](example/introduction/) | Small introductory RTSL model (`demo.rtsl`: periodic + aperiodic, lock, fork/join, pending measurement) |
-| [example/motivating-examples/](example/motivating-examples/) | Motivating TDG examples |
-| [example/p-bench/](example/p-bench/) | Priority / preemption benchmarks |
-| [example/s-bench/](example/s-bench/) | Small scheduling benchmarks |
-| [example/t-bench/](example/t-bench/) | Scalability benchmarks (`d-*.json`) |
-| [example/l-bench/](example/l-bench/) | Progressive pipeline benchmarks (`pipeline-*t-*c.json`, 10–100 tasks, fork/join, scaled shared mutexes; `pipeline-40t-8c-5l.json` for the 5-lock reviewer case); legacy `input.json` / `input-complex.json` |
-
-TDG JSON format: [docs/json_format.md](docs/json_format.md). PTPN language: [docs/ptpn-language-spec.md](docs/ptpn-language-spec.md).
+RTSL time values are normalized to milliseconds (one engine tick = 1 ms for
+RTSL input); TDG JSON integers remain unit-agnostic engine ticks.
 
 ## Documentation
 
 | Document | Contents |
 |----------|----------|
+| [doc/install.md](doc/install.md) | Dependencies, native build, vcpkg, tests, and the Docker image |
+| [doc/usage.md](doc/usage.md) | Subcommands, options, reductions, core allocation, LLM loop, examples |
 | [docs/rtsl-spec.md](docs/rtsl-spec.md) | RTSL v1 language spec and implementation status |
 | [docs/diagnostics.md](docs/diagnostics.md) | Structured diagnostics protocol, exit codes, and code tables |
 | [docs/llm-integration.md](docs/llm-integration.md) | LLM generation prototype and RTSL measurement loop |
@@ -578,21 +83,11 @@ TDG JSON format: [docs/json_format.md](docs/json_format.md). PTPN language: [doc
 | [docs/json_format.md](docs/json_format.md) | TDG JSON input format |
 | [docs/ptpn-language-spec.md](docs/ptpn-language-spec.md) | PTPN domain language |
 | [docs/rule.md](docs/rule.md) | TDG → PTPN lowering rules |
-| [docs/ptopner/](docs/ptopner/) | PToPNer export, scheduling semantics, metrics |
-| [docs/tdg2romeo/](docs/tdg2romeo/) | TDG → Romeo conversion rules |
-| [docs/romeo/](docs/romeo/) | Romeo engine semantics notes |
+| [docs/scheduling-semantics.md](docs/scheduling-semantics.md) | Firing rules and per-policy scheduling semantics |
+| [docs/time-and-state-class.md](docs/time-and-state-class.md) | Time representation and state-class structure |
+| [docs/metrics.md](docs/metrics.md) | Metrics definitions, JSON schema, and soundness conventions |
+| [docs/allocation.md](docs/allocation.md) | Core-allocation search schema and ranking rules |
 
-## Third-Party Dependencies
+## License
 
-**Via vcpkg manifest** ([vcpkg.json](vcpkg.json)):
-
-- Boost (`graph`, `filesystem`, `thread`, `date_time`)
-
-**Fetched at configure time** (FetchContent):
-
-- [CLI11](https://github.com/CLIUtils/CLI11) — CLI parsing
-- [nlohmann/json](https://github.com/nlohmann/json) — JSON
-- [spdlog](https://github.com/gabime/spdlog) / [fmt](https://github.com/fmtlib/fmt) — logging
-- [GoogleTest](https://github.com/google/googletest) — tests
-
-The [tools/PToPNer](tools/PToPNer/) tree holds PToPNer-related reference material.
+See [LICENSE](LICENSE).

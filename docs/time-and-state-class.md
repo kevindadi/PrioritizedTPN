@@ -124,15 +124,7 @@ That is why state identity in `StateKey` (`src/analysis/state.h:107`) includes `
 - `src/analysis/graph.h:98` — `fire_with_time`
 - `src/analysis/graph.h:110` — `recompute_enabled_sets`
 
-## Contrast with Roméo
-
-- Roméo centers timed semantics on symbolic zone transformation and timed firability checks.
-- This repository also uses a symbolic timed domain, but it exposes scheduler consequences as explicit state fields.
-- Practical effect: here you can directly ask "which transitions are enabled, active, or suspended in this state?" without reconstructing that from implicit priority constraints.
-
 ## Further reading
 
-- Scheduling details: `docs/ptopner/scheduling-semantics.md`
-- Symbol lookup: `docs/ptopner/symbol-index.md`
+- Scheduling details: `docs/scheduling-semantics.md`
 - Formal rules: `docs/ptpn-formal-semantics.md`
-- Roméo contrast: `docs/romeo/time-semantics.md`
