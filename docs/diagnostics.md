@@ -130,10 +130,13 @@ negative result by raising the state bound:
 |---|---|---|
 | `E-SYN-001` | TDG JSON is not valid JSON (nlohmann `parse_error`); location points at the byte offset. | `fix the JSON syntax near the reported line and column` |
 | `E-SYN-002` | Input file cannot be opened. | `check that the path exists and is readable` |
+| `E-SYN-101` | RTSL lexical error: illegal character, invalid string escape, unterminated string/comment, out-of-range integer, or unknown time-unit suffix (on a time literal or on `time_unit`). | `remove or replace the reported token; use 'ms' or 's' for time units` |
+| `E-SYN-102` | RTSL syntax error: unexpected token. The message includes the expected token or keyword set. | `rewrite this line using the expected keywords` |
 
 The `.ptpn` parser is deliberately lenient and does not emit grammar-level
 syntax codes; malformed input either fails validation (`E-VAL-1xx`) or yields
-an empty model. `E-SYN-002` applies to both input formats.
+an empty model. `E-SYN-002` applies to every input format (TDG JSON, `.ptpn`,
+and RTSL).
 
 ### Validation — TDG JSON (`E-VAL-0xx`, exit 3)
 
@@ -197,12 +200,48 @@ locations carry `file` only.
 | `E-VAL-112` | `@init` references an unknown place. | `reference a declared place in @init` |
 | `E-VAL-113` | Negative `@init` token count. | `set the token count to a non-negative integer` |
 
+### Validation — RTSL (`E-VAL-2xx`, exit 3)
+
+Emitted by `ptpn check` after parsing and by later RTSL commands. Subjects are
+the `SourceMap` keys from `docs/rtsl-spec.md` section 9; locations are the
+corresponding byte-accurate spans.
+
+| Code | Trigger | Fix template |
+|---|---|---|
+| `E-VAL-201` | Duplicate task id. | `rename one of the duplicate tasks` |
+| `E-VAL-202` | User identifier (task or lock) starts with `__` or contains `__`, which is reserved for implicit nodes. | `rename the task/lock without '__'` |
+| `E-VAL-203` | Duplicate edge declaration, including reordered endpoint sets. Both declaration locations are reported (one diagnostic each). | `remove one of the duplicate edge declarations` |
+| `E-VAL-204` | Edge, `start`, or `end` binding references an unknown task. | `reference an existing task id` |
+| `E-VAL-205` | Attribute/kind mismatch (`period` on a non-periodic task, `mit` on a non-sporadic task). | `remove the attribute or change the task kind` |
+| `E-VAL-206` | Non-positive `period`. | `set period to a positive time value` |
+| `E-VAL-207` | Non-positive `mit`. | `set mit to a positive time value` |
+| `E-VAL-208` | Non-positive `deadline`. | `set deadline to a positive time value` |
+| `E-VAL-209` | `core` (or a member of `core { ... }`) outside `[0, cpus-1]`. | `use a core in [0, cpus-1]` |
+| `E-VAL-210` | Empty `core { ... }` set or duplicate core in the set. | `list distinct cores, or use 'core N'/'core any'` |
+| `E-VAL-211` | Missing required attribute: task without `time`, periodic without `period`, sporadic without `mit`. | `add the missing attribute` |
+| `E-VAL-212` | Time interval with `min > max` after unit normalization (bare integers use `time_unit`). | `ensure each interval is [min, max] with min <= max` |
+| `E-VAL-213` | `measured` time is missing intervals. `ptpn check` deliberately does not emit this (the model is pre-measurement); `rtsl`/`allocate` reject it. | `run the measurement step first` |
+| `E-VAL-214` | `estimated`/`certified` time is missing intervals. | `add [min, max] intervals before the provenance keyword` |
+| `E-VAL-215` | Unknown scheduling policy (validated via `parse_schedule_policy`). | `use one of: fixed, fixed_prior_with_resume, fixed_prior_with_restart, rm, dm, edf, fifo, llf, pip, pcp, srp` |
+| `E-VAL-216` | Multi-to-multi edge (at least two sources and at least two targets). | `split the multi-to-multi edge into explicit intermediate tasks` |
+| `E-VAL-217` | Missing `cpus`, `cpus < 1`, or `cores_per_cpu < 1`. | `set cpus/cores_per_cpu to a positive value` |
+| `E-VAL-218` | `core any` in a command that cannot expand the core domain. `ptpn check` emits it with `severity: "hint"`; `rtsl` (Phase 2b) emits it as an error. | `use ptpn allocate to expand the core domain` |
+| `E-VAL-219` | Duplicate attribute declaration (system attributes, task attributes, or `measured` sub-attributes). | `remove the duplicate declaration` |
+| `E-VAL-220` | `measured` configuration with non-positive `runs` or `timeout`. | `set runs/timeout to positive integers` |
+
+RTSL validation also reuses `E-VAL-014` (lock prefix) immediately. Lowering-
+time checks such as `E-VAL-015` (segment count) and `E-VAL-011` (core vs
+`allowed_cores`) are wired by Phase 2b together with `E-UNS-001`.
+
 ### Unsupported (`E-UNS-`, exit 4)
 
 | Code | Trigger | Fix template |
 |---|---|---|
 | `E-UNS-001` | TDG lowering rejects the model as outside a policy's supported class (for example EDF/FIFO/LLF with locks, or PIP/PCP/SRP with more than one in-flight job). Subject is the first offending task/node/edge, or `policy:<name>`. | `simplify the model or choose a supported scheduling policy` |
 | `E-UNS-002` | `--romeo`/`--ppn` requested in a build without `PTPN_ENABLE_COMPAT`. | `rebuild with -DPTPN_ENABLE_COMPAT=ON or drop --romeo/--ppn` |
+| `E-UNS-003` | RTSL `sporadic` task; arbitrary arrivals are not implemented in v1. | `replace it with periodic { period = mit } (densest arrival; a conservative WCRT upper bound)` |
+| `E-UNS-004` | RTSL `us` sub-millisecond unit on any time value or on `time_unit`. | `use ms and adjust the model precision` |
+| `E-UNS-005` | **Hint:** RTSL `interrupt` task is lowered as a non-periodic task with the interrupt type marker; v1 does not implement interrupt preemption. | `no action needed; interrupt preemption semantics are planned` |
 
 ### Performance (`E-PERF-`, exit 5)
 
