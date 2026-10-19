@@ -7,6 +7,7 @@ best-effort POSIX resource limits.  The measured value is wall-clock elapsed
 time, not a certified worst-case execution time.
 """
 
+import hashlib
 import json
 import math
 import os
@@ -289,6 +290,14 @@ def _run_command(
         return int(process.returncode), stdout, stderr
 
 
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def measure_task(
     source: str,
     runs: int = 20,
@@ -296,7 +305,8 @@ def measure_task(
     compiler: str = "cc",
     opt: str = "-O2",
     allow_execute: bool = False,
-) -> Dict[str, int]:
+    include_metadata: bool = False,
+) -> Dict[str, Any]:
     """Compile and repeatedly run *source*, returning ``{"lo", "hi"}`` in us.
 
     The source is written to a fresh temporary directory, compiled with an
@@ -306,8 +316,16 @@ def measure_task(
     ``allow_execute`` is true.
 
     The returned interval is ``[min, max]`` of observed wall-clock elapsed
-    times in integer microseconds.  It includes process creation overhead and
-    is **not** a WCET bound.
+    times in integer microseconds (floor division, matching the prototype's
+    historical output).  It includes process creation overhead and is **not**
+    a WCET bound.
+
+    When ``include_metadata`` is true the result additionally carries
+    ``min_ns``/``max_ns`` (raw nanosecond observations, for callers that need
+    an exact conservative unit conversion), the exact ``compile_command``
+    argument list, and the SHA-256 ``binary_sha256`` of the compiled
+    executable.  The RTSL measurement loop uses these to build the timing
+    artifact.  The default result shape is unchanged.
     """
     if not allow_execute:
         raise MeasurementError(
@@ -372,6 +390,8 @@ def measure_task(
                 stderr=stderr,
             )
 
+        binary_sha256 = _sha256_file(executable_path) if include_metadata else ""
+
         samples = []  # type: List[int]
         for _ in range(runs):
             started_ns = time.perf_counter_ns()
@@ -394,7 +414,16 @@ def measure_task(
                 )
             samples.append(elapsed_ns)
 
-        return {"lo": min(samples) // 1000, "hi": max(samples) // 1000}
+        result = {
+            "lo": min(samples) // 1000,
+            "hi": max(samples) // 1000,
+        }  # type: Dict[str, Any]
+        if include_metadata:
+            result["min_ns"] = min(samples)
+            result["max_ns"] = max(samples)
+            result["compile_command"] = list(compile_command)
+            result["binary_sha256"] = binary_sha256
+        return result
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 

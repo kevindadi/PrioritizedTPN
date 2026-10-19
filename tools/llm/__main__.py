@@ -7,6 +7,8 @@ Examples::
     python -m tools.llm generate --spec spec.json --out model.json --execute
     python -m tools.llm generate --spec spec.json --response-file response.txt \\
         --out model.json --execute --tdg-out graph.json
+    python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json \\
+        --execute
 """
 
 import argparse
@@ -77,6 +79,42 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     generate.add_argument("--compiler", default="cc", help="C compiler executable (default: cc)")
     generate.add_argument("--opt", default="-O2", help="optimisation flag (default: -O2)")
+
+    measure = subparsers.add_parser(
+        "measure",
+        help="measure pending `measured by llm` tasks in an RTSL model and inject them",
+    )
+    measure.add_argument("--rtsl", required=True, help="path to the RTSL model")
+    measure.add_argument(
+        "--ptpn",
+        default=None,
+        help=(
+            "path to the ptpn executable (default: $PTPN_BUILD_DIR, "
+            ".ptpn-build-dir, then build/ptpn)"
+        ),
+    )
+    measure.add_argument(
+        "--tasks-json",
+        help=(
+            "JSON object mapping each pending task id to a natural-language "
+            'description, e.g. {"fusion": "process one sample"}'
+        ),
+    )
+    measure.add_argument(
+        "--execute",
+        action="store_true",
+        help="compile and run the proposed C programs, then inject the intervals",
+    )
+    measure.add_argument(
+        "--response-file",
+        help="replay a saved LLM response instead of calling a provider (offline mode)",
+    )
+    measure.add_argument(
+        "--out",
+        help="write the injected model to this path instead of in place",
+    )
+    measure.add_argument("--compiler", default="cc", help="C compiler executable (default: cc)")
+    measure.add_argument("--opt", default="-O2", help="optimisation flag (default: -O2)")
     return parser
 
 
@@ -121,6 +159,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    if args.command == "measure":
+        from .measure import run_measure_command
+
+        return run_measure_command(args)
+
+    return _run_generate(args)
+
+
+def _run_generate(args: Any) -> int:
     try:
         raw_spec = _load_json_file(args.spec)
     except (OSError, ValueError) as exc:
