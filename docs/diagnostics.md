@@ -7,7 +7,8 @@ tools, scripts). The protocol is opt-in: without `--diagnostics` /
 ## Engagement
 
 The envelope and the exit-code mapping below apply **only** when one of these
-options is passed to `ptpn tdg`, `ptpn ptpn`, or `ptpn allocate`:
+options is passed to `ptpn check`, `ptpn tdg`, `ptpn rtsl`, `ptpn ptpn`, or
+`ptpn allocate`:
 
 | Option | Effect |
 |---|---|
@@ -55,7 +56,7 @@ diagnostics engaged it is additionally reported as `E-INT-001`.
 | `exit_code` | Priority summary of `diagnostics` (see below), and the process exit code. |
 | `diagnostics` | At most 10 entries, in emission order. |
 | `truncated_diagnostics` | `true` when more diagnostics existed than fit under the cap. |
-| `result` | Omitted when empty. Holds analysis facts (`result.analysis`). |
+| `result` | Omitted when empty. Holds analysis facts (`result.analysis`) or, for a successful `ptpn check`, `result.pending_measurements`. |
 
 Each diagnostic entry:
 
@@ -63,11 +64,53 @@ Each diagnostic entry:
 |---|---|
 | `code` | Stable identifier (tables below). Safe to branch on. |
 | `category` | `syntax`, `validation`, `unsupported`, `performance`, `analysis`, or `internal` (derived from `code`). |
-| `severity` | `error`, or `warning` for performance diagnostics. Validation warnings keep `warning`. |
+| `severity` | `error`; `warning` for performance diagnostics and validation warnings; `hint` for advisory diagnostics (currently `E-UNS-005`, and `E-VAL-218` emitted by `ptpn check`). Hints never affect the exit code. |
 | `location` | Omitted entirely when unknown. `line`/`column` are 1-based; `span` is a character count. A location may contain only `file` (`.ptpn` parser has no position tracking). |
 | `subject` | Optional structured key: `task:<id>`, `lock:<name>`, `node:<id>`, `edge:<src>-><dst>`, `place:<id>`, `transition:<id>`, `arc:<src>-><dst>`, `config:<key>`, `policy:<name>`, `output:<path>`, `system:<aspect>`. Omitted when not applicable. |
 | `message` | Human-readable description. Text is not part of the stable contract. |
 | `fix` | Optional actionable suggestion for the model author. |
+
+### `ptpn check` success shape
+
+A successful `ptpn check` returns `ok: true`, `exit_code: 0`, and a `result`
+object carrying `pending_measurements` (possibly empty):
+
+```json
+{
+  "protocol": "ptpn-diagnostics",
+  "version": 1,
+  "ok": true,
+  "exit_code": 0,
+  "diagnostics": [],
+  "truncated_diagnostics": false,
+  "result": {
+    "pending_measurements": [
+      {
+        "task": "fusion",
+        "expected_segments": 3,
+        "runs": 20,
+        "timeout": 5,
+        "inject": {
+          "file": "model.rtsl",
+          "byte_start": 210,
+          "byte_end": 255,
+          "line": 11,
+          "column": 5
+        }
+      }
+    ]
+  }
+}
+```
+
+`pending_measurements` lists every `time ... measured by llm { ... }` task
+whose interval has not been injected yet. `expected_segments` is
+`2 * lock_count + 1`; `runs`/`timeout` are the declared measurement settings;
+`inject` is the `[byte_start, byte_end)` span of the whole `time` attribute,
+used for single-slice replacement. The array is empty when no
+`measured by llm` task is pending (including models with no such tasks).
+The measure loop consumes this shape; see
+[llm-integration.md](llm-integration.md#rtsl-measurement-loop-toolsllm-measure).
 
 ## Categories and exit codes
 
@@ -88,8 +131,8 @@ When categories co-occur, the highest-priority category wins:
 
 Internal diagnostics (`E-INT-`) map to `1` and dominate the summary: a bug in
 the analyzer is never reported as a clean model-level verdict. Validation
-warnings alone do not change the exit code; performance diagnostics always
-contribute `5` because they mean the result is partial.
+warnings and hints alone do not change the exit code; performance diagnostics
+always contribute `5` because they mean the result is partial.
 
 ### Analysis-phase rules
 
@@ -280,12 +323,15 @@ the location of the offending task, implicit fork/join node, or policy.
 
 ## Current scope and deferrals
 
-- Phase 1 wires the existing TDG JSON and `.ptpn` input paths and the
-  state-class analysis signals. The RTSL/DSL parser (Phase 2) will reuse the
-  same collector, including `mark_tainted()` cascade suppression and the
-  `SourceMap`-based location backfill.
-- `Diagnostics::mark_tainted()` exists and is honoured by `add()`, but no
-  Phase 1 producer marks subjects tainted.
+- All input paths share the same collector: TDG JSON, `.ptpn`, and RTSL
+  (`ptpn check`, `ptpn rtsl`, and `ptpn allocate` over `.rtsl`).
+- RTSL diagnostics carry byte-accurate `location` spans backfilled through the
+  `SourceMap`. `Diagnostics::mark_tainted()` is honoured by the collector, and
+  the parser marks constructs whose parse failed so dependent validation is
+  suppressed.
+- `tools.llm measure` consumes the `ptpn check` envelope, validates
+  `result.pending_measurements`, injects measured intervals into the `.rtsl`
+  source with a single span replacement, and re-runs `ptpn check`.
 - The `allocate` subcommand accepts both transport flags and reports input
   errors and report-write failures; allocation search truncation is not yet
   classified as `E-PERF` because the search report does not expose a
