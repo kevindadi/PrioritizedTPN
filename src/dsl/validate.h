@@ -11,17 +11,15 @@ namespace dsl {
 
 struct ValidationOptions {
   // `check` accepts models whose `measured by llm` intervals have not been
-  // injected yet (docs/rtsl-spec.md section 7). `rtsl`/`allocate` reject them
-  // with E-VAL-213; Phase 2b wires those modes.
+  // filled in yet. `rtsl`/`allocate` reject them with E-VAL-213.
   enum class Mode { Check, Rtsl, Allocate };
 
   Mode mode = Mode::Check;
 };
 
-// Validates the parsed program and reports every reachable rule from
-// docs/rtsl-spec.md sections 4 and 12. Diagnostics whose subject was marked
-// tainted by the parser are dropped by the collector. Also binds `lock:<name>`
-// entries into the SourceMap.
+// Validates the parsed program and reports every reachable semantic rule.
+// Diagnostics whose subject was marked tainted by the parser are dropped by
+// the collector. Also binds `lock:<name>` entries into the SourceMap.
 void validate(const ast::Program& program, SourceMap& source_map, ptpn::Diagnostics& diagnostics,
               const ValidationOptions& options = {});
 

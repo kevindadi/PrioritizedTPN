@@ -67,10 +67,10 @@ tdg::WcetProvenance provenance_of(const ast::TimeDecl& declaration) {
   return provenance;
 }
 
-// Resolves the RTSL core spec to the TDG core/allowed_cores pair
-// (docs/rtsl-spec.md section 6). `core any` expands to the full domain; the
-// caller has already rejected it for `rtsl` mode via E-VAL-218, so this path is
-// reached by `allocate` and by direct lowering callers.
+// Resolves the RTSL core spec to the TDG core/allowed_cores pair. `core any`
+// expands to the full domain; the caller has already rejected it for `rtsl`
+// mode via E-VAL-218, so this path is reached by `allocate` and by direct
+// lowering callers.
 struct CoreDomain {
   int core = 0;
   std::vector<int> allowed;
@@ -161,7 +161,8 @@ std::optional<tdg::TDG> lower(const ast::Program& program, SourceMap& source_map
     if (time.intervals.empty()) {
       if (mode != ValidationOptions::Mode::Check) {
         report(diagnostics, source_map, "E-VAL-213", "task:" + id + ":time",
-               "measured time is missing its interval(s)", "run the measurement step first");
+               "measured time is missing its interval(s)",
+               "fill the time interval in the RTSL source first");
       }
       failed = true;
       continue;

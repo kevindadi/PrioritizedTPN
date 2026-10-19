@@ -14,10 +14,10 @@ class Diagnostics;
 
 namespace dsl {
 
-// Lowers a validated RTSL program to the in-memory TDG (docs/rtsl-spec.md
-// section 10). The result is deterministic: tasks and implicit fork/join nodes
-// are inserted in canonical name order and edges in endpoint order, so a TDG
-// JSON export round-trips to the same analysis regardless of source order.
+// Lowers a validated RTSL program to the in-memory TDG. The result is
+// deterministic: tasks and implicit fork/join nodes are inserted in canonical
+// name order and edges in endpoint order, so a TDG JSON export round-trips to
+// the same analysis regardless of source order.
 //
 // Validation owns user-facing rule checking; lowering re-checks the two
 // graph-level rules that the JSON parser enforces but RTSL validation does not

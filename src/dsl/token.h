@@ -7,9 +7,9 @@
 
 namespace dsl {
 
-// Lexical token kinds for RTSL (docs/rtsl-spec.md section 2). Policy names are
-// deliberately not keywords: they lex as Identifier and are validated
-// semantically via parse_schedule_policy().
+// Lexical token kinds for RTSL. Policy names are deliberately not keywords:
+// they lex as Identifier and are validated semantically via
+// parse_schedule_policy().
 enum class TokenKind {
   EndOfFile,
   Identifier,
@@ -63,10 +63,10 @@ enum class TokenKind {
 
 // A source token with byte-accurate coordinates. `offset` is the byte offset
 // from the start of the file; `line` and `column` are 1-based and counted in
-// bytes, matching the byte-slice replacement contract in docs/rtsl-spec.md
-// section 9. `first_on_line` is true when no other token precedes this one on
-// its line (comments and whitespace do not count), which the parser uses for
-// top-level panic-mode synchronization.
+// bytes, matching the byte-slice replacement contract. `first_on_line` is true
+// when no other token precedes this one on its line (comments and whitespace
+// do not count), which the parser uses for top-level panic-mode
+// synchronization.
 struct Token {
   TokenKind kind = TokenKind::EndOfFile;
   std::string text;

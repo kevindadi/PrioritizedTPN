@@ -13,10 +13,10 @@
 
 namespace dsl {
 
-// Recursive-descent RTSL parser with panic-mode recovery
-// (docs/rtsl-spec.md section 3.1). Syntax failures emit E-SYN-102 and mark the
-// failed task or system attribute tainted so validation does not report
-// cascades. `SourceMap` is populated for every subject key while parsing.
+// Recursive-descent RTSL parser with panic-mode recovery. Syntax failures
+// emit E-SYN-102 and mark the failed task or system attribute tainted so
+// validation does not report cascades. `SourceMap` is populated for every
+// subject key while parsing.
 class Parser {
  public:
   Parser(std::vector<Token> tokens, std::string file, ptpn::Diagnostics& diagnostics,

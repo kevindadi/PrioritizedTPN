@@ -26,7 +26,7 @@ class CheckCommand final : public Command {
         "  ptpn check -f model.rtsl --diagnostics-file diagnostics.json\n"
         "\n"
         "Successful checks report `pending_measurements` for `measured by llm`\n"
-        "tasks whose intervals have not been injected yet.");
+        "tasks whose intervals have not been filled in yet.");
     return app_;
   }
 

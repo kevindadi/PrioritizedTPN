@@ -95,7 +95,7 @@ void print_legacy_diagnostics(const ptpn::Diagnostics& diagnostics);
 int run_tdg_pipeline(const std::string& input_file, PipelineOptions opts, size_t initial_memory,
                      ptpn::Diagnostics* diagnostics = nullptr);
 // RTSL front-end: lex -> parse -> validate -> lower, then the same analysis
-// pipeline as `run_tdg_pipeline` (docs/rtsl-spec.md section 11).
+// pipeline as `run_tdg_pipeline`.
 int run_rtsl_pipeline(const std::string& input_file, PipelineOptions opts, size_t initial_memory,
                       ptpn::Diagnostics* diagnostics = nullptr);
 int run_ptpn_pipeline(const std::string& input_file, const PipelineOptions& opts,

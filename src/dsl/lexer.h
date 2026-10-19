@@ -11,8 +11,8 @@
 namespace dsl {
 
 // Hand-written RTSL lexer. Lexical failures are non-fatal: an Error token is
-// emitted and scanning continues, which is required for panic-mode parsing
-// (docs/rtsl-spec.md section 3.1). Diagnostics are emitted as E-SYN-101.
+// emitted and scanning continues, which is required for panic-mode parsing.
+// Diagnostics are emitted as E-SYN-101.
 class Lexer {
  public:
   Lexer(std::string_view source, std::string file, ptpn::Diagnostics& diagnostics);
