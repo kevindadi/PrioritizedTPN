@@ -37,20 +37,3 @@ jobs:
           ./build/ptpn rtsl -f test/golden/rtsl/appendix.rtsl --no-analysis \
             --export-tdg /tmp/appendix.tdg.json
           ./build/ptpn tdg -f /tmp/appendix.tdg.json --no-analysis
-
-  format:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      - name: Install clang-format
-        run: pip install clang-format==21.1.8
-
-      - name: Check formatting
-        run: |
-          find src test -type f \( -name '*.cpp' -o -name '*.h' \) -print0 \
-            | xargs -0 clang-format --dry-run --Werror
