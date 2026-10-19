@@ -155,10 +155,10 @@ repository root, so the Dockerfile's `COPY` paths are unchanged.
 
 ```bash
 # Native platform (arm64 on Apple Silicon Docker, amd64 on Intel)
-docker build -f doc/Dockerfile -t ptpn .
+docker build -f docs/Dockerfile -t ptpn .
 
 # Force x86_64 Linux
-docker build -f doc/Dockerfile --platform linux/amd64 -t ptpn .
+docker build -f docs/Dockerfile --platform linux/amd64 -t ptpn .
 ```
 
 Build arguments: `UBUNTU_VERSION` (default `24.04`) and `CMAKE_BUILD_TYPE`

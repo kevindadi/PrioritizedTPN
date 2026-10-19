@@ -38,7 +38,7 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 | `--keep-suspension-clocks` | Keep `w_t` in the DBM (default: project it out; exact optimization) |
 | `--reduction` | `none` (default), `upper-bound` (sound WCRT upper bound, `wcrt_lb` unavailable), `cone` (per-task cone analysis; no whole-net deadlock), or `symmetry` (verified isomorphic tasks on distinct cores; pooled timing metrics are conservative) |
 | `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
-| `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified. See [time-horizon reduction](../docs/metrics.md#time-horizon-reduction) |
+| `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified |
 | `--no-analysis` | Skip state-class reachability analysis |
 | `--diagnostics json` | Emit the versioned JSON diagnostics envelope on stdout and reserve stdout for it (available on `check`, `tdg`, `rtsl`, `ptpn`, and `allocate`) |
 | `--diagnostics-file PATH` | Write the same envelope to `PATH` |
@@ -145,10 +145,6 @@ error. Without `--diagnostics` / `--diagnostics-file`, the CLI keeps its legacy
 streams and `0`/`1` exit codes. Models using `core any` must go through
 `ptpn allocate`.
 
-Spec and diagnostics: [rtsl-spec.md](../docs/rtsl-spec.md),
-[diagnostics.md](../docs/diagnostics.md). Measurement details:
-[llm-integration.md](../docs/llm-integration.md#rtsl-measurement-loop-toolsllm-measure).
-
 ## Reduction modes and defaults
 
 The default is `--reduction none`: exhaustive state-class exploration with
@@ -214,8 +210,7 @@ The report contains:
 Feasibility requires an untruncated, bounded, deadlock-free, schedulable
 analysis. `--require-certified-wcet` restricts `best` to tasks whose
 `wcet_kind` is `certified`; measured/estimated/model timing is still analyzed
-and reported but cannot win under that gate. See
-[allocation.md](../docs/allocation.md) for the full schema and ranking rules.
+and reported but cannot win under that gate.
 
 ## LLM integration (`tools/llm`)
 
@@ -235,8 +230,7 @@ python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json \
 `--response-file` replays a response offline; `--out` writes elsewhere;
 without `--execute` the command is a dry run and writes nothing. Integers are
 converted to the model's millisecond base by rounding up (any non-zero
-observation is at least 1 ms). See
-[llm-integration.md](../docs/llm-integration.md#rtsl-measurement-loop-toolsllm-measure).
+observation is at least 1 ms).
 
 **Trust boundary:** the LLM is an untrusted proposer. Its output is schema
 validated; generated programs run only with `--execute`, with a timeout and
@@ -245,7 +239,7 @@ process startup, has no confidence bound, and is **not a WCET upper bound**.
 Do not use `wcet_kind=measured` for hard real-time claims; certified timing
 requires a sound static WCET tool or validated MBPTA. Locked tasks require
 `2 * lock_count + 1` per-segment measurements; the emitter rejects a single
-total interval for them. See [llm-integration.md](../docs/llm-integration.md).
+total interval for them.
 
 ### Standalone generation prototype
 
@@ -325,8 +319,8 @@ JSON `configuration.policy` and `--policy` accept values such as:
 | `fifo` | Non-preemptive FIFO using per-job release clocks and per-core arrival-order branches; statically partitioned multi-core |
 | `llf` | **Event-driven LLF** using laxity clocks; **not** classical continuous-time LLF; statically partitioned multi-core, deterministic segments only |
 
-- **Native P-TPN analysis:** all policies above use the firing-rule template
-  in [scheduling-semantics.md](../docs/scheduling-semantics.md). PIP/PCP/SRP are
+- **Native P-TPN analysis:** all policies above use the native firing-rule
+  template. PIP/PCP/SRP are
   supported on TDG2PN-lowered nets with `task_place_capacity == 1` and one
   in-flight job per task; PCP/SRP use a global system ceiling (the classical
   protocols are uniprocessor).
@@ -334,8 +328,7 @@ JSON `configuration.policy` and `--policy` accept values such as:
   their declared cores, `cores_per_cpu == 1`, one in-flight job per task, and
   no locks or dependency-driven releases. EDF and FIFO use release clocks; LLF
   requires deterministic execution segments and is event-driven, not classical
-  LLF. Unsupported models are rejected explicitly. See the per-policy sections
-  in [scheduling-semantics.md](../docs/scheduling-semantics.md).
+  LLF. Unsupported models are rejected explicitly.
 
 ## Examples
 
@@ -387,5 +380,4 @@ python3 example/run.py --suites p-bench t-bench --profiles ptpn
 | [example/l-bench/](../example/l-bench/) | Progressive pipeline benchmarks (`pipeline-*t-*c.json`, 10–100 tasks, fork/join, scaled shared mutexes; `pipeline-40t-8c-5l.json` for the 5-lock reviewer case) |
 | [example/symmetry/](../example/symmetry/) | Symmetric task sets for `--reduction symmetry` |
 
-TDG JSON format: [json_format.md](../docs/json_format.md). PTPN language:
-[ptpn-language-spec.md](../docs/ptpn-language-spec.md).
+TDG JSON format: [json_format.md](json_format.md).

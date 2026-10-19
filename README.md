@@ -26,8 +26,7 @@ intervals back into the RTSL source.
   preemption, mutex/spin locks)
 - **Scheduling policies**: fixed/restart/resume, RM/DM, PIP/PCP/SRP, EDF, FIFO,
   and event-driven LLF; EDF/FIFO/LLF support statically partitioned multi-core
-  with explicit supported-class guards (see [scheduling
-  semantics](docs/scheduling-semantics.md))
+  with explicit supported-class guards
 - Parse the **PTPN domain language** (`.ptpn`) directly, skipping TDG conversion
 - **State-class reachability analysis** with canonicalization (`equality`,
   `max-lower`, `intersection`)
@@ -74,19 +73,9 @@ RTSL input); TDG JSON integers remain unit-agnostic engine ticks.
 
 | Document | Contents |
 |----------|----------|
-| [doc/install.md](doc/install.md) | Dependencies, native build, vcpkg, tests, and the Docker image |
-| [doc/usage.md](doc/usage.md) | Subcommands, options, reductions, core allocation, LLM loop, examples |
-| [docs/rtsl-spec.md](docs/rtsl-spec.md) | RTSL v1 language spec and implementation status |
-| [docs/diagnostics.md](docs/diagnostics.md) | Structured diagnostics protocol, exit codes, and code tables |
-| [docs/llm-integration.md](docs/llm-integration.md) | LLM generation prototype and RTSL measurement loop |
-| [docs/proposal-llm-dsl.md](docs/proposal-llm-dsl.md) | RTSL/LLM mainline proposal and landing status |
+| [docs/install.md](docs/install.md) | Dependencies, native build, vcpkg, tests, and the Docker image |
+| [docs/usage.md](docs/usage.md) | Subcommands, options, reductions, core allocation, LLM loop, examples |
 | [docs/json_format.md](docs/json_format.md) | TDG JSON input format |
-| [docs/ptpn-language-spec.md](docs/ptpn-language-spec.md) | PTPN domain language |
-| [docs/rule.md](docs/rule.md) | TDG → PTPN lowering rules |
-| [docs/scheduling-semantics.md](docs/scheduling-semantics.md) | Firing rules and per-policy scheduling semantics |
-| [docs/time-and-state-class.md](docs/time-and-state-class.md) | Time representation and state-class structure |
-| [docs/metrics.md](docs/metrics.md) | Metrics definitions, JSON schema, and soundness conventions |
-| [docs/allocation.md](docs/allocation.md) | Core-allocation search schema and ranking rules |
 
 ## License
 

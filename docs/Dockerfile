@@ -4,10 +4,10 @@
 # root, so all COPY paths below are relative to it.
 #
 # Build (native arch — arm64 on Apple Silicon, amd64 on Intel):
-#   docker build -f doc/Dockerfile -t ptpn .
+#   docker build -f docs/Dockerfile -t ptpn .
 #
 # Force x86_64 Linux:
-#   docker build -f doc/Dockerfile --platform linux/amd64 -t ptpn .
+#   docker build -f docs/Dockerfile --platform linux/amd64 -t ptpn .
 #
 # Run (TDG example; example/ is mounted at /data, the default WORKDIR):
 #   docker run --rm -v "$PWD/example:/data" ptpn tdg \
