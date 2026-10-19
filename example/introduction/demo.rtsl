@@ -1,0 +1,44 @@
+// PTPN introductory RTSL model.
+//
+// Exercises a periodic task, an aperiodic task with a lock, a fork/join, and
+// one `measured by llm` task left unmeasured. `ptpn check` accepts it and
+// reports `fusion` in result.pending_measurements; run the measurement loop
+// (or supply intervals by hand) before `ptpn rtsl`.
+//
+// RTSL time values are normalized to milliseconds (one engine tick = 1 ms).
+
+system demo {
+  cpus 3
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+
+  task sensor: periodic {
+    period 100ms
+    deadline 100ms
+    core 0
+    time [2, 3] estimated by "datasheet"
+  }
+
+  task fusion: aperiodic {
+    core 1
+    locks mutex1
+    time measured by llm { runs 10, timeout 2 }
+  }
+
+  task logger: aperiodic {
+    core 2
+    time [1, 2] estimated
+  }
+
+  task display: normal {
+    core 2
+    time [1, 1] estimated
+  }
+
+  start sensor
+  end display
+
+  sensor -> {fusion, logger}
+  {fusion, logger} -> display
+}
