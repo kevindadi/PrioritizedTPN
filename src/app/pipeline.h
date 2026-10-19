@@ -32,6 +32,8 @@ struct DiagnosticsOptions {
 
 struct ExportTargets {
   std::string tdg_dot;
+  // Materialized TDG JSON for the RTSL path (`ptpn rtsl --export-tdg`).
+  std::string tdg_json;
   std::string wcet_json;
   std::string ptpn_dot;
   std::string scg_dot;
@@ -96,8 +98,16 @@ size_t get_memory_usage();
 // if the file cannot be opened.
 bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path);
 
+// Prints diagnostics in the pre-envelope human-readable format. Shared by the
+// `check` and `rtsl` commands so engaged/non-engaged output stays consistent.
+void print_legacy_diagnostics(const ptpn::Diagnostics& diagnostics);
+
 int run_tdg_pipeline(const std::string& input_file, PipelineOptions opts, size_t initial_memory,
                      ptpn::Diagnostics* diagnostics = nullptr);
+// RTSL front-end: lex -> parse -> validate -> lower, then the same analysis
+// pipeline as `run_tdg_pipeline` (docs/rtsl-spec.md section 11).
+int run_rtsl_pipeline(const std::string& input_file, PipelineOptions opts, size_t initial_memory,
+                      ptpn::Diagnostics* diagnostics = nullptr);
 int run_ptpn_pipeline(const std::string& input_file, const PipelineOptions& opts,
                       size_t initial_memory, ptpn::Diagnostics* diagnostics = nullptr);
 #if defined(PTPN_ENABLE_COMPAT)
