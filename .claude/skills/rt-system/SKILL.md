@@ -35,10 +35,12 @@ Reference docs (use these instead of guessing syntax or codes):
    `2*lock_count+1` execution intervals.
 3. **Check loop.** Run `build/ptpn check -f model.rtsl --diagnostics json`
    (omit `--diagnostics` for human-readable stderr while iterating). Fix every
-   `E-SYN`/`E-VAL` diagnostic and rerun until exit 0. On success the envelope's
-   `result.pending_measurements` lists tasks still needing timing.
-   `check` stops after parse+validate: it does **not** report lowering-only
-   `E-UNS-001`, `E-VAL-015`, or the defensive `E-VAL-011`.
+   **error-severity** `E-SYN`/`E-VAL` diagnostic and rerun until exit 0.
+   Hints do not block: `E-VAL-218` in `check` and `E-UNS-005` leave exit 0;
+   inspect them but do not force a change just to clear a hint. On success the
+   envelope's `result.pending_measurements` lists tasks still needing timing.
+   `check` stops after parse+validate: it does **not** report lowering or
+   analysis `E-UNS-001`, `E-VAL-015`, or the defensive `E-VAL-011`.
 4. **Fill pending timing.** If `result.pending_measurements` is non-empty, fill
    each listed task directly in the `.rtsl` source: replace
    `time measured by llm { ... }` with an interval such as
@@ -72,8 +74,8 @@ envelope `result` — not on the code prefix alone. The complete table is
 |---|---|
 | `E-SYN-1xx` | Syntax/lexing error. Rewrite the reported line using the expected tokens; check units (`ms`, `s`) and string escapes. `E-SYN-002` is an unreadable input file, not grammar. |
 | `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-015` means a locked task's segment count is wrong. `E-VAL-218` (`core any`) means use `ptpn allocate` or an explicit core. |
-| `E-UNS-001` | Lowering-time supported-class guard (not emitted by `check`). EDF/FIFO/LLF require a static partition, `cores_per_cpu 1`, one in-flight job per task, no locks, no fork/join, and no dependency-driven releases; PIP/PCP/SRP require `task_place_capacity 1`. Simplify the model or change policy. |
-| `E-UNS-003` | Sporadic arrivals are not implemented. Replace with `periodic` using `period = mit` (densest arrival; conservative WCRT upper bound). |
+| `E-UNS-001` | Supported-class guard from lowering **or analysis** (not emitted by `check`). EDF/FIFO/LLF require a static partition, `cores_per_cpu 1`, one in-flight job per task, no locks, no fork/join, and no dependency-driven releases; PIP/PCP/SRP require `task_place_capacity 1`. Analysis also rejects job-clock overlapping releases (period shorter than execution) and job-clock + extrapolation/symmetry. Subjects are `task:`, `node:`, `edge:`, `policy:`, `option:extrapolation`, or `option:symmetry`. Simplify the model or change the policy/option. |
+| `E-UNS-003` | Sporadic arrivals are not implemented and stay rejected. With the user's explicit agreement, you may model a **periodic reference scenario** with an explicit period such as `period 10ms`. That changes the model and does not certify the original sporadic system; never auto-change the task kind, delete `mit`, or rewrite the period to clear the diagnostic. |
 | `E-UNS-004` | Sub-millisecond (`us`) timing is unsupported. Use `ms` and adjust precision. |
 | `E-UNS-005` | `interrupt` is only a hint: it is lowered as a non-periodic task with a type marker; no interrupt-preemption semantics exist. Do not claim interrupt support. |
 | `E-PERF-001` | `-m` max-states truncation. If a counterexample is already reported, **do not raise `-m`** - fix the design. Otherwise raising `-m` may help; the result is partial either way. |
@@ -132,3 +134,8 @@ deadline`.
   model's semantics. Show the exact diff and the before/after diagnostics and
   metrics, and let the user decide. Do not silently rewrite the design to make
   a diagnostic disappear.
+- **Spin locks are not a reliable preemption guarantee.** The current lowering
+  marks the wrong execution segment for a single spin lock (the pre-critical
+  segment is non-suspendable and the critical section is suspendable). Do not
+  claim that spin-lock critical sections keep the CPU; see `docs/rtsl.md` §7
+  and `example/diagnostics/spin-lock.rtsl`.

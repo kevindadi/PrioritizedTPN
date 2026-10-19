@@ -25,7 +25,7 @@ code does not write the CLI diagnostics envelope.
 
 | Directory | Responsibility |
 |---|---|
-| `src/common/` | `Diagnostics` collector, envelope serialization, `Result<T>` |
+| `src/common/` | `Diagnostics` collector, envelope serialization, `Result<T>`, `UnsupportedClassError` |
 | `src/model/` | TDG and PTPN data structures plus `model/types.h` (task/policy types) |
 | `src/dsl/` | RTSL lexer, panic-mode parser, validator, in-process TDG lowering, `SourceMap` |
 | `src/parse/` | TDG JSON parser/writer (nlohmann) and `.ptpn` source parser |
@@ -137,6 +137,16 @@ semantics to remove them:
   duplicated with comments; a shared header would remove the silent-drift risk.
 - TDG JSON validation diagnostics have no source locations (the format has no
   positions), and PTPN validation locations are file-only.
+- Supported-class rejection is a typed exception (`ptpn::UnsupportedClassError`)
+  thrown by lowering and by the verified job-clock/option analysis guards. The
+  app maps that type to `E-UNS-001`; metadata/index/clock-layout invariants
+  remain ordinary internal exceptions. Do not widen the mapping to every
+  `std::invalid_argument`.
+- Spin-lock suspendable marking is wrong for the single-lock chain: the
+  current lowering marks the first execution segment non-suspendable and the
+  actual critical section suspendable. See `docs/rtsl.md` §7/§12.2 and
+  `example/diagnostics/spin-lock.rtsl`; a lock-semantics fix is a separate
+  follow-up.
 
 See [diagnostics.md](diagnostics.md) for the code table and envelope contract,
 [rtsl.md](rtsl.md) for the language, and [usage.md](usage.md) for commands and

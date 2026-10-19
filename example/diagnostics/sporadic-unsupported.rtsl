@@ -1,0 +1,11 @@
+// Sporadic arrivals are not implemented in v1 -> E-UNS-003, exit 4.
+// This file is intentionally invalid; do not auto-rewrite it.
+system sporadic_model {
+  cpus 1
+  task sp: sporadic {
+    mit 10ms
+    deadline 10ms
+    core 0
+    time [1, 2] estimated
+  }
+}

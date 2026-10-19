@@ -1,0 +1,20 @@
+// Minimal single-spin-lock model for the known lowering limitation.
+//
+// The intended critical section is execution segment 2 (between lock acquire
+// and release), but the current PTPN marks segment 1 non-suspendable and
+// segments 2/3 suspendable. See docs/rtsl.md §7 and the reproduction command
+// in §12.2. This is not a claim that spin sections keep the CPU.
+
+system spinlock {
+  cpus 1
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+  task worker: aperiodic {
+    core 0
+    locks spin1
+    time [ [1, 1], [2, 2], [1, 1] ] estimated
+  }
+  start worker
+  end worker
+}

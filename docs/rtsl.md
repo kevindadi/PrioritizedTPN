@@ -200,8 +200,22 @@ task fusion: aperiodic {
 - Lock names are global: two tasks that list `mutex1` contend on the same lock.
   Duplicate names within a task are deduplicated in declaration order; no
   duplicate-lock diagnostic is emitted.
-- `spin` locks keep the CPU inside the critical section; `mutex` locks may
-  suspend. This affects preemption and the native analysis.
+- **Known lowering limitation (spin locks).** The intended rule is that a
+  spin-lock critical section keeps the CPU, but the current lowering does not
+  enforce it correctly. `vertex_lowering.cpp` maps the `locks` index directly
+  to the execution-segment index: in a one-spin-lock, three-segment task the
+  lock is acquired after segment 1 and released by segment 2, yet the generated
+  PTPN marks the segments `suspendable = false, true, true`. Segment 1
+  (pre-critical) is therefore non-suspendable and segment 2 (the actual
+  critical section) is suspendable. Do not rely on spin-lock preemption
+  behavior. A dedicated lock-semantics fix is a separate follow-up.
+  Reproduction: `example/diagnostics/spin-lock.rtsl` with
+  `--debug --export-ptpn`; the debug PTPN shows `worker_exec_1 suspendable=no`
+  and `worker_exec_2/3 suspendable=yes`, while the lock arcs
+  `worker_seg_1_done -> worker_lock_1`, `spin1 -> worker_lock_1`,
+  `worker_hold_1 -> worker_exec_2`, `worker_exec_2 -> spin1` enclose segment 2.
+- `mutex` locks may suspend. The `spin` marker currently has no reliable
+  preemption effect beyond the limitation above.
 - `locks` may appear once per task; multiple `locks` attributes are
   `E-VAL-219`. Multiple names in one `locks` list are allowed.
 
@@ -321,7 +335,7 @@ levels:
 |---|---|---|---|
 | `normal`, `aperiodic` | yes | yes | one-shot task, released by `start` or a dependency edge |
 | `periodic` | yes | requires `period` | periodic release every period |
-| `sporadic` | yes | **error** `E-UNS-003` | none; lowering skips it. Replace with `periodic` using `period = mit` for a conservative upper bound |
+| `sporadic` | yes | **error** `E-UNS-003` | none; lowering skips it. With the user's agreement you may model a periodic reference scenario with an explicit period such as `period 10ms`. That is a different model and does not certify the original sporadic system |
 | `interrupt` | yes | **hint** `E-UNS-005` | lowered as a non-periodic task with `TaskType::INTERRUPT`; **no interrupt-preemption semantics** yet. The marker currently has no analysis effect |
 | `core any` | yes | hint/error depending on command | allocation domain expansion in `ptpn allocate` only |
 | locks | yes | prefix/count rules | mutex/spin locking; segment count enforced by lowering |
@@ -329,7 +343,9 @@ levels:
 | `start`/`end` | yes | task reference | initial token / consume transition |
 | edges, fork/join | yes | reference and multi-multi rules | dependency releases and synchronization nodes |
 
-Policy-specific restrictions (all reported as `E-UNS-001` by `ptpn rtsl`):
+Policy-specific restrictions (reported as `E-UNS-001` by `ptpn rtsl`; most are
+detected during lowering, while the job-overlap and extrapolation/symmetry
+combinations are detected during analysis):
 
 - **fixed / fixed_prior_with_resume / fixed_prior_with_restart / rm / dm /
   pip / pcp / srp**: RTSL always produces `task_place_capacity == 1`, so the
@@ -448,6 +464,42 @@ The timings in `demo.rtsl`/`demo-filled.rtsl` are illustrative estimates
 are meant to exercise the workflow and diagnostics, not to certify a real
 system. The precise message, fix and location columns are in
 [diagnostics.md](diagnostics.md).
+
+### 12.1 Sporadic reference scenario
+
+`sporadic` remains rejected. If (and only if) the user agrees to change the
+model, a periodic reference scenario can be written with real RTSL syntax:
+
+```rtsl
+// example/diagnostics/sporadic-reference.rtsl
+task sp: periodic {
+  period 10ms      // explicit period; this is not `period = mit`
+  deadline 10ms
+  core 0
+  time [1, 2] estimated
+}
+```
+
+This is a periodic task, not the original sporadic task. It can be analyzed,
+but its WCRT/schedulability results are for the reference model only and must
+not be presented as certification of the sporadic system. Do not let a tool
+silently change the task kind, delete `mit`, or rewrite the period to make
+`E-UNS-003` disappear.
+
+### 12.2 Spin-lock evidence
+
+`example/diagnostics/spin-lock.rtsl` is the minimal single-spin-lock model.
+The reproduction command is:
+
+```bash
+./build/ptpn rtsl -f example/diagnostics/spin-lock.rtsl \
+    --debug --export-ptpn /tmp/spin.ptpn.dot
+```
+
+The debug PTPN prints `worker_exec_1` as `suspendable=no` and `worker_exec_2`
+and `worker_exec_3` as `suspendable=yes`, while the DOT arcs place the lock
+between `worker_exec_1` and `worker_exec_2`. That is the existing lowering bug
+described in §7; it is not a supported guarantee.
 
 ## 13. Related documentation
 

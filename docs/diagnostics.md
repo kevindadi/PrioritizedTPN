@@ -106,12 +106,15 @@ Rules:
 ### 3.1 Source locations
 
 RTSL lexer/parser/validator diagnostics carry byte-accurate `line`, `column`
-and `span` from the `SourceMap` or the token. Lowering diagnostics
-(`E-UNS-001`) resolve `task:<id>`, `node:<name>`, `edge:<src>-><tgt>` and
-`policy:<name>` through the SourceMap, including implicit fork/join nodes.
-Analysis diagnostics (`R-ANA-*`) use the metric task name but have **no**
-location. TDG JSON validator diagnostics have no location; JSON parse errors do.
-PTPN (`E-VAL-10x`) diagnostics carry the file name but zero line/column.
+and `span` from the `SourceMap` or the token. Lowering `E-UNS-001` subjects
+resolve `task:<id>`, `node:<name>`, `edge:<src>-><tgt>` and `policy:<name>`
+through the SourceMap, including implicit fork/join nodes. Analysis-time
+`E-UNS-001` resolves `task:<name>` when the task span is available;
+`option:extrapolation`/`option:symmetry` have no source position and keep the
+location absent. Analysis `R-ANA-*` diagnostics use the metric task name but
+have **no** location. TDG JSON validator diagnostics have no location; JSON
+parse errors do. PTPN (`E-VAL-10x`) diagnostics carry the file name but zero
+line/column.
 
 ### 3.2 Caps, taint and cascade suppression
 
@@ -135,6 +138,7 @@ The table below is the quick reference for the three RTSL-facing commands.
 | `interrupt` task | `E-UNS-005` **hint**, exit `0` | hint, exit `0`; lowered as a non-periodic task with the interrupt marker | hint, exit `0`; same lowering |
 | locked task with the wrong segment count | succeeds (lowering-only rule) | `E-VAL-015`, exit `3` | `E-VAL-015`, exit `3` |
 | EDF/FIFO/LLF/PIP/PCP/SRP supported-class violation | succeeds (lowering-only rule) | `E-UNS-001`, exit `4` | candidate is treated as infeasible; **no** `E-UNS-001` diagnostic |
+| job-clock overlap, or a job-clock + extrapolation/symmetry combination detected during analysis | not run | `E-UNS-001`, exit `4`; legacy exit `1` | not emitted (candidate-level rejection) |
 | analysis deadlock / deadline counterexample | not run | `R-ANA-*`, exit `6` | not emitted by the allocation search |
 | truncation without counterexample | not run | `E-PERF-*`, exit `5` | reflected in the report's feasibility/truncation fields, not as a diagnostic |
 
@@ -143,10 +147,10 @@ Stage coverage by command:
 | Command | Parse/validate | Lowering | Analysis | Codes that can appear |
 |---|---|---|---|---|
 | `ptpn check` | RTSL | no | no | `E-SYN-002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..220` (not `E-VAL-213`), CLI `E-INT-001/002` |
-| `ptpn rtsl` | RTSL | yes | yes | `check` codes and `E-VAL-213`, lowering `E-VAL-011/014/015`, `E-UNS-001`, `E-INT-003`, `R-ANA-001/002/003`, `E-PERF-001/002`, `E-INT-002` |
+| `ptpn rtsl` | RTSL | yes | yes | `check` codes and `E-VAL-213`, lowering `E-VAL-011/014/015`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-001/002/003`, `E-PERF-001/002`, `E-INT-002` |
 | `ptpn allocate` | RTSL or JSON | via TDG2PN per candidate | no protocol diagnostics | input codes, RTSL lowering `E-VAL-011/014/015`; **not** `E-UNS-001`/`E-INT-003`/`R-ANA-*`/`E-PERF-*`; `E-INT-002` for the report |
-| `ptpn tdg` | TDG JSON | yes | yes | `E-SYN-001/002`, `E-VAL-001..033`, `E-UNS-001`, `E-INT-003`, `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
-| `ptpn ptpn` | PTPN source | no | yes | `E-SYN-002`, `E-VAL-101..113`, parser `E-INT-001`, `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
+| `ptpn tdg` | TDG JSON | yes | yes | `E-SYN-001/002`, `E-VAL-001..033`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
+| `ptpn ptpn` | PTPN source | no | yes | `E-SYN-002`, `E-VAL-101..113`, parser `E-INT-001`, `E-UNS-001` (analysis), `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
 
 **`check` deliberately stops before lowering.** It does not emit
 `E-UNS-001`, `E-VAL-011`, or `E-VAL-015`; a successful check means "the source
@@ -170,9 +174,9 @@ user ran.
 |---|---|---|---|---|---|
 | `E-INT-000` | internal/error | collector fallback | an API caller adds a `Diagnostic` with an empty `code` | as supplied / as supplied | none (library bug) |
 | `E-INT-001` | internal/error | PTPN parser catch; CLI catch and post-run fallback | uncaught exception; unknown exception; nonzero result with no retained error | PTPN: none; CLI: `system:internal` / none | `report this as an internal error`; fallback: `report this failure; it has no specific diagnostic` |
-| `E-INT-002` | internal/error | output writers and CLI envelope file | PTPN/SCG/TDG DOT, metrics JSON, WCET JSON, TDG JSON, allocation report or diagnostics file cannot be written | `output:<path>` / none | `check that the output path is writable` |
-| `E-INT-003` | internal/error | TDG2PN lowering catch | `TDG2PN::transform` throws something other than `std::invalid_argument` | `policy:<policy>` / none | `this is an internal lowering failure; report it` |
-| `E-UNS-001` | unsupported/error | TDG2PN supported-class guard (`rtsl`, `tdg`) | EDF/FIFO/LLF static-partition rules, or PIP/PCP/SRP capacity/start rules, are violated | recovered from the exception text: `task:<id>`, `node:<fork/join>`, `edge:<src>-><tgt>`, or `policy:<policy>`; RTSL gets a SourceMap span | simplify the model or choose a supported policy |
+| `E-INT-002` | internal/error | output writers and CLI envelope file | a writer fails to open, write, flush or close: TDG DOT, PTPN/SCG DOT, metrics JSON, WCET JSON, TDG JSON, allocation report, or diagnostics file | `output:<path>` / none | `check that the output path is writable`; parent directories are not created automatically |
+| `E-INT-003` | internal/error | TDG2PN lowering catch | `TDG2PN::transform` throws something other than `ptpn::UnsupportedClassError` (defensive runtime/logic errors) | `policy:<policy>` / none | `this is an internal lowering failure; report it` |
+| `E-UNS-001` | unsupported/error | TDG2PN lowering guard, or the analysis supported-class guard (`rtsl`, `tdg`, `ptpn`) | EDF/FIFO/LLF static-partition rules, PIP/PCP/SRP capacity/start rules, a job-clock overlapping/multiple-in-flight job, or job-clock + extrapolation/symmetry are violated | lowering: `task:<id>`, `node:<fork/join>`, `edge:<src>-><tgt>`, `policy:<policy>`; analysis: `task:<name>`, `option:extrapolation`, `option:symmetry`; RTSL gets a SourceMap span when the subject is locatable | simplify the model or choose a supported policy/option |
 | `E-PERF-001` | performance/**warning** | analysis (`tdg`, `rtsl`, `ptpn`, full and cone) | state-class graph reached `--max-states` | `system:max_states` / none | with a counterexample: fix the design, do not raise `-m`; otherwise raising `-m` may help |
 | `E-PERF-002` | performance/**warning** | analysis (`tdg`, `rtsl`, `ptpn`, full graph only) | `--horizon` actually pruned expansion | `system:horizon` / none | same as above; otherwise raise/disable `--horizon` |
 | `R-ANA-001` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`; not cone) | a certified reachable deadlock exists | `system:deadlock` / none | fix dependency/lock structure or policy |
@@ -256,7 +260,7 @@ are zero) even when a file name is present.
 |---|---|---|---|---|---|
 | `E-SYN-101` | error | lexer; validator | lexer: unterminated comment/string, invalid escape, invalid/out-of-range integer, illegal character. Validator: unknown `time_unit` or time suffix | lexer: none, precise span. Validator: `system:time_unit` or `task:<id>:{time,period,mit,deadline}`, precise span | close the comment/string, use `\"`, `\\`, `\n`, or use `ms`/`s` |
 | `E-SYN-102` | error | panic-mode parser | unexpected token or EOF; suppressed after a lexer error | none; precise token span | rewrite the line with the expected tokens |
-| `E-UNS-003` | error | validator | `sporadic` task kind | `task:<id>`; kind/task span | replace with `periodic { period = mit }` (conservative upper bound) |
+| `E-UNS-003` | error | validator | `sporadic` task kind | `task:<id>`; kind/task span | sporadic stays rejected; with the user's agreement you may model a periodic reference scenario with an explicit period such as `period 10ms`. That changes the model and does not certify the original sporadic system |
 | `E-UNS-004` | error | validator | `time_unit us` or a `us`-suffixed value | `system:time_unit` or task time sub-attribute; precise span | use `ms` and adjust precision |
 | `E-UNS-005` | **hint** | validator | `interrupt` task kind; it is lowered as a non-periodic task with the marker, but preemption is not implemented | `task:<id>`; kind/task span | no action; semantically a hint, exit stays `0` |
 | `E-VAL-201` | error | validator | duplicate task id | `task:<id>`; duplicate id token | rename one task |
@@ -299,15 +303,35 @@ are zero) even when a file name is present.
 - **Defensive/unreachable branches** include `E-INT-000` (empty-code fallback),
   the lowering branches of `E-VAL-213`/`E-VAL-011`, PTPN `E-VAL-101/103/104/113`,
   and the negative half of `E-VAL-106`. They are kept for library callers.
-- **`E-INT-002` for TDG DOT does not exist**: `tdg.export_to_dot` failures are
-  currently not reported. WCET/TDG-JSON/PTPN/SCG/metrics/allocation writes are.
-- **Analysis-time job-clock guards are not `E-UNS-001`.** EDF/FIFO/LLF
-  re-check their supported class when the firing rule indexes the net. A
-  violation there throws `std::invalid_argument`, escapes the analysis call,
-  and surfaces through the CLI top-level handler as `E-INT-001` (exit `1`,
-  subject `system:internal`), not as an unsupported-class diagnostic. The
-  lowering-time guards (which produce `E-UNS-001`) are the intended user-facing
-  check; this is a known gap recorded in the PR notes.
+- **Output-writer coverage is not uniform.** TDG DOT and WCET JSON now check
+  open, write, flush and close; the TDG-JSON, PTPN/SCG DOT, metrics and
+  allocation writers have their own checks, and not every delayed-write failure
+  class is covered by a regression test. Parent directories are never created
+  automatically.
+- **Typed supported-class boundary.** `ptpn::UnsupportedClassError` (derives
+  from `std::invalid_argument`) is the only type mapped to `E-UNS-001`.
+  Lowering guards and the verified analysis guards (job-clock overlapping
+  releases, FIFO multiple running jobs, job-clock + extrapolation, applied
+  job-clock + symmetry) are typed. Metadata/index/clock-layout inconsistencies
+  and programming invariant failures remain `std::invalid_argument` /
+  `std::runtime_error` / `std::logic_error` and surface as internal
+  (`E-INT-003` in lowering, `E-INT-001` from the CLI top-level handler). Do not
+  broaden the mapping to all `invalid_argument`.
+- **Known lowering limitation: spin-lock segment marking.** For a single spin
+  lock, `vertex_lowering.cpp` indexes `locks` with the execution-segment index,
+  producing `suspendable = false, true, true` while the lock's actual critical
+  section is the second execution segment. Segment 1 (pre-critical) is marked
+  non-suspendable and the critical section is suspendable. This is an existing
+  lowering bug; see `docs/rtsl.md` §7/§12.2 and
+  `example/diagnostics/spin-lock.rtsl`. A lock-semantics fix is a separate
+  follow-up.
+- **Allocation swallows candidate exceptions.** `allocation.cpp` catches every
+  `std::exception` per candidate, marks it infeasible, and continues; this
+  preserves the existing candidate-level rejection protocol, including for the
+  typed unsupported class. Unknown internal exceptions are therefore also
+  reported only as an infeasible candidate. Separating "expected unsupported"
+  from "candidate-internal failure" is a future change with its own scope; it
+  is not claimed resolved here.
 
 ## 6. Interpreting analysis results
 
@@ -394,9 +418,13 @@ A locked task needs `2*lock_count+1` intervals. If the count is wrong,
 
 ### 7.3 Unsupported class
 
-`E-UNS-001` is emitted by lowering, not by validation. Simplify the model or
-choose a different policy; check the message's subject for the offending
-`task:`, `node:`, or `edge:`. `ptpn check` will not report it.
+`E-UNS-001` is emitted by lowering or by the verified analysis guards, not by
+validation. Simplify the model or choose a different policy/option; check the
+message's subject for the offending `task:`, `node:`, `edge:`,
+`option:extrapolation`, or `option:symmetry`. `ptpn check` will not report it
+because it does not lower or analyze. `ptpn allocate` keeps candidate-level
+rejection: a candidate that raises the typed error is marked infeasible and
+the search continues (it does not emit `E-UNS-001` or fail the whole search).
 
 ### 7.4 Truncation versus counterexample
 

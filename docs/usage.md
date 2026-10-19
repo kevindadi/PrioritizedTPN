@@ -66,7 +66,10 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 
 > **Note:** Exports are **opt-in**. Running `ptpn tdg -f input.json` alone
 > performs analysis but writes **no** output files unless you pass one or more
-> export flags.
+> export flags. Parent directories are not created automatically. A TDG DOT or
+> WCET JSON open/write/flush/close failure is reported as `E-INT-002` with
+> subject `output:<path>` (exit `1` in both transports); the success log is
+> emitted only after the write completes.
 
 ## RTSL workflow
 
