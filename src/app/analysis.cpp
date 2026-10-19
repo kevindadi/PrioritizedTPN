@@ -19,6 +19,7 @@
 #include "app/logging.h"
 #include "app/lowering.h"
 #include "common/diagnostics.h"
+#include "common/unsupported_class.h"
 #include "dsl/source_map.h"
 #include "export/export_dot.h"
 #include "export/export_ptpn.h"
@@ -208,7 +209,8 @@ bool should_run_analysis(const PipelineOptions& opts) {
 int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label,
                          const PipelineOptions& opts,
                          std::chrono::high_resolution_clock::time_point pipeline_start,
-                         size_t initial_memory, ptpn::Diagnostics* diagnostics) {
+                         size_t initial_memory, ptpn::Diagnostics* diagnostics,
+                         const dsl::SourceMap* source_map) try {
   if (opts.debug_mode) {
     std::cout << ptpn.to_string();
   }
@@ -472,6 +474,23 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
   detail::log_step_timing(input_label + " pipeline (total)", total_duration.count(),
                           std::to_string(total_memory) + " KB");
   return 0;
+} catch (const ::ptpn::UnsupportedClassError& error) {
+  // The analysis layer rejects models/options that pass lowering but are
+  // outside a rule's supported class (for example an EDF/FIFO/LLF overlapping
+  // release, or a job-clock extrapolation/symmetry combination). This is a
+  // model/option limit, not an internal failure.
+  spdlog::error("[ANALYSIS] Unsupported model or option: {}", error.what());
+  if (diagnostics != nullptr) {
+    const std::string subject =
+        error.subject().value_or("policy:" + schedule_policy_to_string(ptpn.schedule_policy()));
+    std::optional<::ptpn::SourceLocation> location;
+    if (source_map != nullptr) {
+      location = source_map_location(*source_map, subject);
+    }
+    diagnostics->add("E-UNS-001", error.what(), subject, std::move(location),
+                     "simplify the model or choose a supported policy/option");
+  }
+  return 1;
 }
 
 // Shared post-load TDG pipeline: PTPN lowering, state-class analysis, metrics
@@ -503,7 +522,8 @@ int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts,
   }
   detail::log_step_timing("TDG2PN lowering", detail::elapsed_ms(lowering_start));
 
-  return run_ptpn_postprocess(ptpn, input_label, opts, pipeline_start, initial_memory, diagnostics);
+  return run_ptpn_postprocess(ptpn, input_label, opts, pipeline_start, initial_memory, diagnostics,
+                              source_map);
 }
 
 }  // namespace app

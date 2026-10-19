@@ -9,6 +9,7 @@
 
 #include "analysis/reachability/scheduling.h"
 #include "analysis/reachability/state_class.h"
+#include "common/unsupported_class.h"
 
 namespace state_class {
 
@@ -797,11 +798,12 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
   for (size_t ordinal = 0; ordinal < tasks_.size(); ++ordinal) {
     const size_t chain_tokens = task_chain_token_count(tasks_[ordinal], state.marking);
     if (chain_tokens > 1) {
-      throw std::invalid_argument(
+      throw ptpn::UnsupportedClassError(
           "EDF job layout is ambiguous: task '" + tasks_[ordinal].name + "' has " +
-          std::to_string(chain_tokens) +
-          " tokens in its task chain; the supported class allows one job per task "
-          "(a periodic release fired while the previous job was still in flight)");
+              std::to_string(chain_tokens) +
+              " tokens in its task chain; the supported class allows one job per task "
+              "(a periodic release fired while the previous job was still in flight)",
+          "task:" + tasks_[ordinal].name);
     }
     const bool in_flight = task_in_flight(tasks_[ordinal], state.marking);
     const bool has_enabled = !enabled_per_task[ordinal].empty();
@@ -987,12 +989,13 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
   for (size_t ordinal = 0; ordinal < tasks_.size(); ++ordinal) {
     const size_t chain_tokens = task_chain_token_count(tasks_[ordinal], state.marking);
     if (chain_tokens > 1) {
-      throw std::invalid_argument(
+      throw ptpn::UnsupportedClassError(
           "LLF job layout is ambiguous: task '" + tasks_[ordinal].name + "' has " +
-          std::to_string(chain_tokens) +
-          " tokens in its task chain; the supported class allows one job per task "
-          "(a release fired while the previous job was still in flight, i.e. an "
-          "overlapping release)");
+              std::to_string(chain_tokens) +
+              " tokens in its task chain; the supported class allows one job per task "
+              "(a release fired while the previous job was still in flight, i.e. an "
+              "overlapping release)",
+          "task:" + tasks_[ordinal].name);
     }
     const bool in_flight = task_in_flight(tasks_[ordinal], state.marking);
     const bool has_enabled = !enabled_per_task[ordinal].empty();
@@ -1168,11 +1171,12 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
     const TaskChain& task = tasks_[ordinal];
     const size_t chain_tokens = task_chain_token_count(task, state.marking);
     if (chain_tokens > 1) {
-      throw std::invalid_argument(
+      throw ptpn::UnsupportedClassError(
           "FIFO job layout is ambiguous: task '" + task.name + "' has " +
-          std::to_string(chain_tokens) +
-          " tokens in its task chain; the supported class allows one job per task "
-          "(a periodic release fired while the previous job was still in flight)");
+              std::to_string(chain_tokens) +
+              " tokens in its task chain; the supported class allows one job per task "
+              "(a periodic release fired while the previous job was still in flight)",
+          "task:" + task.name);
     }
 
     const bool in_flight = task_in_flight(task, state.marking);
@@ -1200,10 +1204,11 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
     // Mid-chain token: the job has been dispatched and runs to completion.
     const auto [it, inserted] = running_by_core.emplace(task.core, ordinal);
     if (!inserted) {
-      throw std::invalid_argument(
+      throw ptpn::UnsupportedClassError(
           "FIFO supported class allows at most one running job per real core; tasks '" +
-          tasks_[it->second].name + "' and '" + task.name +
-          "' both have a job past the task entry on core " + std::to_string(task.core));
+              tasks_[it->second].name + "' and '" + task.name +
+              "' both have a job past the task entry on core " + std::to_string(task.core),
+          "task:" + task.name);
     }
   }
 

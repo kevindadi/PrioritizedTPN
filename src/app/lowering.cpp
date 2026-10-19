@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include "common/diagnostics.h"
+#include "common/unsupported_class.h"
 #include "dsl/source_map.h"
 #include "lower/tdg2pn/tdg2pn.h"
 #include "model/petri.h"
@@ -68,6 +69,8 @@ std::optional<std::string> unsupported_subject(const std::string& message,
   return "policy:" + schedule_policy_to_string(policy);
 }
 
+}  // namespace
+
 // Resolves a lowering-subject key to the RTSL SourceMap entry that anchors it.
 // Implicit nodes are bound under `fork:<name>` / `join:<name>` and the policy
 // under `policy`, while lowering reports `node:<name>` / `policy:<name>`.
@@ -96,32 +99,32 @@ std::optional<ptpn::SourceLocation> source_map_location(const dsl::SourceMap& so
   return std::nullopt;
 }
 
-}  // namespace
-
 int build_ptpn_from_tdg(const tdg::TDG& tdg, petri::PTPN& ptpn,
                         ptpn::Diagnostics* diagnostics, const dsl::SourceMap* source_map) {
   spdlog::info("\n[PTPN] Converting TDG to PTPN...");
   try {
     converter::TDG2PN::transform(tdg, ptpn);
+  } catch (const ptpn::UnsupportedClassError& error) {
+    spdlog::error("[PTPN] TDG to PTPN conversion rejected by the supported class: {}",
+                  error.what());
+    if (diagnostics != nullptr) {
+      const std::optional<std::string> subject =
+          error.subject().has_value() ? error.subject()
+                                      : unsupported_subject(error.what(), tdg.policy);
+      std::optional<ptpn::SourceLocation> location;
+      if (source_map != nullptr && subject.has_value()) {
+        location = source_map_location(*source_map, *subject);
+      }
+      diagnostics->add("E-UNS-001", error.what(), subject, std::move(location),
+                       "simplify the model or choose a supported scheduling policy");
+    }
+    return 1;
   } catch (const std::exception& error) {
     spdlog::error("[PTPN] TDG to PTPN conversion failed: {}", error.what());
     if (diagnostics != nullptr) {
-      // All std::invalid_argument throws from the lowering facade are
-      // supported-class guards (EDF/FIFO/LLF and PIP/PCP/SRP restrictions).
-      if (dynamic_cast<const std::invalid_argument*>(&error) != nullptr) {
-        const std::optional<std::string> subject =
-            unsupported_subject(error.what(), tdg.policy);
-        std::optional<ptpn::SourceLocation> location;
-        if (source_map != nullptr && subject.has_value()) {
-          location = source_map_location(*source_map, *subject);
-        }
-        diagnostics->add("E-UNS-001", error.what(), subject, std::move(location),
-                         "simplify the model or choose a supported scheduling policy");
-      } else {
-        diagnostics->add("E-INT-003", error.what(),
-                         "policy:" + schedule_policy_to_string(tdg.policy), std::nullopt,
-                         "this is an internal lowering failure; report it");
-      }
+      diagnostics->add("E-INT-003", error.what(),
+                       "policy:" + schedule_policy_to_string(tdg.policy), std::nullopt,
+                       "this is an internal lowering failure; report it");
     }
     return 1;
   }

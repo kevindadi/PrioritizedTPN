@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "analysis/dbm/clock_state.h"
+#include "common/unsupported_class.h"
 
 namespace state_class {
 
@@ -26,9 +27,10 @@ void StateClassReachabilityGraph::set_firing_rule(std::unique_ptr<FiringRule> ru
     throw std::invalid_argument("firing rule must not be null");
   }
   if (extrapolation_enabled_ && rule->uses_job_clocks()) {
-    throw std::invalid_argument(
+    throw ptpn::UnsupportedClassError(
         "k-extrapolation is not sound for job-clock (EDF/FIFO/LLF) states; disable "
-        "extrapolation before installing this rule");
+        "extrapolation before installing this rule",
+        "option:extrapolation");
   }
   firing_rule_ = std::move(rule);
 }
@@ -61,9 +63,10 @@ size_t StateClassReachabilityGraph::MarkingActiveHash::operator()(
 
 void StateClassReachabilityGraph::set_extrapolation(bool enabled) {
   if (enabled && firing_rule_ && firing_rule_->uses_job_clocks()) {
-    throw std::invalid_argument(
+    throw ptpn::UnsupportedClassError(
         "k-extrapolation is not sound for job-clock (EDF/FIFO/LLF) states: relaxing "
-        "job-clock bounds can merge different scheduling orderings");
+        "job-clock bounds can merge different scheduling orderings",
+        "option:extrapolation");
   }
   extrapolation_enabled_ = enabled;
   if (!enabled) {
@@ -318,13 +321,15 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
   // implemented for them; reject rather than silently approximate.
   if (firing_rule_->uses_job_clocks()) {
     if (extrapolation_enabled_) {
-      throw std::invalid_argument(
-          "k-extrapolation is not sound for job-clock (EDF/FIFO/LLF) states");
+      throw ptpn::UnsupportedClassError(
+          "k-extrapolation is not sound for job-clock (EDF/FIFO/LLF) states",
+          "option:extrapolation");
     }
     if (symmetry_applied()) {
-      throw std::invalid_argument(
+      throw ptpn::UnsupportedClassError(
           "task-symmetry reduction is not implemented for job-clock "
-          "(EDF/FIFO/LLF) states");
+          "(EDF/FIFO/LLF) states",
+          "option:symmetry");
     }
   }
   graph_.clear();

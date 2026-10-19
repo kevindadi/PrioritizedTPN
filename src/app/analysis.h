@@ -40,7 +40,8 @@ int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts,
 int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label,
                          const PipelineOptions& opts,
                          std::chrono::high_resolution_clock::time_point pipeline_start,
-                         size_t initial_memory, ptpn::Diagnostics* diagnostics = nullptr);
+                         size_t initial_memory, ptpn::Diagnostics* diagnostics = nullptr,
+                         const dsl::SourceMap* source_map = nullptr);
 
 }  // namespace app
 
