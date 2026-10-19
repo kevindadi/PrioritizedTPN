@@ -349,6 +349,118 @@ measurement error. Measurement errors are printed as structured JSON with
 `stage`, `returncode`, `timed_out`, `stdout`, and `stderr`, so compiler
 diagnostics are preserved.
 
+## RTSL measurement loop (`tools.llm measure`)
+
+`ptpn check` accepts a `time ... measured by llm { ... }` attribute without
+intervals and reports it in `result.pending_measurements`. The measure command
+closes that loop against an RTSL model:
+
+```text
+python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json \
+    [--execute] [--response-file RESPONSE] [--out PATH] \
+    [--ptpn PATH] [--compiler CC] [--opt FLAG]
+```
+
+Flow:
+
+1. Resolve the binary as `run.py` does: `--ptpn`, `$PTPN_BUILD_DIR`,
+   `.ptpn-build-dir`, then `build/ptpn`.
+2. Run `ptpn check -f model.rtsl --diagnostics json`. A failed check prints the
+   diagnostics human-readably and exits non-zero without touching the file.
+3. Read `result.pending_measurements`. An empty list prints
+   `nothing_to_measure` and succeeds.
+4. For every pending task, look up its natural-language description in
+   `--tasks-json` (`{"<task-id>": "<what the task does>"}`); a missing
+   description is an error. Each segment becomes one synthetic proposal task
+   and is compiled and measured separately (see below).
+5. Re-run `ptpn check` on the written model and report the remaining pending
+   measurements (none on success).
+
+### Pending contract
+
+Each entry has `task`, `expected_segments` (`2 * lock_count + 1`), `runs`,
+`timeout`, and `inject`:
+
+```json
+{
+  "task": "fusion",
+  "expected_segments": 3,
+  "runs": 20,
+  "timeout": 5,
+  "inject": {
+    "file": "model.rtsl",
+    "byte_start": 210,
+    "byte_end": 255,
+    "line": 11,
+    "column": 5
+  }
+}
+```
+
+The span is `[byte_start, byte_end)`. It covers the whole `time` attribute,
+from the `time` keyword through the closing `}` of the measure block, and
+excludes leading indentation and the trailing semicolon. Before writing, the
+loop re-reads the file, decodes the span, verifies that it still looks like a
+`time ... measured ... llm ...` attribute, and verifies that the bytes still
+equal the ones it validated. Any mismatch aborts the whole write; the model is
+never partially modified.
+
+### Per-segment measurement
+
+A task with `n` locks is modelled with `2n + 1` time intervals, so the command
+asks for one C program per segment. The existing prompt/schema/client
+machinery is reused unchanged by presenting each segment as a synthetic
+one-CPU task:
+
+- lock-free task (`expected_segments == 1`): the proposal keeps the task id;
+- locked task: proposals are `<task>::seg0`, `<task>::seg1`, ..., in segment
+  order (before the first lock, between locks, the critical section holding
+  all locks, then after releasing locks in reverse order).
+
+Every proposal is compiled and measured separately with the entry's `runs` and
+`timeout`. `--response-file` responses must therefore name the synthetic tasks
+for locked models.
+
+### Replacement format and artifact
+
+The single byte-slice replacement follows the spec:
+
+```text
+time [ [1, 2], [3, 4], [1, 2] ] measured by llm { runs 20, timeout 5, artifact "sha256:<hex>,<hex>,<hex> cc:<cmd> ; <cmd> ; <cmd>" }
+```
+
+A lock-free task uses the scalar interval form `time [a, b] measured ...`.
+`runs` and `timeout` are preserved from the model. The artifact records one
+SHA-256 digest of the compiled binary and one snapshot of the exact compile
+command per segment, in segment order; commands are joined for display with
+`shlex.join` and are never executed through a shell. The artifact is escaped
+as an RTSL string.
+
+### Unit conversion
+
+`measure_task` keeps the raw nanosecond wall-clock samples. The measure loop
+converts each observed minimum/maximum to the RTSL millisecond base by
+rounding **up** (ceiling): any non-zero observation is at least `1` ms. The
+prototype's integer-microsecond output is not reused for injection because
+floor division would discard sub-millisecond detail and could produce a
+zero-time segment. Ceiling is the conservative direction for the interval
+upper bound.
+
+### Safety and reporting
+
+Without `--execute` the command performs a dry run: it prints the resolved
+plan (proposal names, roles, runs, timeout, inject spans) and the exact prompt,
+and writes or executes nothing. `--out PATH` writes the injected model
+elsewhere and leaves the input unchanged. Compilation/execution happens only
+with `--execute`, under the same trust boundary as `generate`.
+
+The command exits `0` on success, `2` for check/envelope/plan/injection/IO
+errors (including a failed post-injection re-check), and `3` for a structured
+measurement error. The success report includes the millisecond and
+microsecond intervals, the artifact, the replacement text, the conversion
+rule, and the re-check result. As everywhere in this prototype,
+`wcet_kind: measured` is an observation, not a certified WCET bound.
+
 ## Measurement details and limitations
 
 - Compilation command shape: `cc -O2 -std=c11 -Wall -Wextra -o task_bin

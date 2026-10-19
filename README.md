@@ -302,6 +302,23 @@ python -m tools.llm generate --spec spec.json --out model.json \
 `--response-file` replays a saved model response without network access.
 `--dry-run` prints the deterministic prompt.
 
+For RTSL models that declare `time ... measured by llm { ... }`, the measure
+command reads `pending_measurements` from `ptpn check`, measures one C program
+per execution segment, and injects the intervals plus a binary/compile-command
+artifact with a single span replacement:
+
+```bash
+python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json \
+    --execute
+```
+
+`--tasks-json` maps each pending task id to a natural-language description;
+`--response-file` replays a response offline; `--out` writes elsewhere;
+without `--execute` the command is a dry run and writes nothing. Integers are
+converted to the model's millisecond base by rounding up (any non-zero
+observation is at least 1 ms). See
+[docs/llm-integration.md](docs/llm-integration.md#rtsl-measurement-loop-toolsllm-measure).
+
 **Trust boundary:** the LLM is an untrusted proposer. Its output is schema
 validated; generated programs run only with `--execute`, with a timeout and
 best-effort resource limits. The measured min/max wall-clock interval includes
