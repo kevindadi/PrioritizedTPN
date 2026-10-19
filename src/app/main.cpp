@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 
+#include "app/check_cmd.h"
 #include "app/pipeline.h"
 #include "common/diagnostics.h"
 #include "model/types.h"
@@ -156,6 +157,7 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
       "  ptpn tdg -f <input.json> [--export-scg graph.dot] ...\n"
       "  ptpn ptpn -f <model.ptpn> [--romeo out.cts] ...\n"
       "  ptpn allocate -f <input.json> -o <report.json> [--objective ...]\n"
+      "  ptpn check -f <model.rtsl> [--diagnostics json]\n"
       "  ptpn export romeo -f <input> -o <out.cts> [--policy ...]\n"
       "  ptpn export ptopner -f <input> -o <out.ppn>\n"
       "\n"
@@ -166,6 +168,7 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
   app::ExportCommandOptions romeo_export_opts;
   app::ExportCommandOptions ptopner_export_opts;
   app::AllocationCommandOptions allocation_opts;
+  app::CheckCommandOptions check_opts;
   string tdg_file;
   string ptpn_file;
   string allocation_objective = "max-wcrt";
@@ -264,6 +267,19 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
       "analysis and reports feasible and Pareto allocations. Fails (exit 1) only "
       "on input or output errors; an empty best allocation is reported in JSON.");
 
+  auto* check_cmd = app.add_subcommand(
+      "check", "Lex, parse, and validate an RTSL model (no lowering or analysis)");
+  check_cmd->add_option("-f,--file", check_opts.input_file, "Input RTSL file")->required(true);
+  add_diagnostics_options(check_cmd, check_opts.diagnostics);
+  check_cmd->footer(
+      "Examples:\n"
+      "  ptpn check -f model.rtsl\n"
+      "  ptpn check -f model.rtsl --diagnostics json\n"
+      "  ptpn check -f model.rtsl --diagnostics-file diagnostics.json\n"
+      "\n"
+      "Successful checks report `pending_measurements` for `measured by llm`\n"
+      "tasks whose intervals have not been injected yet.");
+
   auto* export_cmd = app.add_subcommand(
       "export", string("Export to Romeo or PToPNer formats") + kCompatExportNote);
   export_cmd->require_subcommand(1);
@@ -316,6 +332,10 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
     diagnostics_engaged = allocation_opts.diagnostics.engaged();
     diagnostics_stdout = allocation_opts.diagnostics.output == "json";
     diagnostics_file = allocation_opts.diagnostics.file;
+  } else if (check_cmd->parsed()) {
+    diagnostics_engaged = check_opts.diagnostics.engaged();
+    diagnostics_stdout = check_opts.diagnostics.output == "json";
+    diagnostics_file = check_opts.diagnostics.file;
   } else if (export_romeo_cmd->parsed()) {
     debug_mode = romeo_export_opts.debug_mode;
   } else if (export_ptopner_cmd->parsed()) {
@@ -360,6 +380,9 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
   }
   if (allocate_cmd->parsed()) {
     return app::run_allocation(allocation_opts, diag);
+  }
+  if (check_cmd->parsed()) {
+    return app::run_rtsl_check(check_opts, diag);
   }
   if (export_romeo_cmd->parsed()) {
 #if defined(PTPN_ENABLE_COMPAT)

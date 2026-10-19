@@ -404,6 +404,7 @@ endif()
 # Main executable
 add_executable(ptpn
     src/app/main.cpp
+    src/app/check_cmd.cpp
     src/app/pipeline.cpp
 )
 target_include_directories(ptpn PUBLIC src)
