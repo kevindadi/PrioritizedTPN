@@ -33,7 +33,7 @@ jobs:
         run: |
           ./build/ptpn tdg -f example/motivating-examples/hw.json --no-analysis \
             --export-ptpn /tmp/hw.ptpn.dot --export-wcet /tmp/hw.wcet.json
-          ./build/ptpn check -f docs/../test/golden/rtsl/appendix.rtsl
+          ./build/ptpn check -f test/golden/rtsl/appendix.rtsl
           ./build/ptpn rtsl -f test/golden/rtsl/appendix.rtsl --no-analysis \
             --export-tdg /tmp/appendix.tdg.json
           ./build/ptpn tdg -f /tmp/appendix.tdg.json --no-analysis
