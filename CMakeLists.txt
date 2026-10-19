@@ -87,6 +87,11 @@ endif()
 
 project(PTPN LANGUAGES CXX)
 
+# Romeo (.cts) and PToPNer (.ppn) export adapters are optional integrations for
+# external comparison tools; the mainline TDG -> PTPN analysis path does not
+# depend on them.
+option(PTPN_ENABLE_COMPAT "Build Romeo and PToPNer export adapters" OFF)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -208,39 +213,42 @@ target_link_libraries(ptpn_lowering
     spdlog::spdlog
 )
 
-add_library(ptpn_romeo STATIC
-    src/lower/tdg2romeo/cts_writer.cpp
-    src/lower/tdg2romeo/encode_common.cpp
-    src/lower/tdg2romeo/inhibitor_arc.cpp
-    src/lower/tdg2romeo/scheduling_net.cpp
-    src/lower/tdg2romeo/tdg2romeo.cpp
-    src/lower/tdg2romeo/tdg_helpers.cpp
-)
-target_link_libraries(ptpn_romeo
-    PUBLIC
-    ptpn_tdg
-    PRIVATE
-    Boost::filesystem
-    spdlog::spdlog
-)
+if(PTPN_ENABLE_COMPAT)
+    add_library(ptpn_romeo STATIC
+        src/lower/tdg2romeo/cts_writer.cpp
+        src/lower/tdg2romeo/encode_common.cpp
+        src/lower/tdg2romeo/inhibitor_arc.cpp
+        src/lower/tdg2romeo/scheduling_net.cpp
+        src/lower/tdg2romeo/tdg2romeo.cpp
+        src/lower/tdg2romeo/tdg_helpers.cpp
+    )
+    target_link_libraries(ptpn_romeo
+        PUBLIC
+        ptpn_tdg
+        PRIVATE
+        Boost::filesystem
+        spdlog::spdlog
+    )
 
-add_library(ptpn_ptopner STATIC
-    src/lower/tdg2ptopner/validate.cpp
-    src/lower/tdg2ptopner/export_ppn.cpp
-    src/lower/tdg2ptopner/ptpn_to_ppn.cpp
-    src/lower/tdg2ptopner/tdg2ptopner.cpp
-)
-target_link_libraries(ptpn_ptopner
-    PUBLIC
-    ptpn_petri
-    ptpn_tdg
-    PRIVATE
-    ptpn_lowering
-    spdlog::spdlog
-)
+    add_library(ptpn_ptopner STATIC
+        src/lower/tdg2ptopner/validate.cpp
+        src/lower/tdg2ptopner/export_ppn.cpp
+        src/lower/tdg2ptopner/ptpn_to_ppn.cpp
+        src/lower/tdg2ptopner/tdg2ptopner.cpp
+    )
+    target_link_libraries(ptpn_ptopner
+        PUBLIC
+        ptpn_petri
+        ptpn_tdg
+        PRIVATE
+        ptpn_lowering
+        spdlog::spdlog
+    )
+endif()
 
 # Unified lowering facade: TDG -> {PTPN, Romeo, PToPNer} with PTPN as the
-# canonical hub for composed conversions.
+# canonical hub for composed conversions. The Romeo/PToPNer edges (and the
+# PTPN -> PToPNer edge) are compiled in only when compat exports are enabled.
 add_library(ptpn_convert STATIC
     src/lower/convert/registry.cpp
     src/lower/convert/tdg_converters.cpp
@@ -250,9 +258,15 @@ add_library(ptpn_convert STATIC
 target_link_libraries(ptpn_convert
     PUBLIC
     ptpn_lowering
-    ptpn_romeo
-    ptpn_ptopner
 )
+if(PTPN_ENABLE_COMPAT)
+    target_compile_definitions(ptpn_convert PUBLIC PTPN_ENABLE_COMPAT=1)
+    target_link_libraries(ptpn_convert
+        PUBLIC
+        ptpn_romeo
+        ptpn_ptopner
+    )
+endif()
 
 add_library(ptpn_parser STATIC
     src/parse/ptpn_parser.cpp
@@ -339,8 +353,6 @@ target_link_libraries(PTPN_core
     ptpn_petri
     ptpn_export
     ptpn_lowering
-    ptpn_romeo
-    ptpn_ptopner
     ptpn_convert
     ptpn_parser
     ptpn_dbm
@@ -351,6 +363,13 @@ target_link_libraries(PTPN_core
     spdlog::spdlog
     fmt::fmt
 )
+if(PTPN_ENABLE_COMPAT)
+    target_link_libraries(PTPN_core
+        INTERFACE
+        ptpn_romeo
+        ptpn_ptopner
+    )
+endif()
 
 # Main executable
 add_executable(ptpn

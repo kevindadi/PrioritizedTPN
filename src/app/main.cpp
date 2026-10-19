@@ -1,5 +1,6 @@
 #include <CLI/CLI.hpp>
 #include <cstddef>
+#include <iostream>
 #include <spdlog/spdlog.h>
 #include <string>
 
@@ -9,6 +10,32 @@
 using namespace std;
 
 namespace {
+
+#if defined(PTPN_ENABLE_COMPAT)
+const char* const kCompatExportNote = "";
+#else
+const char* const kCompatExportNote = " (not built; rebuild with -DPTPN_ENABLE_COMPAT=ON)";
+#endif
+
+#if !defined(PTPN_ENABLE_COMPAT)
+int report_export_unavailable(const string& feature) {
+  cerr << "ERROR: " << feature
+       << " export is not available: built without compat support "
+          "(rebuild with -DPTPN_ENABLE_COMPAT=ON)"
+       << endl;
+  return 1;
+}
+
+int reject_compat_exports(const app::ExportTargets& exports) {
+  if (exports.romeo_file.empty() && exports.ppn_file.empty()) {
+    return 0;
+  }
+  cerr << "ERROR: Romeo/PToPNer export is not available: built without compat "
+          "support (rebuild with -DPTPN_ENABLE_COMPAT=ON)"
+       << endl;
+  return 1;
+}
+#endif
 
 SchedulePolicy parse_policy_option(const string& policy) {
   const SchedulePolicy parsed = parse_schedule_policy(policy);
@@ -38,8 +65,10 @@ void add_export_target_options(CLI::App* cmd, app::ExportTargets& exports) {
                   "Write state-class reachability graph DOT to PATH");
   cmd->add_option("--export-metrics", exports.metrics_json,
                   "Write performance metrics JSON to PATH");
-  cmd->add_option("--romeo", exports.romeo_file, "Export Romeo CTS to PATH");
-  cmd->add_option("--ppn", exports.ppn_file, "Export PToPNer .ppn to PATH");
+  cmd->add_option("--romeo", exports.romeo_file,
+                  string("Export Romeo CTS to PATH") + kCompatExportNote);
+  cmd->add_option("--ppn", exports.ppn_file,
+                  string("Export PToPNer .ppn to PATH") + kCompatExportNote);
   cmd->add_option("--tina", exports.tina_file, "Export Tina .net to PATH (not implemented)");
 }
 
@@ -209,7 +238,8 @@ int main(int argc, char* argv[]) {
       "analysis and reports feasible and Pareto allocations. Fails (exit 1) only "
       "on input or output errors; an empty best allocation is reported in JSON.");
 
-  auto* export_cmd = app.add_subcommand("export", "Export to Romeo or PToPNer formats");
+  auto* export_cmd = app.add_subcommand(
+      "export", string("Export to Romeo or PToPNer formats") + kCompatExportNote);
   export_cmd->require_subcommand(1);
 
   auto* export_romeo_cmd =
@@ -270,20 +300,38 @@ int main(int argc, char* argv[]) {
 
   if (tdg_cmd->parsed()) {
     tdg_opts.romeo_explicit_core_places = !romeo_no_core_places;
+#if !defined(PTPN_ENABLE_COMPAT)
+    if (reject_compat_exports(tdg_opts.exports) != 0) {
+      return 1;
+    }
+#endif
     return app::run_tdg_pipeline(tdg_file, tdg_opts, initial_memory);
   }
   if (ptpn_cmd->parsed()) {
+#if !defined(PTPN_ENABLE_COMPAT)
+    if (reject_compat_exports(ptpn_opts.exports) != 0) {
+      return 1;
+    }
+#endif
     return app::run_ptpn_pipeline(ptpn_file, ptpn_opts, initial_memory);
   }
   if (allocate_cmd->parsed()) {
     return app::run_allocation(allocation_opts);
   }
   if (export_romeo_cmd->parsed()) {
+#if defined(PTPN_ENABLE_COMPAT)
     romeo_export_opts.romeo_explicit_core_places = !export_romeo_no_core_places;
     return app::run_export_romeo(romeo_export_opts);
+#else
+    return report_export_unavailable("Romeo");
+#endif
   }
   if (export_ptopner_cmd->parsed()) {
+#if defined(PTPN_ENABLE_COMPAT)
     return app::run_export_ptopner(ptopner_export_opts);
+#else
+    return report_export_unavailable("PToPNer");
+#endif
   }
 
   return 1;

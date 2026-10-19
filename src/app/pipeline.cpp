@@ -28,9 +28,11 @@
 #include "export/export_ptpn.h"
 #include "export/scg_dot.h"
 #include "lower/tdg2pn/tdg2pn.h"
-#include "lower/tdg2ptopner/tdg2ptopner.h"
-#include "lower/tdg2ptopner/validate.h"
-#include "lower/tdg2romeo/tdg2romeo.h"
+#if defined(PTPN_ENABLE_COMPAT)
+#  include "lower/tdg2ptopner/tdg2ptopner.h"
+#  include "lower/tdg2ptopner/validate.h"
+#  include "lower/tdg2romeo/tdg2romeo.h"
+#endif
 #include "model/petri.h"
 #include "model/tdg.h"
 #include "parse/json.h"
@@ -43,7 +45,9 @@ namespace app {
 
 namespace {
 
+#if defined(PTPN_ENABLE_COMPAT)
 enum class InputFormat { AUTO, TDG, PTPN };
+#endif
 
 using PipelineClock = chrono::high_resolution_clock;
 
@@ -116,6 +120,19 @@ bool should_run_analysis(const PipelineOptions& opts) {
   return !opts.skip_analysis;
 }
 
+#if !defined(PTPN_ENABLE_COMPAT)
+int reject_compat_exports(const ExportTargets& exports) {
+  if (exports.romeo_file.empty() && exports.ppn_file.empty()) {
+    return 0;
+  }
+  cerr << "ERROR: Romeo/PToPNer export is not available: built without compat "
+          "support (rebuild with -DPTPN_ENABLE_COMPAT=ON)"
+       << endl;
+  return 1;
+}
+#endif
+
+#if defined(PTPN_ENABLE_COMPAT)
 InputFormat resolve_input_format(const fs::path& input_path, const string& format_hint) {
   if (format_hint == "tdg") {
     return InputFormat::TDG;
@@ -129,6 +146,7 @@ InputFormat resolve_input_format(const fs::path& input_path, const string& forma
   }
   return InputFormat::TDG;
 }
+#endif
 
 state_class::CanonicalizationMode parse_canonicalization(const string& mode) {
   if (mode == "max-lower") {
@@ -147,6 +165,7 @@ state_class::ReductionMode parse_reduction(const string& mode) {
   return state_class::ReductionMode::NONE;
 }
 
+#if defined(PTPN_ENABLE_COMPAT)
 romeo::RomeoFormat romeo_format_from_string(const string& format) {
   if (format == "inhibitor-arc" || format == "inhibitor_arc") {
     return romeo::RomeoFormat::InhibitorArc;
@@ -161,6 +180,7 @@ romeo::RomeoExportOptions make_romeo_export_options(const string& format,
   opts.explicit_core_places = explicit_core_places;
   return opts;
 }
+#endif
 
 void apply_policy_override(tdg::TDG& tdg, const optional<SchedulePolicy>& policy_override) {
   if (!policy_override.has_value()) {
@@ -170,6 +190,7 @@ void apply_policy_override(tdg::TDG& tdg, const optional<SchedulePolicy>& policy
   spdlog::info("[TDG] Scheduling policy override: {}", schedule_policy_to_string(tdg.policy));
 }
 
+#if defined(PTPN_ENABLE_COMPAT)
 int validate_ptopner_tdg(const tdg::TDG& tdg) {
   const auto ppn_validation = ptopner_export::validate_for_ptopner(tdg);
   if (!ppn_validation.ok) {
@@ -208,6 +229,7 @@ int export_ppn_from_ptpn(const petri::PTPN& ptpn, const string& output_path) {
   spdlog::info("[OUTPUT] PToPNer .ppn exported to: {}", output_path);
   return 0;
 }
+#endif
 
 int load_tdg_from_json(const string& input_file, tdg::TDG& tdg, parse::Parser& parser) {
   const auto parse_result = parser.parse_file(input_file);
@@ -420,11 +442,13 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
     }
   }
 
+#if defined(PTPN_ENABLE_COMPAT)
   if (!opts.exports.ppn_file.empty()) {
     if (export_ppn_from_ptpn(ptpn, opts.exports.ppn_file) != 0) {
       return 1;
     }
   }
+#endif
 
   if (!opts.exports.tina_file.empty()) {
     spdlog::info("[OUTPUT] Tina export not implemented");
@@ -722,6 +746,11 @@ size_t get_memory_usage() {
 }
 
 int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t initial_memory) {
+#if !defined(PTPN_ENABLE_COMPAT)
+  if (reject_compat_exports(opts.exports) != 0) {
+    return 1;
+  }
+#endif
   const auto pipeline_start = PipelineClock::now();
   const auto tdg_start = PipelineClock::now();
   spdlog::info("[TDG] Loading JSON: {}", input_file);
@@ -754,6 +783,7 @@ int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t init
   const size_t tdg_memory = get_memory_usage() - initial_memory;
   log_step_timing("TDG parsing", elapsed_ms(tdg_start), to_string(tdg_memory) + " KB");
 
+#if defined(PTPN_ENABLE_COMPAT)
   if (!opts.exports.ppn_file.empty()) {
     if (validate_ptopner_tdg(tdg) != 0) {
       return 1;
@@ -767,6 +797,7 @@ int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t init
       return 1;
     }
   }
+#endif
 
   const bool needs_ptpn = should_run_analysis(opts) || !opts.exports.ptpn_dot.empty() ||
                           !opts.exports.ppn_file.empty() || !opts.exports.scg_dot.empty() ||
@@ -795,6 +826,11 @@ int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t init
 
 int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts,
                       size_t initial_memory) {
+#if !defined(PTPN_ENABLE_COMPAT)
+  if (reject_compat_exports(opts.exports) != 0) {
+    return 1;
+  }
+#endif
   const auto pipeline_start = PipelineClock::now();
   const auto parse_start = PipelineClock::now();
   spdlog::info("[PTPN] Loading source: {}", input_file);
@@ -820,6 +856,7 @@ int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts,
   return run_ptpn_postprocess(ptpn, "PTPN", opts, pipeline_start, initial_memory);
 }
 
+#if defined(PTPN_ENABLE_COMPAT)
 int run_export_romeo(const ExportCommandOptions& opts) {
   const fs::path input_path(opts.input_file);
   if (opts.input_format == "ptpn" ||
@@ -885,6 +922,7 @@ int run_export_ptopner(const ExportCommandOptions& opts) {
   }
   return export_ppn_from_ptpn(ptpn, opts.output_file);
 }
+#endif  // defined(PTPN_ENABLE_COMPAT)
 
 int run_allocation(const AllocationCommandOptions& opts) {
   spdlog::info("[ALLOC] Loading TDG JSON: {}", opts.input_file);
