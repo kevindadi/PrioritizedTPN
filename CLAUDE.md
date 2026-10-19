@@ -23,15 +23,14 @@ Manual CMake (CI path, system Boost): `cmake -B build -G Ninja -DCMAKE_BUILD_TYP
 
 Binaries: `build/ptpn` (analyzer CLI), `build/test/ptpn_test` (unit tests).
 
-### RTSL / LLM commands
+### RTSL commands
 
 ```bash
 ./build/ptpn check -f model.rtsl --diagnostics json      # lex/parse/validate only (no lowering)
 ./build/ptpn rtsl -f model.rtsl [--export-tdg PATH]      # full pipeline; --export-tdg writes JSON
-python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json [--execute]
 ```
 
-The end-to-end workflow (generate → check → fix → measure → analyze → report) and the per-code action table live in `.claude/skills/rt-system/SKILL.md` (repo-local; not built or tested).
+The end-to-end workflow (clarify -> write -> check -> fill -> analyze -> report) and the per-code action table live in `.claude/skills/rt-system/SKILL.md` (repo-local; not built or tested).
 
 ### Tests
 
@@ -45,8 +44,6 @@ Tests are discovered with `gtest_discover_tests` and `WORKING_DIRECTORY` = repo 
 
 Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/golden/*`; the header comment documents the exact commands that regenerate each golden file. Golden comparison is skipped when not compiled with libstdc++ (`__GLIBCXX__` guard) — regenerate goldens only on libstdc++ builds.
 
-Python tests for the LLM prototype: `python -m unittest discover tools/llm/tests` (stdlib `unittest`, run from repo root).
-
 ## Architecture
 
 The pipeline is `parse → model → lowering → analysis`, mirrored one-to-one by the static-library layering in `CMakeLists.txt` (each target declares only the deps it uses; `PTPN_core` is the INTERFACE aggregate for tests). The CLI is its own layer and depends one-way on the application layer:
@@ -59,7 +56,7 @@ analysis = ptpn_dbm → ptpn_reachability → ptpn_metrics, + ptpn_reductions (c
 CLI = ptpn_cli (src/cli, CLI11 wiring) → ptpn_app (src/app, CLI-free pipelines) → core libraries
 ```
 
-**RTSL front-end (`src/dsl/`):** `.rtsl` → lexer → panic-mode parser → semantic validation → in-process lowering to `model::TDG` → the shared `tdg2pn → analysis` path. No JSON text round-trip. `dsl::SourceMap` is a side table (structured subject → byte-accurate span) used to backfill `location` in diagnostics without polluting the TDG model. `ptpn check` stops after validation; lowering support-class guards (`E-UNS-001`) and missing measured intervals (`E-VAL-213`) are reported by `ptpn rtsl`/`ptpn allocate`. `tools/llm measure` consumes the `check` envelope's `result.pending_measurements` and rewrites the `time` attribute in the `.rtsl` source.
+**RTSL front-end (`src/dsl/`):** `.rtsl` → lexer → panic-mode parser → semantic validation → in-process lowering to `model::TDG` → the shared `tdg2pn → analysis` path. No JSON text round-trip. `dsl::SourceMap` is a side table (structured subject → byte-accurate span) used to backfill `location` in diagnostics without polluting the TDG model. `ptpn check` stops after validation; lowering support-class guards (`E-UNS-001`) and missing measured intervals (`E-VAL-213`) are reported by `ptpn rtsl`/`ptpn allocate`. Pending `measured by llm` tasks are listed in `result.pending_measurements`; the user or Claude fills their `time` attribute directly in the `.rtsl` source.
 
 ### State-class analysis core (`src/analysis/`)
 
@@ -90,7 +87,7 @@ User-facing docs live in `docs/` (`install.md`, `usage.md`, `json_format.md`); t
 ## Conventions and gotchas
 
 - **`example/run.py` regex-parses `[STATS]` log lines** emitted by the analyzer (SCG build stats, lowering ms, etc.). Changing the text of those log lines breaks `run.py` silently — update `RE_*` patterns in `example/run.py` together with any format change.
-- **Diagnostics are opt-in:** `--diagnostics json` / `--diagnostics-file PATH` switch `tdg`/`rtsl`/`check`/`ptpn`/`allocate` to the versioned envelope with exit codes `2/3/4/5/6` and move logs (including `[STATS]`) to stderr. Without them the legacy streams and `0`/`1` exit codes apply. `tools/llm measure` and the RTSL repair loop depend on the engaged form.
+- **Diagnostics are opt-in:** `--diagnostics json` / `--diagnostics-file PATH` switch `tdg`/`rtsl`/`check`/`ptpn`/`allocate` to the versioned envelope with exit codes `2/3/4/5/6` and move logs (including `[STATS]`) to stderr. Without them the legacy streams and `0`/`1` exit codes apply. The RTSL repair loop depends on the engaged form.
 - **RTSL time is milliseconds:** RTSL inputs are normalized so one engine tick = 1 ms (bare integers follow `time_unit`; `us` is rejected). TDG JSON integers remain unit-agnostic engine ticks.
 - Metrics JSON carries an `exact` flag: `false` under symmetry reduction, extrapolation, or horizon truncation, and `wcrt_lb` is omitted where the analysis is only an upper bound. Preserve that contract when touching metrics code.
 - Tests map one `test_<concern>.cpp` per concern; policy tests exist for both single- and multi-core (`test_edf.cpp` + `test_edf_multicore.cpp`, etc.). Reuse `tdg_test_helpers.h` (`load_tdg`) rather than hand-parsing JSON in tests.
