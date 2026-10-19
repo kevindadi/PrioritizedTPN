@@ -5,10 +5,9 @@ description: Use when asked to model, analyze, schedule, or fix a real-time syst
 
 # Real-Time System Workflow
 
-Work from the repository root. The analyzer is `build/ptpn` (or resolve
-`--ptpn` -> `$PTPN_BUILD_DIR` -> `.ptpn-build-dir` -> `build/ptpn`). Reference
-docs: `docs/rtsl-spec.md`, `docs/diagnostics.md`, `docs/llm-integration.md`,
-`docs/rule.md`.
+Work from the repository root. The analyzer is `build/ptpn` (`example/run.py`
+resolves `--ptpn` -> `$PTPN_BUILD_DIR` -> `.ptpn-build-dir` -> `build/ptpn`).
+Reference docs: `docs/usage.md`, `docs/install.md`, `docs/json_format.md`.
 
 ## Workflow
 
@@ -18,7 +17,8 @@ docs: `docs/rtsl-spec.md`, `docs/diagnostics.md`, `docs/llm-integration.md`,
    set, locks, and dependencies. Ask for the **timing source per task**:
    `certified` (safe user-supplied bound), `estimated` (informal figure), or
    `measured by llm` (needs the measurement loop). Do not invent numbers.
-2. **Write RTSL v1** exactly per `docs/rtsl-spec.md`. The base unit is
+2. **Write RTSL v1** exactly as shown in the RTSL workflow section of
+   `docs/usage.md` and `example/introduction/demo.rtsl`. The base unit is
    milliseconds; `us` is rejected (`E-UNS-004`). Periodic tasks need `period`;
    sporadic tasks are unsupported in v1 (`E-UNS-003`).
 3. **Check loop.** Run `build/ptpn check -f model.rtsl --diagnostics json`

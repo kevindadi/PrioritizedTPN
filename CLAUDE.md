@@ -4,22 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-PTPN is a **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task dependency graphs (TDG JSON) into timed Petri nets with priorities, preemption, and locks, then explores state-class reachability graphs (DBM clock zones) for WCRT/schedulability analysis and format export (Romeo CTS, PToPNer `.ppn`, Graphviz DOT). C++17, CMake ≥ 3.27 + Ninja, Boost (`graph`, `filesystem`, `thread`, `date_time`). Other deps (nlohmann/json, CLI11, spdlog/fmt, GoogleTest) are pinned via FetchContent.
+PTPN is a **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task dependency graphs into timed Petri nets with priorities, preemption, and locks, then explores state-class reachability graphs (DBM clock zones) for WCRT/schedulability analysis and Graphviz DOT export. Inputs are RTSL (`.rtsl`), TDG JSON, and PTPN source (`.ptpn`). C++17, CMake ≥ 3.27 + Ninja, Boost (`graph`, `filesystem`, `thread`, `date_time`). Other deps (nlohmann/json, CLI11, spdlog/fmt, GoogleTest) are pinned via FetchContent.
 
 ## Commands
 
 ### Build
 
 ```bash
-./build.py                 # bootstrap vcpkg under ~/vcpkg if missing, configure + build, write .ptpn-build-dir
-./build.py --test          # build + ctest
-./build.py --build-dir build-asan --build-type Debug --fresh --clean
-./build.py --skip-vcpkg    # use system Boost (this is what CI does on Linux)
+./example/build.py                 # bootstrap vcpkg under ~/vcpkg if missing, configure + build, write .ptpn-build-dir
+./example/build.py --test          # build + ctest
+./example/build.py --build-dir build-asan --build-type Debug --fresh --clean
+./example/build.py --skip-vcpkg    # use system Boost (this is what CI does on Linux)
 ```
 
 Manual CMake (CI path, system Boost): `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`. vcpkg auto-detection is off on Linux/macOS by default (`-DPTPN_USE_VCPKG=ON` re-enables); on Apple Silicon pass `-DVCPKG_TARGET_TRIPLET=arm64-osx`.
 
-`run.py` resolves the `ptpn` binary via `--ptpn PATH` → `$PTPN_BUILD_DIR` → `.ptpn-build-dir` marker → `build/ptpn`. The repo currently has an IDE build in `cmake-build-debug/` (root `compile_commands.json` symlinks into it).
+`example/run.py` drives the example benchmarks (p/s/t-bench + l-bench) and resolves the `ptpn` binary via `--ptpn PATH` → `$PTPN_BUILD_DIR` → `.ptpn-build-dir` marker → `build/ptpn` (the marker and default `build/` live at the repo root, not under `example/`). The repo currently has an IDE build in `cmake-build-debug/` (root `compile_commands.json` symlinks into it).
 
 Binaries: `build/ptpn` (analyzer CLI), `build/test/ptpn_test` (unit tests).
 
@@ -47,30 +47,19 @@ Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/
 
 Python tests for the LLM prototype: `python -m unittest discover tools/llm/tests` (stdlib `unittest`, run from repo root).
 
-### Format
-
-clang-format **21.1.8 is pinned by CI** (pip-installed); use that exact version or the check will differ. Style: Google-based, `ColumnLimit: 100`, `PointerAlignment: Left` (see `.clang-format`).
-
-```bash
-find src test -type f \( -name '*.cpp' -o -name '*.h' \) -print0 \
-  | xargs -0 clang-format --dry-run --Werror
-```
-
 ## Architecture
 
-The pipeline is `parse → model → lowering → analysis → export`, mirrored one-to-one by the static-library layering in `CMakeLists.txt` (each target declares only the deps it uses; `PTPN_core` is the INTERFACE aggregate for executables/tests):
+The pipeline is `parse → model → lowering → analysis`, mirrored one-to-one by the static-library layering in `CMakeLists.txt` (each target declares only the deps it uses; `PTPN_core` is the INTERFACE aggregate for tests). The CLI is its own layer and depends one-way on the application layer:
 
 ```
 JSON TDG ─parse(ptpn_json)→ TDG(ptpn_tdg) ──tdg2pn(ptpn_lowering)──► PTPN(ptpn_petri) ──► analysis
-                │                        ├──tdg2romeo(ptpn_romeo)──► Romeo .cts
-                │                        └──tdg2ptopner(ptpn_ptopner)► .ppn (requires fixed_prior_with_restart)
-.ptpn source ─parse(ptpn_parser)─────────► PTPN ───────────────────► analysis
+.rtsl ─parse/validate/lower(ptpn_dsl)──► TDG (in process) ─────────────────────────────────┘
+.ptpn source ─parse(ptpn_parser)────────────────────────────────────► PTPN ────────────► analysis
 analysis = ptpn_dbm → ptpn_reachability → ptpn_metrics, + ptpn_reductions (cone), ptpn_allocation
+CLI = ptpn_cli (src/cli, CLI11 wiring) → ptpn_app (src/app, CLI-free pipelines) → core libraries
 ```
 
-`src/lower/convert/` is a facade (`ptpn_convert`) routing TDG → {PTPN, Romeo, PToPNer} with PTPN as the canonical hub.
-
-**RTSL front-end (`src/dsl/`):** `.rtsl` → lexer → panic-mode parser → semantic validation → in-process lowering to `model::TDG` → the shared `tdg2pn → analysis` path. No JSON text round-trip. `dsl::SourceMap` is a side table (structured subject → byte-accurate span) used to backfill `location` in diagnostics without polluting the TDG model. `ptpn check` stops after validation; lowering support-class guards (`E-UNS-001`) and missing measured intervals (`E-VAL-213`) are reported by `ptpn rtsl`/`ptpn allocate`. `tools/llm measure` consumes the `check` envelope's `result.pending_measurements` and rewrites the `time` attribute in the `.rtsl` source. Diagnostics are opt-in: `--diagnostics json` / `--diagnostics-file PATH` route stdout to the versioned envelope and switch to the `2/3/4/5/6` exit-code mapping (protocol in `docs/diagnostics.md`); without them streams and `0`/`1` exit codes stay legacy.
+**RTSL front-end (`src/dsl/`):** `.rtsl` → lexer → panic-mode parser → semantic validation → in-process lowering to `model::TDG` → the shared `tdg2pn → analysis` path. No JSON text round-trip. `dsl::SourceMap` is a side table (structured subject → byte-accurate span) used to backfill `location` in diagnostics without polluting the TDG model. `ptpn check` stops after validation; lowering support-class guards (`E-UNS-001`) and missing measured intervals (`E-VAL-213`) are reported by `ptpn rtsl`/`ptpn allocate`. `tools/llm measure` consumes the `check` envelope's `result.pending_measurements` and rewrites the `time` attribute in the `.rtsl` source.
 
 ### State-class analysis core (`src/analysis/`)
 
@@ -86,26 +75,27 @@ A `FiringRule` hierarchy computes the admissible selected active set per state c
 - `EdfFiringRule` / `FifoFiringRule` — per-job release clocks; statically partitioned multi-core
 - `LlfFiringRule` — event-driven LLF (laxity clocks), **not** classical continuous-time LLF; deterministic execution segments only
 
-EDF/FIFO/LLF have an explicit **supported class**: static core partition, `cores_per_cpu == 1`, one in-flight job per task, no locks, no dependency-driven releases. Unsupported models are rejected explicitly (enforced in lowering and re-checked when the rule indexes the net) — see `docs/ptopner/scheduling-semantics.md` for the per-policy sections.
+EDF/FIFO/LLF have an explicit **supported class**: static core partition, `cores_per_cpu == 1`, one in-flight job per task, no locks, no dependency-driven releases. Unsupported models are rejected explicitly (enforced in lowering and re-checked when the rule indexes the net).
 
 ### Models and CLI
 
 - `src/model/tdg.h` — TDG (tasks, fork/join, locks, dependencies, periodic release, `allowed_cores`, WCET provenance); format in `docs/json_format.md`
 - `src/model/petri.h` — PTPN: `Transition` carries `TimeInterval`, `priority`, `core` (−1 = control), `suspendable`; `Marking` is `vector<int>`
-- `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; spec in `docs/rtsl-spec.md`
-- `src/app/main.cpp` — CLI11 subcommands `tdg`, `rtsl`, `check`, `ptpn`, `allocate`, `export romeo|ptopner`; options and defaults are documented in the README tables
-- `src/app/pipeline.cpp` — analysis pipeline (`run_ptpn_postprocess`); also compiled into `ptpn_test` to expose `write_wcet_json`
+- `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is the RTSL workflow section of `docs/usage.md` and `example/introduction/demo.rtsl`
+- `src/cli/` — CLI11 layer (namespace `cli`): `main.cpp` (envelope scaffolding + dispatch), `command.h`, `option_groups.{h,cpp}`, and one file per subcommand under `commands/` (`tdg`, `rtsl`, `check`, `ptpn`, `allocate`)
+- `src/app/` — application layer (namespace `app`, no CLI11): `pipeline.{h,cpp}` (`run_*_pipeline`, `run_allocation`, `write_wcet_json`, `print_legacy_diagnostics`) and `check_cmd.{h,cpp}`; option structs live in `pipeline.h`
 
-TDG→PTPN lowering rules: `docs/rule.md`. Metrics schema/definitions: `docs/ptopner/metrics.md`; symbol index: `docs/ptopner/symbol-index.md`.
+User-facing docs live in `docs/` (`install.md`, `usage.md`, `json_format.md`); the remaining spec documents were deliberately removed in the Oct 2026 cleanup — do not re-add them without asking.
 
 ## Conventions and gotchas
 
-- **`run.py` regex-parses `[STATS]` log lines** emitted by the analyzer (SCG build stats, lowering ms, etc.). Changing the text of those log lines breaks `run.py` silently — update `RE_*` patterns in `run.py` together with any format change.
+- **`example/run.py` regex-parses `[STATS]` log lines** emitted by the analyzer (SCG build stats, lowering ms, etc.). Changing the text of those log lines breaks `run.py` silently — update `RE_*` patterns in `example/run.py` together with any format change.
 - **Diagnostics are opt-in:** `--diagnostics json` / `--diagnostics-file PATH` switch `tdg`/`rtsl`/`check`/`ptpn`/`allocate` to the versioned envelope with exit codes `2/3/4/5/6` and move logs (including `[STATS]`) to stderr. Without them the legacy streams and `0`/`1` exit codes apply. `tools/llm measure` and the RTSL repair loop depend on the engaged form.
 - **RTSL time is milliseconds:** RTSL inputs are normalized so one engine tick = 1 ms (bare integers follow `time_unit`; `us` is rejected). TDG JSON integers remain unit-agnostic engine ticks.
 - Metrics JSON carries an `exact` flag: `false` under symmetry reduction, extrapolation, or horizon truncation, and `wcrt_lb` is omitted where the analysis is only an upper bound. Preserve that contract when touching metrics code.
 - Tests map one `test_<concern>.cpp` per concern; policy tests exist for both single- and multi-core (`test_edf.cpp` + `test_edf_multicore.cpp`, etc.). Reuse `tdg_test_helpers.h` (`load_tdg`) rather than hand-parsing JSON in tests.
-- Commit style is conventional commits (`feat(scheduling): ...`, `docs: ...`); the `style:` prefix is used for clang-format sweeps.
+- Commit style is conventional commits (`feat(scheduling): ...`, `docs: ...`).
 - `.gitignore` excludes `*.json`/`*.dot`/`*.ppn`/`*.ptpn` broadly; `test/golden/**` is explicitly re-included — keep golden fixtures committed.
-- Namespaces are lowercase (`state_class`, `petri`, `app`, `converter`, `ptopner_export`, `romeo`); analysis code lives in `namespace state_class`.
-- `tools/PToPNer` and `tools/romeo-2t` are git submodules (reference material only).
+- Namespaces are lowercase (`state_class`, `petri`, `app`, `cli`, `dsl`, `converter`); analysis code lives in `namespace state_class`.
+- There is no `.clang-format` config and no CI format gate (both were removed deliberately). Match the surrounding code style when editing.
+- `example/` holds `build.py`/`run.py` plus all example models; `docs/Dockerfile` builds with apt-installed system Boost (no vcpkg).
