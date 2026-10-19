@@ -161,6 +161,20 @@ target_link_libraries(ptpn_diagnostics
     nlohmann_json::nlohmann_json
 )
 
+# RTSL front-end: lexer, panic-mode parser and semantic validation for the
+# task-dependency DSL (docs/rtsl-spec.md). Phase 2a stops at validation; no
+# lowering is performed by this library.
+add_library(ptpn_dsl STATIC
+    src/dsl/lexer.cpp
+    src/dsl/parser.cpp
+    src/dsl/validate.cpp
+)
+target_link_libraries(ptpn_dsl
+    PUBLIC
+    ptpn_diagnostics
+    ptpn_types
+)
+
 add_library(ptpn_json STATIC
     src/parse/json.cpp
 )
@@ -363,6 +377,7 @@ target_link_libraries(PTPN_core
     INTERFACE
     ptpn_types
     ptpn_diagnostics
+    ptpn_dsl
     ptpn_json
     ptpn_tdg
     ptpn_petri
@@ -389,6 +404,7 @@ endif()
 # Main executable
 add_executable(ptpn
     src/app/main.cpp
+    src/app/check_cmd.cpp
     src/app/pipeline.cpp
 )
 target_include_directories(ptpn PUBLIC src)
