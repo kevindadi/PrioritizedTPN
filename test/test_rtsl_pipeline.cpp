@@ -2,6 +2,8 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+
+#include "cli_test_helpers.h"
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
@@ -17,103 +19,14 @@ namespace {
 #  define PTPN_CLI_PATH "ptpn"
 #endif
 
-std::string shell_quote(const std::string& value) {
-  std::string quoted = "'";
-  for (const char character : value) {
-    if (character == '\'') {
-      quoted += "'\\''";
-    } else {
-      quoted += character;
-    }
-  }
-  quoted += "'";
-  return quoted;
-}
-
-std::string read_file(const std::string& path) {
-  std::ifstream input(path, std::ios::binary);
-  std::ostringstream contents;
-  contents << input.rdbuf();
-  return contents.str();
-}
+using namespace ptpn_test;
 
 std::string test_artifact_name(const std::string& suffix) {
-  std::string name = ::testing::UnitTest::GetInstance()->current_test_info()->name();
-  for (char& character : name) {
-    const bool safe = (character >= 'a' && character <= 'z') ||
-                      (character >= 'A' && character <= 'Z') ||
-                      (character >= '0' && character <= '9') || character == '_';
-    if (!safe) {
-      character = '_';
-    }
-  }
-  static int counter = 0;
-  return ::testing::TempDir() + "ptpn_rtsl_pipe_" + name + "_" + std::to_string(counter++) + suffix;
+  return ptpn_test::test_artifact_name("pipe_", suffix);
 }
 
 std::string write_temp_file(const std::string& suffix, const std::string& contents) {
-  const std::string path = test_artifact_name(suffix);
-  std::ofstream output(path, std::ios::binary);
-  output << contents;
-  output.close();
-  return path;
-}
-
-int exit_code_from_status(int status) {
-#if defined(WIFEXITED) && defined(WEXITSTATUS)
-  return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-#else
-  return status;
-#endif
-}
-
-struct CliResult {
-  int exit_code = -1;
-  std::string stdout_text;
-  std::string stderr_text;
-};
-
-CliResult run_cli(const std::vector<std::string>& arguments) {
-  const std::string stdout_path = test_artifact_name(".stdout");
-  const std::string stderr_path = test_artifact_name(".stderr");
-
-  std::string command = shell_quote(PTPN_CLI_PATH);
-  for (const std::string& argument : arguments) {
-    command += " " + shell_quote(argument);
-  }
-  command += " >" + shell_quote(stdout_path) + " 2>" + shell_quote(stderr_path);
-
-  const int status = std::system(command.c_str());
-  CliResult result;
-  result.exit_code = exit_code_from_status(status);
-  result.stdout_text = read_file(stdout_path);
-  result.stderr_text = read_file(stderr_path);
-  std::filesystem::remove(stdout_path);
-  std::filesystem::remove(stderr_path);
-  return result;
-}
-
-nlohmann::json parse_envelope(const std::string& text) {
-  nlohmann::json envelope = nlohmann::json::parse(text, nullptr, false);
-  EXPECT_FALSE(envelope.is_discarded());
-  EXPECT_TRUE(envelope.is_object());
-  return envelope;
-}
-
-const nlohmann::json* find_diagnostic(const nlohmann::json& envelope, const std::string& code) {
-  if (!envelope.contains("diagnostics") || !envelope.at("diagnostics").is_array()) {
-    return nullptr;
-  }
-  for (const auto& diagnostic : envelope.at("diagnostics")) {
-    if (diagnostic.value("code", "") == code) {
-      return &diagnostic;
-    }
-  }
-  return nullptr;
-}
-
-bool has_diagnostic(const nlohmann::json& envelope, const std::string& code) {
-  return find_diagnostic(envelope, code) != nullptr;
+  return ptpn_test::write_temp_file("pipe_", suffix, contents);
 }
 
 const char* const kAppendix = R"(system demo {
@@ -393,4 +306,42 @@ TEST(RtslPipelineCli, CommonPipelineOptionsAreAvailableOnRtsl) {
                "--export-metrics", metrics_path});
   ASSERT_EQ(result.exit_code, 0) << result.stderr_text;
   EXPECT_FALSE(read_file(metrics_path).empty());
+}
+
+TEST(RtslPipelineCli, UnsupportedClassStillWritesRequestedTdgExport) {
+  // TDG/WCET exports run before TDG->PTPN lowering, so a supported-class
+  // failure (exit 4) does not discard the materialized TDG.
+  const std::string path = write_temp_file(".rtsl", R"(system s {
+  cpus 2
+  cores_per_cpu 1
+  policy edf
+  task a: normal {
+    core 0
+    locks mutex1
+    time [ [1, 1], [1, 2], [1, 1] ] estimated
+  }
+  start a
+}
+)");
+  const std::string tdg_path = test_artifact_name(".tdg.json");
+  const CliResult result =
+      run_cli({"rtsl", "-f", path, "--export-tdg", tdg_path, "--diagnostics", "json"});
+  ASSERT_EQ(result.exit_code, 4) << result.stderr_text;
+  EXPECT_TRUE(std::filesystem::exists(tdg_path));
+  EXPECT_EQ(read_file(tdg_path).front(), '{');
+  const nlohmann::json envelope = parse_envelope(result.stdout_text);
+  EXPECT_NE(find_diagnostic(envelope, "E-UNS-001"), nullptr);
+}
+
+TEST(RtslPipelineCli, AllocateAcceptsTdgJsonInput) {
+  const std::string report_path = test_artifact_name(".allocation.json");
+  const CliResult result =
+      run_cli({"allocate", "-f", "example/p-bench/initial.json", "-o", report_path,
+               "--max-candidates", "1", "--candidate-max-states", "10000", "--diagnostics",
+               "json"});
+  ASSERT_EQ(result.exit_code, 0) << result.stderr_text;
+  EXPECT_TRUE(std::filesystem::exists(report_path));
+  const nlohmann::json envelope = parse_envelope(result.stdout_text);
+  EXPECT_EQ(envelope.at("ok"), true);
+  EXPECT_EQ(envelope.at("exit_code"), 0);
 }
