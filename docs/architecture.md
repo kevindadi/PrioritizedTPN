@@ -46,25 +46,22 @@ links what it needs:
 
 | File | Responsibility | Library |
 |---|---|---|
-| `common.{h,cpp}` | `PipelineOptions`, `ExportTargets`, `DiagnosticsOptions`, legacy diagnostic rendering, process memory | `ptpn_app_common` |
-| `rtsl_input.{h,cpp}` | Read, lex, parse, validate and lower RTSL; returns the TDG with its `SourceMap` | `ptpn_app_input` |
-| `tdg_input.{h,cpp}` | TDG JSON loading and `--policy` override | `ptpn_app_input` |
+| `common.{h,cpp}` | `PipelineOptions`, `ExportTargets`, `DiagnosticsOptions`, legacy diagnostic rendering, process memory, timing/log helpers | `ptpn_app_support` |
+| `input.{h,cpp}` | Read, lex, parse, validate and lower RTSL; TDG JSON loading and `--policy` override | `ptpn_app_support` |
 | `check_cmd.{h,cpp}` | `ptpn check`: parse/validate only; never lowers | `ptpn_app_check` |
-| `lowering.{h,cpp}` | TDG→PTPN plus `E-UNS-001`/`E-INT-003` adaptation and SourceMap lookup | `ptpn_app_analysis` |
-| `analysis_diagnostics.{h,cpp}` | Translate metrics signals to `R-ANA-*` / `E-PERF-*` and `result.analysis` | `ptpn_app_analysis` |
-| `analysis.{h,cpp}` | Analysis orchestration: cone/full graph, metrics, SCG/PTPN DOT, total `[STATS]` | `ptpn_app_analysis` |
-| `exports.{h,cpp}` | WCET JSON and "any export requested" predicate | `ptpn_app_analysis` |
+| `lowering.{h,cpp}` | TDG→PTPN plus `E-UNS-001`/`E-INT-003` adaptation and SourceMap lookup | `ptpn_app_pipelines` |
+| `analysis.{h,cpp}` | Analysis orchestration (cone/full graph, metrics, DOT), result diagnostics, WCET export | `ptpn_app_pipelines` |
+| `pipelines.{h,cpp}` | `run_tdg_pipeline`, `run_rtsl_pipeline`, `run_ptpn_pipeline`; public facade | `ptpn_app_pipelines` |
 | `allocation_cmd.{h,cpp}` | `ptpn allocate`: input dispatch, search driver, report summary | `ptpn_app_allocation` |
-| `pipelines.{h,cpp}` via `pipeline.h` | `run_tdg_pipeline`, `run_rtsl_pipeline`, `run_ptpn_pipeline` | `ptpn_app` |
 
-`check_cmd` depends on `ptpn_app_input` and `ptpn_app_common` only; it does not
-link lowering, analysis, or allocation. `ptpn rtsl` and `ptpn tdg` share
-`run_tdg_analysis`, so their analysis and export semantics cannot diverge.
-`.ptpn` input shares `run_ptpn_postprocess` with them.
+`check_cmd` depends on `ptpn_app_support` only; it does not link lowering,
+analysis, or allocation. `ptpn rtsl` and `ptpn tdg` share `run_tdg_analysis`,
+so their analysis and export semantics cannot diverge. `.ptpn` input shares
+`run_ptpn_postprocess` with them.
 
 ### RTSL input contract
 
-`app/rtsl_input.h` exposes the boundary explicitly:
+`app/input.h` exposes the boundary explicitly:
 
 - `read_rtsl_source` — file read only, no diagnostics;
 - `parse_and_validate_rtsl` — lex/parse/validate and returns a `RtslDocument`
@@ -101,7 +98,7 @@ ptpn_dbm → ptpn_reachability → ptpn_metrics, ptpn_reductions
         │
 ptpn_export, ptpn_allocation
         │
-ptpn_app_common → ptpn_app_input → {ptpn_app_check, ptpn_app_analysis, ptpn_app_allocation, ptpn_app}
+ptpn_app_support → {ptpn_app_check, ptpn_app_pipelines, ptpn_app_allocation}
         │
 ptpn_cli → ptpn executable
 ```

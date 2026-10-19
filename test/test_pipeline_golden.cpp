@@ -9,7 +9,7 @@
 
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
-#include "app/pipeline.h"
+#include "app/pipelines.h"
 #include "export/export_dot.h"
 #include "export/scg_dot.h"
 #include "lower/tdg2pn/tdg2pn.h"

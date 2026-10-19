@@ -313,34 +313,25 @@ target_link_libraries(ptpn_allocation
 )
 
 # Application layer: CLI-free pipelines and command entry points. The layer is
-# split by responsibility so `check` only needs the RTSL front-end, and the
-# pipeline/analysis/allocation targets never expose CLI11.
+# split into four cohesive targets so `check` only needs the input/support
+# layer, while pipeline, analysis and allocation stay out of its link interface.
 #
-# Shared options, legacy diagnostics rendering and process memory accounting.
-add_library(ptpn_app_common STATIC
+# Shared options, legacy diagnostics rendering, memory accounting and the
+# timing/log helpers.
+add_library(ptpn_app_support STATIC
     src/app/common.cpp
+    src/app/input.cpp
 )
-target_include_directories(ptpn_app_common PUBLIC src)
-target_link_libraries(ptpn_app_common
+target_include_directories(ptpn_app_support PUBLIC src)
+target_link_libraries(ptpn_app_support
     PUBLIC
     ptpn_diagnostics
-    ptpn_types
-)
-
-# Input front-ends: RTSL (lex/parse/validate/lower) and TDG JSON loading.
-# They share only the model/diagnostics layers.
-add_library(ptpn_app_input STATIC
-    src/app/rtsl_input.cpp
-    src/app/tdg_input.cpp
-)
-target_link_libraries(ptpn_app_input
-    PUBLIC
-    ptpn_app_common
     ptpn_dsl
     ptpn_tdg
+    ptpn_types
+    spdlog::spdlog
     PRIVATE
     ptpn_json
-    spdlog::spdlog
 )
 
 # `ptpn check`: parse and validate only; deliberately independent of lowering,
@@ -350,11 +341,8 @@ add_library(ptpn_app_check STATIC
 )
 target_link_libraries(ptpn_app_check
     PUBLIC
-    ptpn_app_common
+    ptpn_app_support
     PRIVATE
-    ptpn_app_input
-    ptpn_dsl
-    ptpn_diagnostics
     nlohmann_json::nlohmann_json
 )
 # The check path must stay independent of lowering, analysis and allocation.
@@ -363,22 +351,23 @@ if(_ptpn_app_check_interface MATCHES "ptpn_(allocation|lowering|metrics|reachabi
     message(FATAL_ERROR "ptpn_app_check must not pull analysis/allocation dependencies")
 endif()
 
-# Analysis orchestration, analysis-result diagnostics, lowering adaptation and
-# the WCET export shared by the TDG and RTSL paths.
-add_library(ptpn_app_analysis STATIC
+# Lowering adaptation, analysis orchestration/result diagnostics, WCET export
+# and the TDG/RTSL/PTPN pipeline entry points.
+add_library(ptpn_app_pipelines STATIC
     src/app/analysis.cpp
-    src/app/analysis_diagnostics.cpp
-    src/app/exports.cpp
     src/app/lowering.cpp
+    src/app/pipelines.cpp
 )
-target_link_libraries(ptpn_app_analysis
+target_link_libraries(ptpn_app_pipelines
     PUBLIC
-    ptpn_app_common
+    ptpn_app_support
     PRIVATE
     ptpn_dsl
     ptpn_export
+    ptpn_json
     ptpn_lowering
     ptpn_metrics
+    ptpn_parser
     ptpn_petri
     ptpn_reachability
     ptpn_reductions
@@ -395,26 +384,9 @@ add_library(ptpn_app_allocation STATIC
 target_link_libraries(ptpn_app_allocation
     PUBLIC
     ptpn_allocation
-    ptpn_app_common
+    ptpn_app_support
     PRIVATE
-    ptpn_app_input
     ptpn_json
-    ptpn_tdg
-    spdlog::spdlog
-)
-
-# Public application entry points for the TDG/RTSL/PTPN pipelines.
-add_library(ptpn_app STATIC
-    src/app/pipelines.cpp
-)
-target_link_libraries(ptpn_app
-    PUBLIC
-    ptpn_app_common
-    PRIVATE
-    ptpn_app_analysis
-    ptpn_app_input
-    ptpn_json
-    ptpn_parser
     ptpn_tdg
     spdlog::spdlog
 )
@@ -437,12 +409,10 @@ target_link_libraries(PTPN_core
     ptpn_metrics
     ptpn_reductions
     ptpn_allocation
-    ptpn_app_common
-    ptpn_app_input
+    ptpn_app_support
     ptpn_app_check
-    ptpn_app_analysis
+    ptpn_app_pipelines
     ptpn_app_allocation
-    ptpn_app
     spdlog::spdlog
 )
 
@@ -459,7 +429,7 @@ add_library(ptpn_cli STATIC
 target_include_directories(ptpn_cli PUBLIC src)
 target_link_libraries(ptpn_cli
     PUBLIC
-    ptpn_app
+    ptpn_app_pipelines
     ptpn_app_allocation
     ptpn_app_check
     CLI11::CLI11

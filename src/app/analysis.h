@@ -19,6 +19,10 @@ namespace ptpn {
 class Diagnostics;
 }
 
+namespace state_class {
+struct MetricsReport;
+}
+
 namespace tdg {
 class TDG;
 }
@@ -42,6 +46,30 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
                          std::chrono::high_resolution_clock::time_point pipeline_start,
                          size_t initial_memory, ptpn::Diagnostics* diagnostics = nullptr,
                          const dsl::SourceMap* source_map = nullptr);
+
+// True when at least one export path was requested.
+inline bool has_any_export(const ExportTargets& exports) {
+  return !exports.tdg_dot.empty() || !exports.tdg_json.empty() || !exports.wcet_json.empty() ||
+         !exports.ptpn_dot.empty() || !exports.scg_dot.empty() || !exports.metrics_json.empty();
+}
+
+// Writes the per-task WCET summary JSON (interval, segment count, and WCET
+// provenance) for `graph` to `output_path`. The top-level `all_certified` flag
+// is true only when every task's provenance kind is "certified". Returns false
+// if the file cannot be opened, written, flushed or closed.
+bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path);
+
+// Translates the metrics layer's signals into the diagnostics protocol:
+// - a decisive counterexample found in the explored prefix (deadlock, local
+//   deadlock, or wcrt_lb > deadline) is an analysis result (exit 6);
+// - truncation without a counterexample is a performance warning (exit 5);
+// - an upper-bound `wcrt` exceeding the deadline is never a counterexample.
+//
+// Also fills `result.analysis` when a collector is provided.
+void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
+                                 const state_class::MetricsReport& report,
+                                 bool max_states_truncated, bool horizon_truncated,
+                                 size_t max_states);
 
 }  // namespace app
 

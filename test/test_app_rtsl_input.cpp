@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "app/rtsl_input.h"
+#include "app/input.h"
 #include "cli_test_helpers.h"
 #include "common/diagnostics.h"
 #include "dsl/validate.h"

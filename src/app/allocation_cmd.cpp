@@ -9,9 +9,8 @@
 
 #include <spdlog/spdlog.h>
 
-#include "app/logging.h"
-#include "app/rtsl_input.h"
-#include "app/tdg_input.h"
+#include "app/common.h"
+#include "app/input.h"
 #include "common/diagnostics.h"
 #include "model/tdg.h"
 #include "parse/json.h"

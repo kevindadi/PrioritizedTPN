@@ -1,4 +1,4 @@
-#include "app/pipeline.h"
+#include "app/pipelines.h"
 
 #include <iostream>
 #include <optional>
@@ -8,10 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "app/analysis.h"
-#include "app/exports.h"
-#include "app/logging.h"
-#include "app/rtsl_input.h"
-#include "app/tdg_input.h"
+#include "app/input.h"
 #include "common/diagnostics.h"
 #include "model/tdg.h"
 #include "parse/json.h"

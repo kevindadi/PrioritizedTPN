@@ -1,5 +1,5 @@
-#ifndef APP_RTSL_INPUT_H
-#define APP_RTSL_INPUT_H
+#ifndef APP_INPUT_H
+#define APP_INPUT_H
 
 #include <optional>
 #include <string>
@@ -8,6 +8,11 @@
 #include "dsl/source_map.h"
 #include "dsl/validate.h"
 #include "model/tdg.h"
+#include "model/types.h"
+
+namespace parse {
+class Parser;
+}
 
 namespace ptpn {
 class Diagnostics;
@@ -58,6 +63,15 @@ std::optional<RtslLoadResult> load_tdg_from_rtsl(const std::string& input_file,
                                                  dsl::ValidationOptions::Mode mode,
                                                  ptpn::Diagnostics& diagnostics);
 
+// Parses and validates TDG JSON, then fills `tdg` from the parsed graph.
+// Returns 0 on success and 1 on failure; parser diagnostics are forwarded to
+// `diagnostics` once after parse and once after validation, matching the
+// legacy output ordering.
+int load_tdg_from_json(const std::string& input_file, tdg::TDG& tdg, parse::Parser& parser,
+                       ptpn::Diagnostics* diagnostics = nullptr);
+
+// Applies `--policy` to the loaded TDG (no-op when unset).
+void apply_policy_override(tdg::TDG& tdg, const std::optional<SchedulePolicy>& policy_override);
 }  // namespace app
 
-#endif  // APP_RTSL_INPUT_H
+#endif  // APP_INPUT_H
