@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "common/diagnostics.h"
 #include "model/types.h"
 
 namespace parse {
@@ -128,7 +129,15 @@ class Parser {
   ValidationResult validate() const;
   std::string to_dot_string() const;
 
+  // Structured diagnostics collected by the most recent parse/validate call.
+  // The string-based ParseResult/ValidationResult APIs are unchanged; this
+  // collector is the machine-readable view used by the CLI envelope.
+  const ptpn::Diagnostics& diagnostics() const {
+    return diagnostics_;
+  }
+
  private:
+  ParseResult parse_content(const std::string& json_content);
   void parse_graph_object(const nlohmann::json& graph_obj);
   void parse_configuration_object(const nlohmann::json& config);
   void parse_nodes_array(const nlohmann::json& nodes_array);
@@ -137,6 +146,8 @@ class Parser {
 
   JsonGraph graph_;
   std::string original_json_;
+  std::string source_name_;
+  mutable ptpn::Diagnostics diagnostics_;
 };
 
 std::string node_to_dot_label(const NodeType& node);

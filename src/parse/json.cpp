@@ -114,6 +114,30 @@ std::string build_node_label(const parse::JsonNode& node) {
   return oss.str();
 }
 
+// Converts nlohmann's 1-based byte index (see parse_error::byte) into a
+// 1-based line/column pair over the in-memory source text.
+ptpn::SourceLocation location_from_byte(const std::string& text, std::size_t byte,
+                                        const std::string& file) {
+  ptpn::SourceLocation location;
+  location.file = file;
+  std::size_t offset = byte > 0 ? byte - 1 : 0;
+  if (offset > text.size()) {
+    offset = text.size();
+  }
+  location.line = 1;
+  location.column = 1;
+  for (std::size_t i = 0; i < offset; ++i) {
+    if (text[i] == '\n') {
+      ++location.line;
+      location.column = 1;
+    } else {
+      ++location.column;
+    }
+  }
+  location.span = 1;
+  return location;
+}
+
 // Parses a single [min, max] time interval from a JSON array element.
 std::optional<std::pair<int, int>> parse_time_interval(const json& time_range) {
   if (!time_range.is_array() || time_range.size() != 2) {
@@ -201,17 +225,30 @@ ParseResult Parser::parse_file(const std::string& file_path) {
   std::ifstream file(file_path);
   if (!file.is_open()) {
     spdlog::error("[JSON] Failed to open file: {}", file_path);
+    diagnostics_.clear();
+    ptpn::SourceLocation location;
+    location.file = file_path;
+    diagnostics_.add("E-SYN-002", "Failed to open file: " + file_path, std::nullopt, location,
+                     "check that the path exists and is readable");
     return {false, "Failed to open file: " + file_path, 0};
   }
 
   std::stringstream buffer;
   buffer << file.rdbuf();
   original_json_ = buffer.str();
+  source_name_ = file_path;
+  diagnostics_.clear();
 
-  return parse_string(original_json_);
+  return parse_content(original_json_);
 }
 
 ParseResult Parser::parse_string(const std::string& json_content) {
+  source_name_.clear();
+  diagnostics_.clear();
+  return parse_content(json_content);
+}
+
+ParseResult Parser::parse_content(const std::string& json_content) {
   spdlog::info("[JSON] Parsing JSON content ({} characters)", json_content.size());
 
   graph_ = JsonGraph{};
@@ -243,9 +280,20 @@ ParseResult Parser::parse_string(const std::string& json_content) {
 
   } catch (const json::parse_error& e) {
     spdlog::error("[JSON] Parse error: {}", e.what());
+    diagnostics_.add("E-SYN-001", e.what(), std::nullopt,
+                     location_from_byte(json_content, e.byte, source_name_),
+                     "fix the JSON syntax near the reported line and column");
     return {false, e.what(), static_cast<int>(e.byte)};
   } catch (const std::exception& e) {
     spdlog::error("[JSON] Error: {}", e.what());
+    std::optional<ptpn::SourceLocation> location;
+    if (!source_name_.empty()) {
+      ptpn::SourceLocation file_location;
+      file_location.file = source_name_;
+      location = std::move(file_location);
+    }
+    diagnostics_.add("E-VAL-033", e.what(), std::nullopt, std::move(location),
+                     "check that every JSON field has the expected type and shape");
     return {false, e.what(), 0};
   }
 }
@@ -341,20 +389,40 @@ JsonNode Parser::parse_node_object(const json& node_obj) {
 
 ValidationResult Parser::validate() const {
   ValidationResult result;
+  diagnostics_.remove_category("validation");
+
+  const auto add_error = [&](const std::string& code, const std::string& message,
+                             std::optional<std::string> subject = std::nullopt,
+                             std::optional<std::string> fix = std::nullopt) {
+    result.add_error(message);
+    diagnostics_.add(code, message, std::move(subject), std::nullopt, std::move(fix));
+  };
+  const auto add_warning = [&](const std::string& code, const std::string& message,
+                               std::optional<std::string> subject = std::nullopt,
+                               std::optional<std::string> fix = std::nullopt) {
+    result.add_warning(message);
+    diagnostics_.add_warning(code, message, std::move(subject), std::nullopt, std::move(fix));
+  };
 
   if (graph_.task_place_capacity < 1) {
-    result.add_error("task_place_capacity must be >= 1, got " +
-                     std::to_string(graph_.task_place_capacity));
+    add_error("E-VAL-001",
+              "task_place_capacity must be >= 1, got " + std::to_string(graph_.task_place_capacity),
+              "config:task_place_capacity",
+              "set configuration.task_place_capacity to 1 (one in-flight job per task)");
   }
 
   const std::set<std::string> valid_types = {kNodeTypeTask, kNodeTypeFork, kNodeTypeJoin,
                                              kNodeTypeEmpty};
   const std::set<std::string> defined_locks(graph_.shared_locks.begin(), graph_.shared_locks.end());
   if (graph_.num_cpus < 1) {
-    result.add_error("num_cpus must be >= 1, got " + std::to_string(graph_.num_cpus));
+    add_error("E-VAL-002", "num_cpus must be >= 1, got " + std::to_string(graph_.num_cpus),
+              "config:num_cpus", "set configuration.num_cpus to at least 1");
   }
   if (graph_.cores_per_cpu < 1) {
-    result.add_error("cores_per_cpu must be >= 1, got " + std::to_string(graph_.cores_per_cpu));
+    add_error("E-VAL-003",
+              "cores_per_cpu must be >= 1, got " + std::to_string(graph_.cores_per_cpu),
+              "config:cores_per_cpu",
+              "set configuration.cores_per_cpu to a positive value (1 is the supported value)");
   }
   // Lowering creates exactly num_cpus real-core resource places. The
   // `cores_per_cpu` value is a per-core capacity parameter, not an additional
@@ -366,61 +434,80 @@ ValidationResult Parser::validate() const {
 
   for (const auto& node : graph_.nodes) {
     if (!node_ids.insert(node.id).second) {
-      result.add_error("Duplicate node ID: " + node.id);
+      add_error("E-VAL-004", "Duplicate node ID: " + node.id, "node:" + node.id,
+                "rename one of the duplicate nodes or remove the duplicate");
     }
     node_types[node.id] = node.type;
 
     if (valid_types.count(node.type) == 0) {
-      result.add_error("Unknown node type: " + node.type + " for node " + node.id);
+      add_error("E-VAL-005", "Unknown node type: " + node.type + " for node " + node.id,
+                "node:" + node.id, "use one of: task, fork, join, empty");
     }
 
     if (node.type == kNodeTypeTask && (node.core < 0 || node.core > max_core)) {
-      result.add_error("Invalid core number for node " + node.id + ": " +
-                       std::to_string(node.core) + " (valid range: 0-" + std::to_string(max_core) +
-                       ")");
+      add_error("E-VAL-006",
+                "Invalid core number for node " + node.id + ": " + std::to_string(node.core) +
+                    " (valid range: 0-" + std::to_string(max_core) + ")",
+                "task:" + node.id,
+                "set core to an integer in [0, num_cpus-1] (or remove it to use core 0)");
     }
 
     if (node.type == kNodeTypeTask && node.has_deadline && node.deadline < 0) {
-      result.add_error("Invalid deadline for node " + node.id + ": " +
-                       std::to_string(node.deadline) + " (must be >= 0)");
+      add_error("E-VAL-007",
+                "Invalid deadline for node " + node.id + ": " + std::to_string(node.deadline) +
+                    " (must be >= 0)",
+                "task:" + node.id, "set deadline to a non-negative value or remove the field");
     }
 
     if (node.type == kNodeTypeTask && node.has_allowed_cores) {
       if (node.allowed_cores.empty()) {
-        result.add_error("Node " + node.id + " has an empty allowed_cores array");
+        add_error("E-VAL-008", "Node " + node.id + " has an empty allowed_cores array",
+                  "task:" + node.id, "list at least one core in allowed_cores or remove the field");
       }
 
       std::set<int> seen_cores;
       for (const int allowed_core : node.allowed_cores) {
         if (allowed_core < 0 || allowed_core > max_core) {
-          result.add_error("Invalid allowed core for node " + node.id + ": " +
-                           std::to_string(allowed_core) + " (valid range: 0-" +
-                           std::to_string(max_core) + ")");
+          add_error("E-VAL-009",
+                    "Invalid allowed core for node " + node.id + ": " +
+                        std::to_string(allowed_core) + " (valid range: 0-" +
+                        std::to_string(max_core) + ")",
+                    "task:" + node.id, "list only cores in [0, num_cpus-1] in allowed_cores");
         }
         if (!seen_cores.insert(allowed_core).second) {
-          result.add_error("Duplicate allowed core for node " + node.id + ": " +
-                           std::to_string(allowed_core));
+          add_error(
+              "E-VAL-010",
+              "Duplicate allowed core for node " + node.id + ": " + std::to_string(allowed_core),
+              "task:" + node.id, "remove duplicate entries from allowed_cores");
         }
       }
 
       if (!node.allowed_cores.empty() && node.has_core && seen_cores.count(node.core) == 0) {
-        result.add_error("Core " + std::to_string(node.core) + " of node " + node.id +
-                         " is not in its allowed_cores domain");
+        add_error("E-VAL-011",
+                  "Core " + std::to_string(node.core) + " of node " + node.id +
+                      " is not in its allowed_cores domain",
+                  "task:" + node.id,
+                  "include the task's core in allowed_cores or set core to an allowed one");
       }
     }
 
     if (node.type == kNodeTypeTask && !is_valid_wcet_kind(node.wcet_kind)) {
-      result.add_error("Invalid wcet_kind for node " + node.id + ": '" + node.wcet_kind +
-                       "' (expected model, certified, measured, or estimated)");
+      add_error("E-VAL-012",
+                "Invalid wcet_kind for node " + node.id + ": '" + node.wcet_kind +
+                    "' (expected model, certified, measured, or estimated)",
+                "task:" + node.id, "use model, certified, measured, or estimated");
     }
 
     for (const auto& lock : node.locks) {
       if (defined_locks.count(lock) == 0) {
-        result.add_error("Node " + node.id + " uses undefined lock: " + lock);
+        add_error("E-VAL-013", "Node " + node.id + " uses undefined lock: " + lock, "lock:" + lock,
+                  "add the lock to configuration.shared_locks or remove it from the task");
       }
       if (get_lock_type(lock) == LockType::UNKNOWN) {
-        result.add_error("Node " + node.id + " uses invalid lock prefix '" + lock +
-                         "': must start with 'mutex' or 'spin'");
+        add_error("E-VAL-014",
+                  "Node " + node.id + " uses invalid lock prefix '" + lock +
+                      "': must start with 'mutex' or 'spin'",
+                  "lock:" + lock, "rename the lock to start with 'mutex' or 'spin'");
       }
     }
 
@@ -428,16 +515,20 @@ ValidationResult Parser::validate() const {
       const int expected_count = calculate_time_interval_count(static_cast<int>(node.locks.size()));
       const int actual_count = static_cast<int>(node.time.size());
       if (actual_count != expected_count) {
-        result.add_error("Node " + node.id + " has " + std::to_string(node.locks.size()) +
-                         " lock(s) but " + std::to_string(actual_count) +
-                         " time interval(s) (expected " + std::to_string(expected_count) + ")");
+        add_error("E-VAL-015",
+                  "Node " + node.id + " has " + std::to_string(node.locks.size()) +
+                      " lock(s) but " + std::to_string(actual_count) +
+                      " time interval(s) (expected " + std::to_string(expected_count) + ")",
+                  "task:" + node.id,
+                  "provide 2*lock_count+1 time intervals (pre/CS/post per lock)");
       }
     }
 
     for (const auto& time_range : node.time) {
       if (time_range.first > time_range.second) {
-        result.add_error("Invalid time interval for node " + node.id + ": " +
-                         format_range(time_range));
+        add_error("E-VAL-016",
+                  "Invalid time interval for node " + node.id + ": " + format_range(time_range),
+                  "task:" + node.id, "ensure each interval is [min, max] with min <= max");
       }
     }
 
@@ -445,73 +536,91 @@ ValidationResult Parser::validate() const {
       // Fork/Join may carry a firing interval, a core, and a priority; locks
       // are still meaningless for a synchronisation transition.
       if (!node.locks.empty()) {
-        result.add_warning("Node " + node.id + " is " + node.type +
-                           " but declares locks (ignored)");
+        add_warning("E-VAL-028",
+                    "Node " + node.id + " is " + node.type + " but declares locks (ignored)",
+                    "node:" + node.id, "remove locks from fork/join nodes");
       }
       if (node.time.size() > 1) {
-        result.add_warning("Node " + node.id + " is " + node.type +
-                           " with multiple time intervals; only the first is "
-                           "used");
+        add_warning("E-VAL-029",
+                    "Node " + node.id + " is " + node.type +
+                        " with multiple time intervals; only the first is used",
+                    "node:" + node.id, "keep at most one time interval for a fork/join node");
       }
       if (node.has_core && node.core != -1 && (node.core < 0 || node.core > max_core)) {
-        result.add_error("Invalid core number for " + node.type + " node " + node.id + ": " +
-                         std::to_string(node.core) + " (valid: -1 for control core, or 0-" +
-                         std::to_string(max_core) + ")");
+        add_error("E-VAL-017",
+                  "Invalid core number for " + node.type + " node " + node.id + ": " +
+                      std::to_string(node.core) + " (valid: -1 for control core, or 0-" +
+                      std::to_string(max_core) + ")",
+                  "node:" + node.id, "use -1 (control core) or a core in [0, num_cpus-1]");
       }
     }
   }
 
   for (const auto& edge : graph_.edges) {
+    const std::string edge_subject = "edge:" + edge.source + "->" + edge.target;
     if (node_ids.count(edge.source) == 0) {
-      result.add_error("Edge references unknown source node: " + edge.source);
+      add_error("E-VAL-018", "Edge references unknown source node: " + edge.source, edge_subject,
+                "add a node with this id or fix the edge source");
     }
     if (node_ids.count(edge.target) == 0) {
-      result.add_error("Edge references unknown target node: " + edge.target);
+      add_error("E-VAL-019", "Edge references unknown target node: " + edge.target, edge_subject,
+                "add a node with this id or fix the edge target");
     }
   }
 
   for (const auto& start_task : graph_.start_tasks) {
     if (node_ids.count(start_task.task) == 0) {
-      result.add_error("Start task references unknown node: " + start_task.task);
+      add_error("E-VAL-020", "Start task references unknown node: " + start_task.task,
+                "task:" + start_task.task, "reference an existing node id");
       continue;
     }
     if (!is_task_type(node_types.at(start_task.task))) {
-      result.add_error("Start task must reference a task node: " + start_task.task);
+      add_error("E-VAL-021", "Start task must reference a task node: " + start_task.task,
+                "task:" + start_task.task, "reference a node with type 'task'");
       continue;
     }
     if (start_task.tokens < 0) {
-      result.add_error("Start task token count must be non-negative: " + start_task.task);
+      add_error("E-VAL-022", "Start task token count must be non-negative: " + start_task.task,
+                "task:" + start_task.task, "set tokens to a non-negative integer");
     }
     if (has_incoming_edge(graph_, start_task.task)) {
-      result.add_warning("Start task " + start_task.task + " has predecessor edges");
+      add_warning("E-VAL-030", "Start task " + start_task.task + " has predecessor edges",
+                  "task:" + start_task.task,
+                  "remove predecessor edges or remove the start binding");
     }
   }
 
   for (const auto& end_task : graph_.end_tasks) {
     if (node_ids.count(end_task) == 0) {
-      result.add_error("End task references unknown node: " + end_task);
+      add_error("E-VAL-023", "End task references unknown node: " + end_task, "task:" + end_task,
+                "reference an existing node id");
       continue;
     }
     if (!is_task_type(node_types.at(end_task))) {
-      result.add_error("End task must reference a task node: " + end_task);
+      add_error("E-VAL-024", "End task must reference a task node: " + end_task, "task:" + end_task,
+                "reference a node with type 'task'");
       continue;
     }
     if (has_outgoing_edge(graph_, end_task)) {
-      result.add_warning("End task " + end_task + " has successor edges");
+      add_warning("E-VAL-031", "End task " + end_task + " has successor edges", "task:" + end_task,
+                  "remove successor edges or remove the end binding");
     }
   }
 
   for (const auto& periodic_task : graph_.periodic_tasks) {
     if (node_ids.count(periodic_task.task) == 0) {
-      result.add_error("Periodic task references unknown node: " + periodic_task.task);
+      add_error("E-VAL-025", "Periodic task references unknown node: " + periodic_task.task,
+                "task:" + periodic_task.task, "reference an existing node id");
       continue;
     }
     if (!is_task_type(node_types.at(periodic_task.task))) {
-      result.add_error("Periodic task must reference a task node: " + periodic_task.task);
+      add_error("E-VAL-026", "Periodic task must reference a task node: " + periodic_task.task,
+                "task:" + periodic_task.task, "reference a node with type 'task'");
       continue;
     }
     if (periodic_task.period <= 0) {
-      result.add_error("Periodic task period must be positive: " + periodic_task.task);
+      add_error("E-VAL-027", "Periodic task period must be positive: " + periodic_task.task,
+                "task:" + periodic_task.task, "set a positive period for the periodic binding");
     }
   }
 
@@ -519,7 +628,8 @@ ValidationResult Parser::validate() const {
       std::any_of(graph_.nodes.begin(), graph_.nodes.end(),
                   [](const JsonNode& node) { return node.type == kNodeTypeTask; });
   if (!has_task_nodes && !graph_.nodes.empty()) {
-    result.add_warning("No task nodes found in graph");
+    add_warning("E-VAL-032", "No task nodes found in graph", "system:nodes",
+                "add at least one node with type 'task'");
   }
 
   return result;
