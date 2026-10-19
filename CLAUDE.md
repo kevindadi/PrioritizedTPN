@@ -85,6 +85,8 @@ EDF/FIFO/LLF have an explicit **supported class**: static core partition, `cores
 
 - `src/model/tdg.h` — TDG (tasks, fork/join, locks, dependencies, periodic release, `allowed_cores`, WCET provenance); format in `docs/json_format.md`
 - `src/model/petri.h` — PTPN: `Transition` carries `TimeInterval`, `priority`, `core` (−1 = control), `suspendable`; `Marking` is `vector<int>`
+- `src/parse/` — TDG JSON parser and `.ptpn` source parser (input only)
+- `src/export/` — all output writers: TDG/PTPN/SCG DOT, the TDG JSON writer, and metrics JSON
 - `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is `docs/rtsl.md`, the workflow is in `docs/usage.md`, and `example/introduction/demo.rtsl` is the introductory model
 - `src/cli/` — CLI11 layer (namespace `cli`): `main.cpp` (envelope scaffolding + dispatch), `command.h`, `option_groups.{h,cpp}`, and one file per subcommand under `commands/` (`tdg`, `rtsl`, `check`, `ptpn`, `allocate`)
 - `src/app/` — application layer (namespace `app`, no CLI11): `common` (options, legacy rendering, memory, timing/log helpers), `input` (RTSL + TDG loading), `check_cmd` (parse+validate only), `lowering` (TDG→PTPN adapter), `analysis` (orchestration, result diagnostics, WCET export), `pipelines` (the `run_*_pipeline` entry points, public `pipelines.h`), and `allocation_cmd`.

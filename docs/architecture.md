@@ -28,14 +28,14 @@ code does not write the CLI diagnostics envelope.
 | `src/common/` | `Diagnostics` collector, envelope serialization, `Result<T>`, `UnsupportedClassError` |
 | `src/model/` | TDG and PTPN data structures plus `model/types.h` (task/policy types) |
 | `src/dsl/` | RTSL lexer, panic-mode parser, validator, in-process TDG lowering, `SourceMap` |
-| `src/parse/` | TDG JSON parser/writer (nlohmann) and `.ptpn` source parser |
+| `src/parse/` | TDG JSON parser (nlohmann) and `.ptpn` source parser |
 | `src/lower/tdg2pn/` | TDG → PTPN lowering (chain construction, preemption, policy priorities) |
 | `src/analysis/dbm/` | Difference-bound matrices and clock layout |
 | `src/analysis/reachability/` | State classes, firing, canonicalization, scheduling policies (`scheduling/`), symmetry |
-| `src/analysis/metrics/` | WCRT/schedulability/deadlock/utilisation metrics and metrics JSON |
+| `src/analysis/metrics/` | WCRT/schedulability/deadlock/utilisation metrics computation |
 | `src/analysis/reductions/` | Per-task cone projection |
 | `src/analysis/allocation/` | Deterministic core-allocation search (evaluates candidates with the exact analysis) |
-| `src/export/` | PTPN DOT, TDG DOT and state-class DOT writers |
+| `src/export/` | All output writers: TDG DOT, PTPN DOT, state-class DOT, TDG JSON writer, metrics JSON |
 | `src/app/` | CLI-free pipelines, input loading, analysis orchestration, allocation driver, check command |
 | `src/cli/` | CLI11 option registration and dispatch; no domain logic |
 
@@ -121,10 +121,12 @@ are compared only on libstdc++ builds.
 These are recorded for future work; this repository does not change analysis
 semantics to remove them:
 
-- `model/tdg.cpp` implements JSON/DOT I/O and includes `parse/json.h`, while
-  `parse/json.cpp` includes `model/tdg.h`. The CMake graph still works because
-  the two libraries do not link each other in a cycle, but the responsibility
-  is inverted: TDG JSON I/O conceptually belongs to the parse/export layer.
+- `model/tdg.cpp` still implements TDG JSON *loading* and includes
+  `parse/json.h`, while `parse/json.cpp` includes `model/tdg.h`. The CMake graph
+  still works because the two libraries do not link each other in a cycle, but
+  the responsibility is inverted: TDG JSON loading conceptually belongs to the
+  parse layer. The writers have been moved out of `model/` and
+  `analysis/metrics/` into `src/export/`; loading remains for a follow-up.
 - `analysis/allocation/` is grouped under `analysis/` but depends on
   `lower/tdg2pn/` to evaluate candidates. It is orchestration above the
   analysis core.

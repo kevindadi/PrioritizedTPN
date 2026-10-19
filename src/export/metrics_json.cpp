@@ -1,6 +1,8 @@
 #include <fstream>
 #include <string>
 
+#include "export/metrics_json.h"
+
 #include "analysis/metrics/metrics.h"
 
 namespace state_class {
@@ -13,7 +15,7 @@ std::string time_json(const TimeValue& t) {
 
 }  // namespace
 
-bool MetricsAnalyzer::save_to_json(const MetricsReport& report, const std::string& file_path) {
+bool save_metrics_json(const MetricsReport& report, const std::string& file_path) {
   std::ofstream out(file_path);
   if (!out.is_open()) {
     return false;

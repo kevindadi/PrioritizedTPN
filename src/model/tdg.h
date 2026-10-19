@@ -56,10 +56,6 @@ class TDG {
   void parse_json_string(const std::string& json_content);
   // Populates the TDG from an already-parsed JSON graph, avoiding a second read.
   void load_from_parser(const parse::Parser& parser, bool log_nodes = false);
-  // Writes the Graphviz DOT export. Returns false when the file cannot be
-  // opened, written, flushed, or closed.
-  bool export_to_dot(const std::string& output_path);
-  std::string to_dot_string() const;
 };
 
 }  // namespace tdg

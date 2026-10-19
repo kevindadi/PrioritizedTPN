@@ -172,7 +172,6 @@ target_link_libraries(ptpn_dsl
 
 add_library(ptpn_json STATIC
     src/parse/json.cpp
-    src/parse/json_writer.cpp
 )
 target_link_libraries(ptpn_json
     PUBLIC
@@ -207,14 +206,21 @@ target_link_libraries(ptpn_petri
 add_library(ptpn_export STATIC
     src/export/export_ptpn.cpp
     src/export/export_dot.cpp
+    src/export/metrics_json.cpp
     src/export/scg_dot.cpp
+    src/export/tdg_dot.cpp
+    src/export/tdg_json_writer.cpp
 )
 target_link_libraries(ptpn_export
     PUBLIC
+    nlohmann_json::nlohmann_json
     ptpn_petri
     ptpn_reachability
+    ptpn_tdg
     PRIVATE
     Boost::filesystem
+    ptpn_json
+    ptpn_metrics
     spdlog::spdlog
 )
 
@@ -291,7 +297,6 @@ add_library(ptpn_metrics STATIC
     src/analysis/metrics/metrics_deadlock.cpp
     src/analysis/metrics/metrics_locks.cpp
     src/analysis/metrics/metrics_utilisation.cpp
-    src/analysis/metrics/metrics_json.cpp
 )
 target_link_libraries(ptpn_metrics
     PUBLIC

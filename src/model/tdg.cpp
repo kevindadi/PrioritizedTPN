@@ -2,7 +2,6 @@
 
 #include <fstream>
 #include <spdlog/spdlog.h>
-#include <sstream>
 #include <stdexcept>
 
 #include "parse/json.h"
@@ -118,65 +117,6 @@ void TDG::parse_json_string(const std::string& json_content) {
   }
 
   load_from_parser(parser, /*log_nodes=*/false);
-}
-
-std::string TDG::to_dot_string() const {
-  std::ostringstream oss;
-
-  oss << "digraph G {\n";
-
-  for (const auto& [name, node] : nodes_type) {
-    oss << "    " << name << " [label = \"" << parse::node_to_dot_label(node) << "\";];\n";
-  }
-
-  for (const auto& edge : tdg_edges) {
-    oss << "    " << edge.source << " -> " << edge.target;
-    if (!edge.label.empty() || !edge.style.empty()) {
-      oss << " [";
-      if (!edge.label.empty()) {
-        oss << "xlabel = \"" << edge.label << "\"";
-      }
-      if (!edge.style.empty()) {
-        if (!edge.label.empty()) {
-          oss << "; ";
-        }
-        oss << "style = \"" << edge.style << "\"";
-      }
-      oss << ";]";
-    }
-    oss << ";\n";
-  }
-
-  oss << "}\n";
-  return oss.str();
-}
-
-bool TDG::export_to_dot(const std::string& output_path) {
-  spdlog::info("[DOT] Exporting to: {}", output_path);
-
-  std::ofstream file(output_path);
-  if (!file.is_open()) {
-    spdlog::error("[DOT] Failed to create file: {}", output_path);
-    return false;
-  }
-
-  file << to_dot_string();
-  // Flush first so a delayed write error (for example ENOSPC on /dev/full) is
-  // observed before the success log; close() can also report a late error.
-  file.flush();
-  if (!file) {
-    spdlog::error("[DOT] Failed to write file: {}", output_path);
-    return false;
-  }
-  file.close();
-  if (file.fail()) {
-    spdlog::error("[DOT] Failed to close file: {}", output_path);
-    return false;
-  }
-
-  spdlog::info("[DOT] Exported {} nodes, {} edges to {}", nodes_type.size(), tdg_edges.size(),
-               output_path);
-  return true;
 }
 
 }  // namespace tdg

@@ -22,6 +22,7 @@
 #include "common/unsupported_class.h"
 #include "dsl/source_map.h"
 #include "export/export_dot.h"
+#include "export/metrics_json.h"
 #include "export/export_ptpn.h"
 #include "export/scg_dot.h"
 #include "model/petri.h"
@@ -252,7 +253,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
             "tasks=" + std::to_string(cone_result.tasks) + ", states=" +
                 std::to_string(report.states) + ", edges=" + std::to_string(report.transitions));
         if (!opts.exports.metrics_json.empty()) {
-          if (!state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
+          if (!state_class::save_metrics_json(report, opts.exports.metrics_json)) {
             spdlog::warn("[OUTPUT] Failed to export metrics");
             if (diagnostics != nullptr) {
               diagnostics->add("E-INT-002",
@@ -440,7 +441,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
       record_analysis_diagnostics(diagnostics, report, reachability_stats.truncated,
                                   horizon_truncated, opts.max_states);
       if (export_metrics) {
-        if (state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
+        if (state_class::save_metrics_json(report, opts.exports.metrics_json)) {
           detail::log_step_timing("Metrics analysis", detail::elapsed_ms(metrics_start));
           spdlog::info("[OUTPUT] Metrics exported to: {}", opts.exports.metrics_json);
           if (report.deadlock_analysis_certified) {
