@@ -1,0 +1,26 @@
+// EDF's supported class excludes locks -> E-UNS-001, exit 4 from `ptpn rtsl`.
+// `ptpn check` succeeds because it does not lower.
+system edflock {
+  cpus 2
+  cores_per_cpu 1
+  time_unit ms
+  policy edf
+
+  task a: normal {
+    core 0
+    deadline 10
+    locks mutex1
+    time [ [1, 1], [1, 2], [1, 1] ] estimated
+  }
+
+  task b: normal {
+    core 1
+    deadline 10
+    time [1, 1] estimated
+  }
+
+  start a
+  start b
+  end a
+  end b
+}

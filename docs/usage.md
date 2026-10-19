@@ -4,6 +4,10 @@ This page describes the CLI subcommands, common options, reductions,
 core-allocation search, scheduling policies, and example command lines. For
 build and installation instructions see
 [install.md](install.md). The binary is `build/ptpn` in a default native build.
+The RTSL language reference is [rtsl.md](rtsl.md); diagnostic codes, the JSON
+envelope and exit-code semantics are documented in
+[diagnostics.md](diagnostics.md); layer and target organization is in
+[architecture.md](architecture.md).
 
 ## Input modes
 
@@ -39,7 +43,7 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 | `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
 | `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified |
 | `--no-analysis` | Skip state-class reachability analysis |
-| `--diagnostics json` | Emit the versioned JSON diagnostics envelope on stdout and reserve stdout for it (available on `check`, `tdg`, `rtsl`, `ptpn`, and `allocate`) |
+| `--diagnostics json` | Emit the versioned JSON diagnostics envelope on stdout and reserve stdout for it (available on `check`, `tdg`, `rtsl`, `ptpn`, and `allocate`; see [diagnostics.md](diagnostics.md)) |
 | `--diagnostics-file PATH` | Write the same envelope to `PATH` |
 | `--debug` | Enable debug logging |
 | `-v, --version` | Show version |
@@ -66,8 +70,10 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 
 ## RTSL workflow
 
-RTSL is the primary entry point for humans and LLMs. The model below is the
-committed [`example/introduction/demo.rtsl`](../example/introduction/demo.rtsl):
+RTSL is the primary entry point for humans and LLMs. The full language
+reference is [rtsl.md](rtsl.md); this section is the end-to-end workflow. The
+model below is the committed
+[`example/introduction/demo.rtsl`](../example/introduction/demo.rtsl):
 periodic and aperiodic tasks, a lock, a fork/join, and one `measured by llm`
 task that is deliberately left unmeasured.
 
@@ -136,12 +142,16 @@ tick is 1 ms). Bare integers use `time_unit` (default `ms`); `ms`/`s` suffixes
 are absolute; `us` is rejected as E-UNS-004. TDG JSON integers remain
 unit-agnostic engine ticks.
 
-Exit codes: `0` success; `2` syntax; `3` validation; `4` unsupported model
-class; `5` truncation/partial results; `6` a certified negative analysis
-result (deadlock or `wcrt_lb > deadline`); `1` internal error or CLI usage
-error. Without `--diagnostics` / `--diagnostics-file`, the CLI keeps its legacy
-streams and `0`/`1` exit codes. Models using `core any` must go through
-`ptpn allocate`.
+Exit codes in the engaged diagnostics transport: `0` success; `2` syntax; `3`
+validation; `4` unsupported model class; `5` truncation/partial results; `6` a
+certified negative analysis result (deadlock or `wcrt_lb > deadline`); `1`
+internal error. Without `--diagnostics` / `--diagnostics-file`, the CLI keeps
+its legacy streams and `0`/`1` exit codes. CLI11 usage errors (a missing
+required option, an unknown `--policy`, an invalid `--diagnostics` value) are
+reported before the transport is engaged and use CLI11's own codes (for example
+`106` and `105`); they are not diagnostic categories. See
+[diagnostics.md](diagnostics.md) for the full priority rules. Models using
+`core any` must go through `ptpn allocate`.
 
 ## Reduction modes and defaults
 

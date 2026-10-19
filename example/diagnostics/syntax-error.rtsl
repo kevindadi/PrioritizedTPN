@@ -1,0 +1,6 @@
+// Missing closing brace after the task block -> E-SYN-102, exit 2.
+system broken {
+  cpus 1
+  task a: normal {
+    core 0
+    time [1, 2] estimated
