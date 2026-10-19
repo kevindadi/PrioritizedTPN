@@ -166,6 +166,8 @@ target_link_libraries(ptpn_diagnostics
 # lowering is performed by this library.
 add_library(ptpn_dsl STATIC
     src/dsl/lexer.cpp
+    src/dsl/parser.cpp
+    src/dsl/validate.cpp
 )
 target_link_libraries(ptpn_dsl
     PUBLIC
