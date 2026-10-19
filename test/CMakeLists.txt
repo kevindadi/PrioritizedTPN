@@ -33,6 +33,7 @@ add_executable(ptpn_test
   test_llf.cpp
   test_llf_multicore.cpp
   test_allocation.cpp
+  test_diagnostics.cpp
   # Exposes write_wcet_json so the WCET export schema is covered directly.
   ${CMAKE_SOURCE_DIR}/src/app/pipeline.cpp
 )
@@ -42,6 +43,10 @@ target_link_libraries(ptpn_test
   PTPN_core
   gtest_main
 )
+
+# Integration tests exercise the CLI through its diagnostics envelope.
+target_compile_definitions(ptpn_test PRIVATE PTPN_CLI_PATH="$<TARGET_FILE:ptpn>")
+add_dependencies(ptpn_test ptpn)
 
 target_include_directories(ptpn_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 

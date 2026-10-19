@@ -149,12 +149,25 @@ add_library(ptpn_types STATIC
 )
 target_include_directories(ptpn_types PUBLIC src)
 
+# Structured, versioned diagnostics shared by the parsers, the pipeline and
+# the CLI. nlohmann/json is a PUBLIC dependency because the envelope
+# serialization is part of this library's API.
+add_library(ptpn_diagnostics STATIC
+    src/common/diagnostics.cpp
+)
+target_include_directories(ptpn_diagnostics PUBLIC src)
+target_link_libraries(ptpn_diagnostics
+    PUBLIC
+    nlohmann_json::nlohmann_json
+)
+
 add_library(ptpn_json STATIC
     src/parse/json.cpp
 )
 target_link_libraries(ptpn_json
     PUBLIC
     ptpn_types
+    ptpn_diagnostics
     nlohmann_json::nlohmann_json
     PRIVATE
     spdlog::spdlog
@@ -274,6 +287,7 @@ add_library(ptpn_parser STATIC
 target_link_libraries(ptpn_parser
     PUBLIC
     ptpn_petri
+    ptpn_diagnostics
 )
 
 add_library(ptpn_dbm STATIC
@@ -348,6 +362,7 @@ add_library(PTPN_core INTERFACE)
 target_link_libraries(PTPN_core
     INTERFACE
     ptpn_types
+    ptpn_diagnostics
     ptpn_json
     ptpn_tdg
     ptpn_petri
