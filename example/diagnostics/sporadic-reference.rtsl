@@ -1,0 +1,17 @@
+// Periodic reference scenario for a sporadic task, only with user agreement.
+//
+// This is NOT the original sporadic system: it fixes a period (here 10ms) and
+// therefore does not cover arbitrary larger inter-arrival times or phases.
+// Its results must not be presented as certification of the sporadic model.
+
+system sporadic_reference {
+  cpus 1
+  time_unit ms
+  policy fixed
+  task sp: periodic {
+    period 10ms
+    deadline 10ms
+    core 0
+    time [1, 2] estimated
+  }
+}

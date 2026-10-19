@@ -55,8 +55,13 @@ std::vector<petri::NodeRef> add_execution_chain(petri::PTPN& ptpn, const std::st
                                       ? task_name + "exec"
                                       : task_name + "_exec_" + std::to_string(segment_index + 1);
     // In resume mode the engine models preemption by freezing the execution
-    // clock, so execution segments are suspendable. Spin-lock critical sections
-    // must keep the CPU, so those segments stay non-suspendable.
+    // clock, so execution segments are suspendable. The spin-lock check below
+    // indexes `locks` with the *execution-segment* index. That mapping does not
+    // match the generated chain: for one lock the critical section is the
+    // second execution segment, while this check marks the first one. The
+    // current marking is therefore `false, true, true` for a single spin lock;
+    // see docs/rtsl.md's known-limitation note. Fixing the mapping is tracked
+    // separately and must not be baked into tests as correct behavior.
     const bool segment_holds_spin_lock =
         segment_index < locks.size() && locks[segment_index].find("spin") != std::string::npos;
     const bool exec_suspendable = resume_mode && !segment_holds_spin_lock;

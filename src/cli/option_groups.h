@@ -4,7 +4,7 @@
 #include <CLI/CLI.hpp>
 #include <string>
 
-#include "app/pipeline.h"
+#include "app/common.h"
 #include "model/types.h"
 
 namespace cli {

@@ -273,8 +273,9 @@ void Validator::validate_task(const ast::TaskDecl& task) {
     const Span span = task.kind_span.valid() ? task.kind_span : task.span;
     report(diagnostics_, "E-UNS-003", base, span,
            "sporadic task '" + task.id + "' is not supported in v1",
-           "replace it with `periodic { period = mit }` (densest arrival; a conservative WCRT "
-           "upper bound)");
+           "sporadic stays rejected; with the user's agreement you may model a periodic "
+           "reference scenario with an explicit period such as `period 10ms`. That changes "
+           "the model and does not certify the original sporadic system");
   }
 
   if (kind == ast::TaskKind::Interrupt) {

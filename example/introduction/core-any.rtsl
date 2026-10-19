@@ -1,0 +1,23 @@
+// `core any` is a hint for `ptpn check` (exit 0), an error for `ptpn rtsl`
+// (E-VAL-218, exit 3), and an allocation domain for `ptpn allocate` (exit 0).
+
+system anymodel {
+  cpus 2
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+
+  task a: normal {
+    core any
+    time [1, 2] estimated by "spec"
+  }
+
+  task b: normal {
+    core any
+    time [2, 3] estimated by "spec"
+  }
+
+  start a
+  end b
+  a -> b
+}

@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "app/pipeline.h"
+#include "app/common.h"
 
 namespace ptpn {
 class Diagnostics;
@@ -11,8 +11,13 @@ class Diagnostics;
 
 namespace app {
 
+struct CheckCommandOptions {
+  std::string input_file;
+  DiagnosticsOptions diagnostics;
+};
+
 // Runs the RTSL front-end only: lex -> parse -> validate. No lowering or
-// analysis is performed (that arrives in Phase 2b with `ptpn rtsl`).
+// analysis is performed; `ptpn rtsl` owns the full pipeline.
 //
 // When `diagnostics` is null (no envelope engaged) failures are printed to
 // stderr in the legacy format and the function returns 0/1. When a collector

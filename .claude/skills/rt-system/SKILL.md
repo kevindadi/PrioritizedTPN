@@ -7,7 +7,17 @@ description: Use when asked to model, analyze, schedule, or fix a real-time syst
 
 Work from the repository root. The analyzer is `build/ptpn` (`example/run.py`
 resolves `--ptpn` -> `$PTPN_BUILD_DIR` -> `.ptpn-build-dir` -> `build/ptpn`).
-Reference docs: `docs/usage.md`, `docs/install.md`, `docs/json_format.md`.
+
+Reference docs (use these instead of guessing syntax or codes):
+
+- `docs/rtsl.md` - RTSL lexer/parser/validator/lowering reference, defaults,
+  units, cores, locks, provenance, bindings, supported classes.
+- `docs/diagnostics.md` - **authoritative** code table, severity/category,
+  envelope schema, exit-code priority, and the full
+  `check`/`rtsl`/`allocate` behavior matrix.
+- `docs/usage.md` - commands, options, reductions, metrics fields.
+- `docs/architecture.md` - pipeline/layer responsibilities.
+- `docs/json_format.md` - TDG JSON input format.
 
 ## Workflow
 
@@ -18,16 +28,21 @@ Reference docs: `docs/usage.md`, `docs/install.md`, `docs/json_format.md`.
    `certified` (safe user-supplied bound), `estimated` (informal figure), or
    `measured by llm` (a placeholder whose time is filled in later). Do not
    invent numbers.
-2. **Write RTSL v1** exactly as shown in the RTSL workflow section of
-   `docs/usage.md` and `example/introduction/demo.rtsl`. The base unit is
-   milliseconds; `us` is rejected (`E-UNS-004`). Periodic tasks need `period`;
-   sporadic tasks are unsupported in v1 (`E-UNS-003`).
+2. **Write RTSL v1** as documented in `docs/rtsl.md` and
+   `example/introduction/demo.rtsl`. The base unit is milliseconds; `us` is
+   rejected (`E-UNS-004`). Periodic tasks need `period`; `sporadic` is
+   rejected by validation (`E-UNS-003`). A locked task needs
+   `2*lock_count+1` execution intervals.
 3. **Check loop.** Run `build/ptpn check -f model.rtsl --diagnostics json`
    (omit `--diagnostics` for human-readable stderr while iterating). Fix every
-   `E-SYN`/`E-VAL` diagnostic and rerun until exit 0. On success the
+   **error-severity** `E-SYN`/`E-VAL` diagnostic and rerun until exit 0.
+   Hints do not block: `E-VAL-218` in `check` and `E-UNS-005` leave exit 0;
+   inspect them but do not force a change just to clear a hint. On success the
    envelope's `result.pending_measurements` lists tasks still needing timing.
-4. **Fill pending timing.** If `result.pending_measurements` is non-empty,
-   fill each listed task directly in the `.rtsl` source: replace
+   `check` stops after parse+validate: it does **not** report lowering or
+   analysis `E-UNS-001`, `E-VAL-015`, or the defensive `E-VAL-011`.
+4. **Fill pending timing.** If `result.pending_measurements` is non-empty, fill
+   each listed task directly in the `.rtsl` source: replace
    `time measured by llm { ... }` with an interval such as
    `time [2, 4] estimated by "llm"`. A pending entry's `expected_segments`
    says how many intervals are required — locked tasks need
@@ -51,22 +66,39 @@ Reference docs: `docs/usage.md`, `docs/install.md`, `docs/json_format.md`.
 
 ## Diagnostics -> action
 
-| Code | Action |
+Branch on `code`, `severity`, the command/stage that produced it, and the
+envelope `result` — not on the code prefix alone. The complete table is
+`docs/diagnostics.md`; this is the working summary:
+
+| Signal | Action |
 |---|---|
-| `E-SYN-1xx` | Syntax/lexing error. Rewrite the reported line using the expected tokens; check units (`ms`, `s`) and string escapes. |
-| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-015` means a locked task's segment count is wrong (need `2*lock_count+1` intervals). `E-VAL-218` (`core any`) means use `ptpn allocate` or an explicit core. |
-| `E-UNS-001` | The model is outside the chosen policy's supported class. EDF/FIFO/LLF require a static partition, `cores_per_cpu 1`, one in-flight job per task, no locks, and no dependency-driven releases; PIP/PCP/SRP require `task_place_capacity 1`. Simplify the model or change policy. |
-| `E-UNS-003` | Sporadic arrivals are not implemented. Replace with `periodic` using `period = mit` (densest arrival; conservative WCRT upper bound). |
+| `E-SYN-1xx` | Syntax/lexing error. Rewrite the reported line using the expected tokens; check units (`ms`, `s`) and string escapes. `E-SYN-002` is an unreadable input file, not grammar. |
+| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-015` means a locked task's segment count is wrong. `E-VAL-218` (`core any`) means use `ptpn allocate` or an explicit core. |
+| `E-UNS-001` | Supported-class guard from lowering **or analysis** (not emitted by `check`). EDF/FIFO/LLF require a static partition, `cores_per_cpu 1`, one in-flight job per task, no locks, no fork/join, and no dependency-driven releases; PIP/PCP/SRP require `task_place_capacity 1`. Analysis also rejects job-clock overlapping releases (period shorter than execution) and job-clock + extrapolation/symmetry. Subjects are `task:`, `node:`, `edge:`, `policy:`, `option:extrapolation`, or `option:symmetry`. Simplify the model or change the policy/option. |
+| `E-UNS-003` | Sporadic arrivals are not implemented and stay rejected. With the user's explicit agreement, you may model a **periodic reference scenario** with an explicit period such as `period 10ms`. That changes the model and does not certify the original sporadic system; never auto-change the task kind, delete `mit`, or rewrite the period to clear the diagnostic. |
 | `E-UNS-004` | Sub-millisecond (`us`) timing is unsupported. Use `ms` and adjust precision. |
+| `E-UNS-005` | `interrupt` is only a hint: it is lowered as a non-periodic task with a type marker; no interrupt-preemption semantics exist. Do not claim interrupt support. |
 | `E-PERF-001` | `-m` max-states truncation. If a counterexample is already reported, **do not raise `-m`** - fix the design. Otherwise raising `-m` may help; the result is partial either way. |
 | `E-PERF-002` | `--horizon` truncation. Same rule: with a counterexample, change the design; without one, raise/disable the horizon. |
 | `R-ANA-001` | Certified reachable deadlock. Fix dependency/lock structure or policy. |
 | `R-ANA-002` | Certified per-task lower-bound WCRT exceeds deadline. Change priorities, cores, or periods. |
 | `R-ANA-003` | Periodic local deadlock. Change period, priority, or core assignment. |
-| `E-INT-*` | Analyzer/internal failure or unwritable output. Report it; do not treat it as a model verdict. |
+| `E-INT-*` | Typed supported-class rejections use `E-UNS-001`; unclassified internal failures use `E-INT-*`. |
 
-Use `code`, `category`, `subject`, and `exit_code` for branching. `message` and
-`fix` are informational.
+Use `code`, `category`, `severity`, `subject`, `location`, and `exit_code` for
+branching. `message` and `fix` are informational. Hints (for example
+`E-VAL-218` in `check`, `E-UNS-005`) leave the exit code at 0; warnings alone
+usually do too, but `E-PERF-*` warnings still produce exit 5.
+
+## Command-stage matrix
+
+| Situation | `check` | `rtsl` | `allocate` |
+|---|---|---|---|
+| pending `measured` timing | success; `result.pending_measurements` | `E-VAL-213`, exit 3 | `E-VAL-213`, exit 3 |
+| `core any` | `E-VAL-218` hint, exit 0 | `E-VAL-218` error, exit 3 | expands the domain; no diagnostic |
+| `interrupt` | `E-UNS-005` hint, exit 0 | hint, lowered as non-periodic | hint |
+| locked segment-count mismatch | not checked | `E-VAL-015`, exit 3 | `E-VAL-015`, exit 3 |
+| EDF/FIFO/LLF supported-class violation | not checked | `E-UNS-001`, exit 4 | candidate infeasible; no `E-UNS-001` |
 
 ## Exit codes
 
@@ -81,16 +113,29 @@ Use `code`, `category`, `subject`, and `exit_code` for branching. `message` and
 | `1` | Internal error (`E-INT-`). |
 
 Category priority is `2 > 3 > 4 > 6 > 5 > 0`; validation warnings alone do not
-change the exit code; `E-INT-` dominates. **Never raise `-m` on a proven
+change the exit code; `E-INT-` dominates. CLI11 usage errors (missing required
+option, unknown `--policy`, invalid `--diagnostics` value) bypass the envelope
+and use CLI11's own codes (for example 106/105). **Never raise `-m` on a proven
 counterexample** (exit 6, or `E-PERF-*` accompanied by a counterexample):
 truncation does not invalidate a counterexample found in the explored prefix.
 Conversely, an upper-bound `wcrt` exceeding a deadline is not a
-counterexample and never produces exit 6.
+counterexample and never produces exit 6; `R-ANA-002` requires `wcrt_lb >
+deadline`.
 
-## Trust boundary
+## Trust boundary and design changes
 
-- Estimated values are not certified WCET bounds. Never present an estimate
-  (including `estimated by "llm"`) as a hard real-time guarantee; only a
-  bound the user supplied as `certified by "<tool>"` carries that claim.
+- Estimated and measured values are not certified WCET bounds. Never present
+  an estimate (including `estimated by "llm"`) as a hard real-time guarantee;
+  only a bound the user supplied as `certified by "<tool>"` carries that claim.
 - Report analyzer output mechanically; do not claim schedulability that the
   exit code and `exact`/`truncated` fields do not support.
+- **Design changes require the user's decision.** Deleting a lock or
+  dependency, changing the policy, or changing a period/deadline changes the
+  model's semantics. Show the exact diff and the before/after diagnostics and
+  metrics, and let the user decide. Do not silently rewrite the design to make
+  a diagnostic disappear.
+- **Spin locks are not a reliable preemption guarantee.** The current lowering
+  marks the wrong execution segment for a single spin lock (the pre-critical
+  segment is non-suspendable and the critical section is suspendable). Do not
+  claim that spin-lock critical sections keep the CPU; see `docs/rtsl.md` §7
+  and `example/diagnostics/spin-lock.rtsl`.

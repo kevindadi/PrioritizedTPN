@@ -19,7 +19,7 @@ PTPN is a **Priority Timed Petri Net** analyzer for real-time scheduling. It low
 
 Manual CMake (CI path, system Boost): `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`. vcpkg auto-detection is off on Linux/macOS by default (`-DPTPN_USE_VCPKG=ON` re-enables); on Apple Silicon pass `-DVCPKG_TARGET_TRIPLET=arm64-osx`.
 
-`example/run.py` drives the example benchmarks (p/s/t-bench + l-bench) and resolves the `ptpn` binary via `--ptpn PATH` → `$PTPN_BUILD_DIR` → `.ptpn-build-dir` marker → `build/ptpn` (the marker and default `build/` live at the repo root, not under `example/`). The repo currently has an IDE build in `cmake-build-debug/` (root `compile_commands.json` symlinks into it).
+`example/run.py` drives the example benchmarks (p/s/t-bench + l-bench) and resolves the `ptpn` binary via `--ptpn PATH` → `$PTPN_BUILD_DIR` → `.ptpn-build-dir` marker → `build/ptpn` (the marker and default `build/` live at the repo root, not under `example/`). `compile_commands.json` at the repo root is a symlink to the configured build directory's file (currently `build/`).
 
 Binaries: `build/ptpn` (analyzer CLI), `build/test/ptpn_test` (unit tests).
 
@@ -53,8 +53,15 @@ JSON TDG ─parse(ptpn_json)→ TDG(ptpn_tdg) ──tdg2pn(ptpn_lowering)──�
 .rtsl ─parse/validate/lower(ptpn_dsl)──► TDG (in process) ─────────────────────────────────┘
 .ptpn source ─parse(ptpn_parser)────────────────────────────────────► PTPN ────────────► analysis
 analysis = ptpn_dbm → ptpn_reachability → ptpn_metrics, + ptpn_reductions (cone), ptpn_allocation
-CLI = ptpn_cli (src/cli, CLI11 wiring) → ptpn_app (src/app, CLI-free pipelines) → core libraries
+CLI = ptpn_cli (src/cli, CLI11 wiring) → {ptpn_app, ptpn_app_check, ptpn_app_allocation} → core libraries
 ```
+
+The application layer is split so commands only pull what they need:
+`ptpn_app_common` (options, legacy rendering, memory), `ptpn_app_input`
+(RTSL/TDG loading), `ptpn_app_check` (parse+validate only), `ptpn_app_analysis`
+(lowering adaptation, analysis orchestration, WCET export),
+`ptpn_app_allocation` (search driver), and `ptpn_app` (pipeline entry points).
+`ptpn check` must not link lowering, analysis, or allocation.
 
 **RTSL front-end (`src/dsl/`):** `.rtsl` → lexer → panic-mode parser → semantic validation → in-process lowering to `model::TDG` → the shared `tdg2pn → analysis` path. No JSON text round-trip. `dsl::SourceMap` is a side table (structured subject → byte-accurate span) used to backfill `location` in diagnostics without polluting the TDG model. `ptpn check` stops after validation; lowering support-class guards (`E-UNS-001`) and missing measured intervals (`E-VAL-213`) are reported by `ptpn rtsl`/`ptpn allocate`. Pending `measured by llm` tasks are listed in `result.pending_measurements`; the user or Claude fills their `time` attribute directly in the `.rtsl` source.
 
@@ -78,16 +85,18 @@ EDF/FIFO/LLF have an explicit **supported class**: static core partition, `cores
 
 - `src/model/tdg.h` — TDG (tasks, fork/join, locks, dependencies, periodic release, `allowed_cores`, WCET provenance); format in `docs/json_format.md`
 - `src/model/petri.h` — PTPN: `Transition` carries `TimeInterval`, `priority`, `core` (−1 = control), `suspendable`; `Marking` is `vector<int>`
-- `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is the RTSL workflow section of `docs/usage.md` and `example/introduction/demo.rtsl`
+- `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is `docs/rtsl.md`, the workflow is in `docs/usage.md`, and `example/introduction/demo.rtsl` is the introductory model
 - `src/cli/` — CLI11 layer (namespace `cli`): `main.cpp` (envelope scaffolding + dispatch), `command.h`, `option_groups.{h,cpp}`, and one file per subcommand under `commands/` (`tdg`, `rtsl`, `check`, `ptpn`, `allocate`)
-- `src/app/` — application layer (namespace `app`, no CLI11): `pipeline.{h,cpp}` (`run_*_pipeline`, `run_allocation`, `write_wcet_json`, `print_legacy_diagnostics`) and `check_cmd.{h,cpp}`; option structs live in `pipeline.h`
+- `src/app/` — application layer (namespace `app`, no CLI11): `common` (options, legacy rendering, memory), `rtsl_input`/`tdg_input` (shared loading), `check_cmd` (parse+validate only), `lowering`/`analysis_diagnostics`/`analysis`/`exports` (post-load pipeline), `allocation_cmd`, and `pipelines` (the `run_*_pipeline` entry points). `pipeline.h` is the public facade; `check_cmd.h` and `allocation_cmd.h` are the command-specific entry points.
 
-User-facing docs live in `docs/` (`install.md`, `usage.md`, `json_format.md`); the remaining spec documents were deliberately removed in the Oct 2026 cleanup — do not re-add them without asking.
+User-facing docs live in `docs/` (`install.md`, `usage.md`, `rtsl.md`, `diagnostics.md`, `architecture.md`, `json_format.md`). The diagnostics code table is authoritative in `docs/diagnostics.md`; keep new codes and behavior changes in sync with it and with the rt-system skill.
 
 ## Conventions and gotchas
 
 - **`example/run.py` regex-parses `[STATS]` log lines** emitted by the analyzer (SCG build stats, lowering ms, etc.). Changing the text of those log lines breaks `run.py` silently — update `RE_*` patterns in `example/run.py` together with any format change.
-- **Diagnostics are opt-in:** `--diagnostics json` / `--diagnostics-file PATH` switch `tdg`/`rtsl`/`check`/`ptpn`/`allocate` to the versioned envelope with exit codes `2/3/4/5/6` and move logs (including `[STATS]`) to stderr. Without them the legacy streams and `0`/`1` exit codes apply. The RTSL repair loop depends on the engaged form.
+- **Diagnostics are opt-in:** `--diagnostics json` / `--diagnostics-file PATH` switch `tdg`/`rtsl`/`check`/`ptpn`/`allocate` to the versioned envelope with exit codes `2/3/4/5/6` and move logs (including `[STATS]`) to stderr. Without them the legacy streams and `0`/`1` exit codes apply. The RTSL repair loop depends on the engaged form. The authoritative code table, envelope schema, and `check`/`rtsl`/`allocate` behavior matrix are in `docs/diagnostics.md`; `ptpn check` stops before lowering by design.
+- **Supported-class rejection is typed:** throw `ptpn::UnsupportedClassError` (`src/common/unsupported_class.h`, optional structured subject); the app maps only that type to `E-UNS-001`. Do not classify all `std::invalid_argument` as unsupported — metadata/index/clock-layout invariants stay internal (`E-INT-003` in lowering, `E-INT-001` from the CLI top-level handler). `E-UNS-001` can come from lowering or the verified analysis guards (job-clock overlap, job-clock + extrapolation/symmetry).
+- **Output writers must check open, write, flush and close**, and only log success after the check. Failures are `E-INT-002` with subject `output:<path>`; parent directories are never created automatically.
 - **RTSL time is milliseconds:** RTSL inputs are normalized so one engine tick = 1 ms (bare integers follow `time_unit`; `us` is rejected). TDG JSON integers remain unit-agnostic engine ticks.
 - Metrics JSON carries an `exact` flag: `false` under symmetry reduction, extrapolation, or horizon truncation, and `wcrt_lb` is omitted where the analysis is only an upper bound. Preserve that contract when touching metrics code.
 - Tests map one `test_<concern>.cpp` per concern; policy tests exist for both single- and multi-core (`test_edf.cpp` + `test_edf_multicore.cpp`, etc.). Reuse `tdg_test_helpers.h` (`load_tdg`) rather than hand-parsing JSON in tests.

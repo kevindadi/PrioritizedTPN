@@ -4,7 +4,6 @@
 #include <memory>
 #include <string>
 
-#include "app/pipeline.h"
 #include "cli/command.h"
 #include "cli/option_groups.h"
 

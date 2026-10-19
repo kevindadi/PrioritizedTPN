@@ -75,6 +75,9 @@ RTSL input); TDG JSON integers remain unit-agnostic engine ticks.
 |----------|----------|
 | [docs/install.md](docs/install.md) | Dependencies, native build, vcpkg, tests, and the Docker image |
 | [docs/usage.md](docs/usage.md) | Subcommands, options, reductions, core allocation, RTSL workflow, examples |
+| [docs/rtsl.md](docs/rtsl.md) | RTSL v1 reference: lexical rules, system/task syntax, units, cores, locks, provenance, bindings, supported classes |
+| [docs/diagnostics.md](docs/diagnostics.md) | Authoritative diagnostic code table, severity/exit codes, JSON envelope, command behavior, result interpretation |
+| [docs/architecture.md](docs/architecture.md) | Pipeline layers, source/CMake layout, application-layer responsibilities, known structural notes |
 | [docs/json_format.md](docs/json_format.md) | TDG JSON input format |
 
 ## License

@@ -1,0 +1,153 @@
+# Architecture
+
+PTPN is organized as a one-way pipeline:
+
+```text
+RTSL source ──► lex / parse / validate ──► TDG ──┐
+TDG JSON    ──► parse ───────────────────► TDG ──┴──► tdg2pn ──► PTPN ──┐
+PTPN source ──► parse ───────────────────────────────────────► PTPN ────┴──► analysis
+                                                                              │
+                                                                              ▼
+                                                        metrics / diagnostics / DOT
+```
+
+The code mirrors that pipeline in static libraries. Each layer declares only
+the dependencies it uses. The direction is:
+
+```text
+CLI  →  application  →  frontend / model / lowering / analysis / export
+```
+
+Nothing below `src/app` includes CLI11 or command registration, and analysis
+code does not write the CLI diagnostics envelope.
+
+## Source layout
+
+| Directory | Responsibility |
+|---|---|
+| `src/common/` | `Diagnostics` collector, envelope serialization, `Result<T>`, `UnsupportedClassError` |
+| `src/model/` | TDG and PTPN data structures plus `model/types.h` (task/policy types) |
+| `src/dsl/` | RTSL lexer, panic-mode parser, validator, in-process TDG lowering, `SourceMap` |
+| `src/parse/` | TDG JSON parser/writer (nlohmann) and `.ptpn` source parser |
+| `src/lower/tdg2pn/` | TDG → PTPN lowering (chain construction, preemption, policy priorities) |
+| `src/analysis/dbm/` | Difference-bound matrices and clock layout |
+| `src/analysis/reachability/` | State classes, firing, canonicalization, scheduling policies, symmetry |
+| `src/analysis/metrics/` | WCRT/schedulability/deadlock/utilisation metrics and metrics JSON |
+| `src/analysis/reductions/` | Per-task cone projection |
+| `src/analysis/allocation/` | Deterministic core-allocation search (evaluates candidates with the exact analysis) |
+| `src/export/` | PTPN DOT, TDG DOT and state-class DOT writers |
+| `src/app/` | CLI-free pipelines, input loading, analysis orchestration, allocation driver, check command |
+| `src/cli/` | CLI11 option registration and dispatch; no domain logic |
+
+## Application layer
+
+The application layer is split by responsibility so a command only compiles and
+links what it needs:
+
+| File | Responsibility | Library |
+|---|---|---|
+| `common.{h,cpp}` | `PipelineOptions`, `ExportTargets`, `DiagnosticsOptions`, legacy diagnostic rendering, process memory | `ptpn_app_common` |
+| `rtsl_input.{h,cpp}` | Read, lex, parse, validate and lower RTSL; returns the TDG with its `SourceMap` | `ptpn_app_input` |
+| `tdg_input.{h,cpp}` | TDG JSON loading and `--policy` override | `ptpn_app_input` |
+| `check_cmd.{h,cpp}` | `ptpn check`: parse/validate only; never lowers | `ptpn_app_check` |
+| `lowering.{h,cpp}` | TDG→PTPN plus `E-UNS-001`/`E-INT-003` adaptation and SourceMap lookup | `ptpn_app_analysis` |
+| `analysis_diagnostics.{h,cpp}` | Translate metrics signals to `R-ANA-*` / `E-PERF-*` and `result.analysis` | `ptpn_app_analysis` |
+| `analysis.{h,cpp}` | Analysis orchestration: cone/full graph, metrics, SCG/PTPN DOT, total `[STATS]` | `ptpn_app_analysis` |
+| `exports.{h,cpp}` | WCET JSON and "any export requested" predicate | `ptpn_app_analysis` |
+| `allocation_cmd.{h,cpp}` | `ptpn allocate`: input dispatch, search driver, report summary | `ptpn_app_allocation` |
+| `pipelines.{h,cpp}` via `pipeline.h` | `run_tdg_pipeline`, `run_rtsl_pipeline`, `run_ptpn_pipeline` | `ptpn_app` |
+
+`check_cmd` depends on `ptpn_app_input` and `ptpn_app_common` only; it does not
+link lowering, analysis, or allocation. `ptpn rtsl` and `ptpn tdg` share
+`run_tdg_analysis`, so their analysis and export semantics cannot diverge.
+`.ptpn` input shares `run_ptpn_postprocess` with them.
+
+### RTSL input contract
+
+`app/rtsl_input.h` exposes the boundary explicitly:
+
+- `read_rtsl_source` — file read only, no diagnostics;
+- `parse_and_validate_rtsl` — lex/parse/validate and returns a `RtslDocument`
+  (program + `SourceMap` + validity); panic-mode parsing still returns a
+  program when validation failed so `check` can report task/edge counts;
+- `lower_rtsl_document` — runs `dsl::lower` only for a valid document;
+- `load_tdg_from_rtsl` — the full path used by `rtsl` and `allocate`, returning
+  the TDG and the `SourceMap` needed to locate later `E-UNS-001` diagnostics.
+
+The Check/Rtsl/Allocate distinction is a `dsl::ValidationOptions::Mode` passed
+through this API; the stages themselves are shared.
+
+### Diagnostics boundary
+
+`ptpn::Diagnostics` (in `src/common/`) is the data collector: codes, subjects,
+locations, cap/taint, exit-code summary, and envelope serialization.
+`src/cli/main.cpp` owns the transport: it decides whether the envelope is
+engaged, redirects logs to stderr, writes stdout/file, and returns the envelope
+exit code. `src/app/` records diagnostics but never chooses a stream or a
+process exit code.
+
+## Build targets
+
+The CMake targets follow the same direction:
+
+```text
+ptpn_types, ptpn_diagnostics
+        │
+ptpn_dsl, ptpn_json, ptpn_tdg, ptpn_petri, ptpn_parser
+        │
+ptpn_lowering
+        │
+ptpn_dbm → ptpn_reachability → ptpn_metrics, ptpn_reductions
+        │
+ptpn_export, ptpn_allocation
+        │
+ptpn_app_common → ptpn_app_input → {ptpn_app_check, ptpn_app_analysis, ptpn_app_allocation, ptpn_app}
+        │
+ptpn_cli → ptpn executable
+```
+
+`PTPN_core` is an INTERFACE aggregate used by the test executable; it is not a
+layer of its own. Application targets link their implementation dependencies as
+`PRIVATE` where the public headers only forward-declare them, so include paths
+and compile definitions do not leak to unrelated commands.
+
+## Tests
+
+`test/` contains one `test_<concern>.cpp` per concern, linked into a single
+`ptpn_test` executable. CLI-level tests run the `ptpn` binary and parse the
+diagnostics envelope; `test/cli_test_helpers.h` provides the shared runner,
+temporary-file and envelope helpers. Golden files live in `test/golden/` and
+are compared only on libstdc++ builds.
+
+## Known structural notes
+
+These are recorded for future work; this repository does not change analysis
+semantics to remove them:
+
+- `model/tdg.cpp` implements JSON/DOT I/O and includes `parse/json.h`, while
+  `parse/json.cpp` includes `model/tdg.h`. The CMake graph still works because
+  the two libraries do not link each other in a cycle, but the responsibility
+  is inverted: TDG JSON I/O conceptually belongs to the parse/export layer.
+- `analysis/allocation/` is grouped under `analysis/` but depends on
+  `lower/tdg2pn/` to evaluate candidates. It is orchestration above the
+  analysis core.
+- `analysis/reachability/scheduling_policy.cpp` mirrors the task-chain layout
+  constants defined by `lower/tdg2pn/tdg2pn_common.h`. The analysis layer
+  deliberately does not include lowering headers, so the constants are
+  duplicated with comments; a shared header would remove the silent-drift risk.
+- TDG JSON validation diagnostics have no source locations (the format has no
+  positions), and PTPN validation locations are file-only.
+- Supported-class rejection is a typed exception (`ptpn::UnsupportedClassError`)
+  thrown by lowering and by the verified job-clock/option analysis guards. The
+  app maps that type to `E-UNS-001`; metadata/index/clock-layout invariants
+  remain ordinary internal exceptions. Do not widen the mapping to every
+  `std::invalid_argument`.
+- Spin-lock suspendable marking is wrong for the single-lock chain: the
+  current lowering marks the first execution segment non-suspendable and the
+  actual critical section suspendable. See `docs/rtsl.md` §7/§12.2 and
+  `example/diagnostics/spin-lock.rtsl`; a lock-semantics fix is a separate
+  follow-up.
+
+See [diagnostics.md](diagnostics.md) for the code table and envelope contract,
+[rtsl.md](rtsl.md) for the language, and [usage.md](usage.md) for commands and
+options.

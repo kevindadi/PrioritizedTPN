@@ -288,7 +288,7 @@ TEST(RtslValidation, InvalidLockPrefixReusesJsonSemantics) {
   EXPECT_NE(matches[0]->message.find("must start with 'mutex' or 'spin'"), std::string::npos);
 }
 
-TEST(RtslValidation, SporadicIsUnsupportedWithConservativeFix) {
+TEST(RtslValidation, SporadicIsUnsupportedWithoutCertificationClaim) {
   const std::string source =
       rtsl_test::system_block("  task sp: sporadic { mit 10 time [1, 2] estimated }");
   ptpn::Diagnostics diagnostics;
@@ -299,7 +299,12 @@ TEST(RtslValidation, SporadicIsUnsupportedWithConservativeFix) {
   ASSERT_EQ(matches.size(), 1U);
   EXPECT_EQ(matches[0]->category, "unsupported");
   EXPECT_EQ(matches[0]->severity, "error");
-  EXPECT_NE(matches[0]->fix->find("periodic { period = mit }"), std::string::npos);
+  ASSERT_TRUE(matches[0]->fix.has_value());
+  const std::string& fix = matches[0]->fix.value();
+  EXPECT_NE(fix.find("period 10ms"), std::string::npos);
+  EXPECT_NE(fix.find("does not certify"), std::string::npos);
+  EXPECT_EQ(fix.find("period = mit"), std::string::npos);
+  EXPECT_EQ(fix.find("conservative WCRT"), std::string::npos);
   EXPECT_EQ(diagnostics.exit_code(), 4);
 }
 

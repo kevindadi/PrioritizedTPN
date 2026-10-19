@@ -1,0 +1,9 @@
+// A periodic task must have a positive period -> E-VAL-206, exit 3.
+system invalid {
+  cpus 1
+  task a: periodic {
+    period 0
+    core 0
+    time [1, 2] estimated
+  }
+}
