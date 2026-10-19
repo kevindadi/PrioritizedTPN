@@ -22,9 +22,9 @@ docs: `docs/rtsl-spec.md`, `docs/diagnostics.md`, `docs/llm-integration.md`,
    milliseconds; `us` is rejected (`E-UNS-004`). Periodic tasks need `period`;
    sporadic tasks are unsupported in v1 (`E-UNS-003`).
 3. **Check loop.** Run `build/ptpn check -f model.rtsl --diagnostics json`
-   (or `--diagnostics human` while iterating). Fix every `E-SYN`/`E-VAL`
-   diagnostic and rerun until exit 0. On success the envelope's
-   `result.pending_measurements` lists tasks still needing timing.
+   (omit `--diagnostics` for human-readable stderr while iterating). Fix every
+   `E-SYN`/`E-VAL` diagnostic and rerun until exit 0. On success the
+   envelope's `result.pending_measurements` lists tasks still needing timing.
 4. **Measurement.** If measurements are pending, write
    `tasks.json` (`{"<task>": "<what the task does>"}`) and run
    `python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json --execute`.
