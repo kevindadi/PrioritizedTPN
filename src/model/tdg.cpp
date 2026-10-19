@@ -151,19 +151,32 @@ std::string TDG::to_dot_string() const {
   return oss.str();
 }
 
-void TDG::export_to_dot(const std::string& output_path) {
+bool TDG::export_to_dot(const std::string& output_path) {
   spdlog::info("[DOT] Exporting to: {}", output_path);
 
   std::ofstream file(output_path);
   if (!file.is_open()) {
     spdlog::error("[DOT] Failed to create file: {}", output_path);
-    return;
+    return false;
   }
 
   file << to_dot_string();
+  // Flush first so a delayed write error (for example ENOSPC on /dev/full) is
+  // observed before the success log; close() can also report a late error.
+  file.flush();
+  if (!file) {
+    spdlog::error("[DOT] Failed to write file: {}", output_path);
+    return false;
+  }
+  file.close();
+  if (file.fail()) {
+    spdlog::error("[DOT] Failed to close file: {}", output_path);
+    return false;
+  }
 
   spdlog::info("[DOT] Exported {} nodes, {} edges to {}", nodes_type.size(), tdg_edges.size(),
                output_path);
+  return true;
 }
 
 }  // namespace tdg

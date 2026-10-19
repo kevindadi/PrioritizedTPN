@@ -40,6 +40,7 @@ add_executable(ptpn_test
   test_rtsl_pipeline.cpp
   test_rtsl_check_cli.cpp
   test_app_rtsl_input.cpp
+  test_output_failures.cpp
 )
 
 target_link_libraries(ptpn_test

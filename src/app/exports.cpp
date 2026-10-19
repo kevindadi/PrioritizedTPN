@@ -55,6 +55,15 @@ bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path) {
   }
 
   out << wcet.dump(2) << '\n';
+  // Detect buffered/delayed write failures before reporting success.
+  out.flush();
+  if (!out) {
+    return false;
+  }
+  out.close();
+  if (out.fail()) {
+    return false;
+  }
   return true;
 }
 

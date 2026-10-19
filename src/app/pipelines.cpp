@@ -58,7 +58,15 @@ int run_tdg_pipeline(const std::string& input_file, PipelineOptions opts, size_t
                parser.get_cores_per_cpu(), schedule_policy_to_string(tdg.policy));
 
   if (!opts.exports.tdg_dot.empty()) {
-    tdg.export_to_dot(opts.exports.tdg_dot);
+    if (!tdg.export_to_dot(opts.exports.tdg_dot)) {
+      spdlog::warn("[OUTPUT] Failed to export TDG DOT to: {}", opts.exports.tdg_dot);
+      if (diagnostics != nullptr) {
+        diagnostics->add("E-INT-002", "failed to write TDG DOT: " + opts.exports.tdg_dot,
+                         "output:" + opts.exports.tdg_dot, std::nullopt,
+                         "check that the output path is writable");
+      }
+      return 1;
+    }
     spdlog::info("[OUTPUT] TDG DOT exported to: {}", opts.exports.tdg_dot);
   }
 
