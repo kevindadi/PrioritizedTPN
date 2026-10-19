@@ -19,7 +19,13 @@ namespace {
 
 void print_legacy_diagnostics(const ptpn::Diagnostics& diagnostics) {
   for (const ptpn::Diagnostic& diagnostic : diagnostics.entries()) {
-    std::cerr << "ERROR: ";
+    if (diagnostic.severity == "hint") {
+      std::cerr << "HINT: ";
+    } else if (diagnostic.severity == "warning") {
+      std::cerr << "WARNING: ";
+    } else {
+      std::cerr << "ERROR: ";
+    }
     if (diagnostic.location.has_value()) {
       const ptpn::SourceLocation& location = diagnostic.location.value();
       if (!location.file.empty()) {
