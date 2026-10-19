@@ -4,6 +4,8 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 
 ## Features
 
+- **RTSL v1 front-end** (`.rtsl`): unit-aware, declarative source with panic-mode diagnostics and in-process lowering to TDG; `ptpn check` validates without lowering, `ptpn rtsl` runs the full pipeline
+- **LLM measurement loop** (`tools/llm measure`): measures `measured by llm` tasks and injects the intervals back into the `.rtsl` source
 - Parse and validate **TDG JSON** (tasks, fork/join, locks, dependencies, periodic release)
 - Lower TDGs into **PTPNs** (multi-core fixed/dynamic-priority scheduling, preemption, mutex/spin locks)
 - **Scheduling policies**: fixed/restart/resume, RM/DM, PIP/PCP/SRP, EDF, FIFO, and Event-driven LLF; EDF/FIFO/LLF support statically partitioned multi-core with explicit supported-class guards (see [Scheduling Policies](#scheduling-policies))
@@ -14,7 +16,7 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 - Optional **WCRT time-horizon reduction** (`--horizon N`) that bounds SCG expansion and reports truncation/approximation explicitly
 - Conservative **symmetry reduction** (`--reduction symmetry`) for verified isomorphic tasks on distinct cores
 - **Core-allocation search** (`ptpn allocate`) over per-task `allowed_cores`, evaluating candidates with the exact state-class analysis and reporting feasible/Pareto assignments with an optimality status
-- **LLM front-end prototype** (`tools/llm/`): natural-language task spec → validated task model → measured wall-clock interval → TDG JSON; measured values are explicitly not certified WCET
+- **LLM tooling** (`tools/llm/`): RTSL measurement loop (mainline) plus the standalone natural-language spec → generated C → measured wall-clock interval → TDG JSON prototype; measured values are explicitly not certified WCET
 - Task `deadline` and WCET provenance (`wcet_kind`, `wcet_method`, `wcet_artifact`) in TDG JSON
 - **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, metrics JSON, Romeo CTS, PToPNer `.ppn`
 - Dedicated **`export`** subcommands for Romeo and PToPNer workflows
@@ -23,12 +25,16 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 
 | Mode | Command | Input | Pipeline |
 |------|---------|-------|----------|
-| **TDG** | `ptpn tdg -f model.json` | Task dependency graph JSON | JSON → TDG → PTPN → analysis |
-| **RTSL** | `ptpn rtsl -f model.rtsl` | RTSL v1 source (declarative front-end) | RTSL → AST/validation → TDG → PTPN → analysis |
+| **RTSL** | `ptpn rtsl -f model.rtsl` | RTSL v1 source (declarative front-end) | RTSL → AST/validation → TDG (in process) → PTPN → analysis |
 | **Check** | `ptpn check -f model.rtsl` | RTSL v1 source | RTSL → AST/validation only (no lowering) |
+| **Measurement** | `python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json` | RTSL with unmeasured `measured by llm` tasks | `ptpn check` envelope → generated C → measured intervals injected into `.rtsl` |
+| **TDG** | `ptpn tdg -f model.json` | Task dependency graph JSON | JSON → TDG → PTPN → analysis |
 | **Direct** | `ptpn ptpn -f model.ptpn` | PTPN source file | `.ptpn` → PTPN → analysis |
 
 ```text
+# RTSL path (primary human/LLM entry point; lowering stays in process)
+.rtsl ──► Lexer/Parser ──► AST/Validation ──► TDG (in memory) ──► PTPN ──► State-Class Analysis
+
 # TDG path (three parallel export/analysis pipelines)
 JSON ──► TDG ──► tdg2pn ──► PTPN ──► State-Class Analysis / DOT / metrics
            │
@@ -38,6 +44,9 @@ JSON ──► TDG ──► tdg2pn ──► PTPN ──► State-Class Analysi
 # Direct path
 .ptpn ──► Parser ──► PTPN ──► State-Class Analysis / DOT / metrics
 ```
+
+RTSL time values are normalized to **milliseconds** (for RTSL input the engine
+tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks, as before.
 
 ## Quick Start
 
@@ -150,6 +159,90 @@ ctest --test-dir build --output-on-failure
 ./build/test/ptpn_test
 ```
 
+## RTSL Quick Start
+
+RTSL is the primary entry point for humans and LLMs. The model below is the
+committed [`example/introduction/demo.rtsl`](example/introduction/demo.rtsl):
+periodic and aperiodic tasks, a lock, a fork/join, and one `measured by llm`
+task that is deliberately left unmeasured.
+
+```rtsl
+system demo {
+  cpus 3
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+
+  task sensor: periodic {
+    period 100ms
+    deadline 100ms
+    core 0
+    time [2, 3] estimated by "datasheet"
+  }
+
+  task fusion: aperiodic {
+    core 1
+    locks mutex1
+    time measured by llm { runs 10, timeout 2 }   // pending until measured
+  }
+
+  task logger: aperiodic {
+    core 2
+    time [1, 2] estimated
+  }
+
+  task display: normal {
+    core 2
+    time [1, 1] estimated
+  }
+
+  start sensor
+  end display
+
+  sensor -> {fusion, logger}
+  {fusion, logger} -> display
+}
+```
+
+```bash
+# 1. Parse + validate only (no lowering, no analysis). Exit 0; the envelope's
+#    result.pending_measurements lists the unmeasured task.
+./build/ptpn check -f example/introduction/demo.rtsl --diagnostics json
+
+# 2. Measure the `measured by llm` task and inject its interval in place.
+#    --tasks-json maps each pending task id to a natural-language description.
+#    --execute compiles and runs the proposed C; without it this is a dry run
+#    that writes nothing.
+cat > tasks.json <<'JSON'
+{"fusion": "merge one sensor sample and update the shared state"}
+JSON
+python -m tools.llm measure --rtsl example/introduction/demo.rtsl \
+    --tasks-json tasks.json --execute
+
+# 3. Full pipeline: lower in process, analyze, export metrics.
+./build/ptpn rtsl -f example/introduction/demo.rtsl \
+    --export-tdg /tmp/demo.tdg.json --export-metrics metrics.json
+
+# 4. The exported TDG is ordinary input for the JSON pipeline.
+./build/ptpn tdg -f /tmp/demo.tdg.json --no-analysis
+```
+
+RTSL time values are normalized to **milliseconds** (for RTSL input the engine
+tick is 1 ms). Bare integers use `time_unit` (default `ms`); `ms`/`s` suffixes
+are absolute; `us` is rejected as E-UNS-004. TDG JSON integers remain
+unit-agnostic engine ticks.
+
+Exit codes: `0` success; `2` syntax; `3` validation; `4` unsupported model
+class; `5` truncation/partial results; `6` a certified negative analysis
+result (deadlock or `wcrt_lb > deadline`); `1` internal error or CLI usage
+error. Without
+`--diagnostics` / `--diagnostics-file`, the CLI keeps its legacy streams and
+`0`/`1` exit codes. Models using `core any` must go through `ptpn allocate`.
+
+Spec and diagnostics: [docs/rtsl-spec.md](docs/rtsl-spec.md),
+[docs/diagnostics.md](docs/diagnostics.md). Measurement details:
+[docs/llm-integration.md](docs/llm-integration.md#rtsl-measurement-loop-toolsllm-measure).
+
 ## Usage
 
 ```bash
@@ -196,6 +289,8 @@ ctest --test-dir build --output-on-failure
 | `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
 | `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified. See [docs/ptopner/metrics.md](docs/ptopner/metrics.md#time-horizon-reduction) |
 | `--no-analysis` | Skip state-class reachability analysis |
+| `--diagnostics json` | Emit the versioned JSON diagnostics envelope on stdout and reserve stdout for it (available on `check`, `tdg`, `rtsl`, `ptpn`, and `allocate`) |
+| `--diagnostics-file PATH` | Write the same envelope to `PATH` |
 | `--debug` | Enable debug logging |
 | `-v, --version` | Show version |
 
@@ -288,24 +383,14 @@ and reported but cannot win under that gate. See
 [docs/ptopner/allocation.md](docs/ptopner/allocation.md) for the full schema and
 ranking rules.
 
-### LLM Front-End Prototype (`tools/llm`)
+### LLM Integration (`tools/llm`)
 
-The prototype turns a validated task specification into LLM-proposed C
-programs, compiles and runs them in a temporary directory, and emits a TDG with
-`wcet_kind: "measured"`:
-
-```bash
-python -m tools.llm generate --spec spec.json --out model.json \
-    --execute --runs 20 --timeout 5 --tdg-out graph.json
-```
-
-`--response-file` replays a saved model response without network access.
-`--dry-run` prints the deterministic prompt.
-
-For RTSL models that declare `time ... measured by llm { ... }`, the measure
-command reads `pending_measurements` from `ptpn check`, measures one C program
-per execution segment, and injects the intervals plus a binary/compile-command
-artifact with a single span replacement:
+The **mainline** is the RTSL measurement loop. For models that declare
+`time ... measured by llm { ... }`, `ptpn check` reports the unmeasured tasks
+in `result.pending_measurements`; the measure command asks an LLM for one
+self-contained C program per execution segment, compiles and runs them, and
+injects the measured intervals plus a binary/compile-command artifact with a
+single span replacement:
 
 ```bash
 python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json \
@@ -328,6 +413,20 @@ requires a sound static WCET tool or validated MBPTA. Locked tasks require
 `2 * lock_count + 1` per-segment measurements; the emitter rejects a single
 total interval for them. See
 [docs/llm-integration.md](docs/llm-integration.md).
+
+#### Standalone generation prototype
+
+The older prototype turns a validated task specification into LLM-proposed C
+programs, compiles and runs them in a temporary directory, and emits a TDG
+with `wcet_kind: "measured"`:
+
+```bash
+python -m tools.llm generate --spec spec.json --out model.json \
+    --execute --runs 20 --timeout 5 --tdg-out graph.json
+```
+
+`--response-file` replays a saved model response without network access.
+`--dry-run` prints the deterministic prompt. The same trust boundary applies.
 
 ### Symmetry Reduction (`--reduction symmetry`)
 
@@ -459,7 +558,7 @@ python3 run.py --suites p-bench t-bench --profiles ptpn
 
 | Directory | Contents |
 |-----------|----------|
-| [example/introduction/](example/introduction/) | Small introductory TDG |
+| [example/introduction/](example/introduction/) | Small introductory RTSL model (`demo.rtsl`: periodic + aperiodic, lock, fork/join, pending measurement) |
 | [example/motivating-examples/](example/motivating-examples/) | Motivating TDG examples |
 | [example/p-bench/](example/p-bench/) | Priority / preemption benchmarks |
 | [example/s-bench/](example/s-bench/) | Small scheduling benchmarks |
@@ -472,6 +571,10 @@ TDG JSON format: [docs/json_format.md](docs/json_format.md). PTPN language: [doc
 
 | Document | Contents |
 |----------|----------|
+| [docs/rtsl-spec.md](docs/rtsl-spec.md) | RTSL v1 language spec and implementation status |
+| [docs/diagnostics.md](docs/diagnostics.md) | Structured diagnostics protocol, exit codes, and code tables |
+| [docs/llm-integration.md](docs/llm-integration.md) | LLM generation prototype and RTSL measurement loop |
+| [docs/proposal-llm-dsl.md](docs/proposal-llm-dsl.md) | RTSL/LLM mainline proposal and landing status |
 | [docs/json_format.md](docs/json_format.md) | TDG JSON input format |
 | [docs/ptpn-language-spec.md](docs/ptpn-language-spec.md) | PTPN domain language |
 | [docs/rule.md](docs/rule.md) | TDG → PTPN lowering rules |
