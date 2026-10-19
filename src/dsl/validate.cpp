@@ -333,8 +333,7 @@ void Validator::validate_core(const ast::TaskDecl& task) {
 
   if (any_span.valid()) {
     // `check` only hints, `rtsl` rejects (analysis needs a fixed core), and
-    // `allocate` expands the domain before searching (docs/rtsl-spec.md
-    // section 6).
+    // `allocate` expands the domain before searching.
     if (options_.mode == ValidationOptions::Mode::Rtsl) {
       report(diagnostics_, "E-VAL-218", subject, any_span,
              "task '" + task.id + "' uses 'core any', which requires ptpn allocate",
@@ -395,7 +394,8 @@ void Validator::validate_time_decl(const ast::TaskDecl& task, const ast::TimeDec
       // check accepts the pre-measurement state; rtsl/allocate reject it.
       if (options_.mode != ValidationOptions::Mode::Check && declaration.intervals.empty()) {
         report(diagnostics_, "E-VAL-213", subject, declaration.span,
-               "measured time is missing its interval(s)", "run the measurement step first");
+               "measured time is missing its interval(s)",
+               "fill the time interval in the RTSL source first");
       }
       break;
   }

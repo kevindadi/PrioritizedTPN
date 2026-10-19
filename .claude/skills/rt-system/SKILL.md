@@ -1,6 +1,6 @@
 ---
 name: rt-system
-description: Use when asked to model, analyze, schedule, or fix a real-time system in this repository - writing or editing RTSL, running ptpn check/rtsl/allocate, interpreting diagnostics and exit codes, or measuring `measured by llm` task times. Covers the full clarify -> RTSL -> check -> measure -> analyze -> report workflow for PTPN.
+description: Use when asked to model, analyze, schedule, or fix a real-time system in this repository - writing or editing RTSL, running ptpn check/rtsl/allocate, interpreting diagnostics and exit codes, or filling pending `measured by llm` task times. Covers the full clarify -> write -> check -> fill -> analyze -> report workflow for PTPN.
 ---
 
 # Real-Time System Workflow
@@ -16,7 +16,8 @@ Reference docs: `docs/usage.md`, `docs/install.md`, `docs/json_format.md`.
    minimum inter-arrival time, deadline, priority or scheduling policy, core
    set, locks, and dependencies. Ask for the **timing source per task**:
    `certified` (safe user-supplied bound), `estimated` (informal figure), or
-   `measured by llm` (needs the measurement loop). Do not invent numbers.
+   `measured by llm` (a placeholder whose time is filled in later). Do not
+   invent numbers.
 2. **Write RTSL v1** exactly as shown in the RTSL workflow section of
    `docs/usage.md` and `example/introduction/demo.rtsl`. The base unit is
    milliseconds; `us` is rejected (`E-UNS-004`). Periodic tasks need `period`;
@@ -25,15 +26,19 @@ Reference docs: `docs/usage.md`, `docs/install.md`, `docs/json_format.md`.
    (omit `--diagnostics` for human-readable stderr while iterating). Fix every
    `E-SYN`/`E-VAL` diagnostic and rerun until exit 0. On success the
    envelope's `result.pending_measurements` lists tasks still needing timing.
-4. **Measurement.** If measurements are pending, write
-   `tasks.json` (`{"<task>": "<what the task does>"}`) and run
-   `python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json --execute`.
-   Add `--response-file PATH` for offline replay, `--out PATH` to keep the
-   input unchanged. Without `--execute` it is a dry run that writes nothing.
-   Multi-segment (locked) tasks are measured one segment per proposal
-   (`<task>::seg0`, `<task>::seg1`, ...); intervals, `runs`, `timeout`, and the
-   artifact are injected by a single byte-slice replacement. Then re-run
-   `ptpn check`: pending must be empty.
+4. **Fill pending timing.** If `result.pending_measurements` is non-empty,
+   fill each listed task directly in the `.rtsl` source: replace
+   `time measured by llm { ... }` with an interval such as
+   `time [2, 4] estimated by "llm"`. A pending entry's `expected_segments`
+   says how many intervals are required — locked tasks need
+   `2 * lock_count + 1` segments, written as a nested list:
+   `time [ [1, 1], [1, 2], [1, 1] ] estimated by "llm"` (a wrong segment
+   count is `E-VAL-015`; bare adjacent intervals are `E-SYN-102`). Estimated
+   values must never be presented as a certified bound; if the user supplies
+   a real bound, write `certified by "<tool>"` instead. Re-run
+   `build/ptpn check -f model.rtsl --diagnostics json` until
+   `result.pending_measurements` is empty. While tasks remain pending,
+   `ptpn rtsl` and `ptpn allocate` reject the model with `E-VAL-213`.
 5. **Analyze.** `build/ptpn rtsl -f model.rtsl` for WCRT/schedulability
    (add `--no-analysis` only for lowering/export). Use
    `build/ptpn allocate` when core assignment is open. Read the metrics'
@@ -49,7 +54,7 @@ Reference docs: `docs/usage.md`, `docs/install.md`, `docs/json_format.md`.
 | Code | Action |
 |---|---|
 | `E-SYN-1xx` | Syntax/lexing error. Rewrite the reported line using the expected tokens; check units (`ms`, `s`) and string escapes. |
-| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - run the measurement loop first. `E-VAL-218` (`core any`) means use `ptpn allocate` or an explicit core. |
+| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-015` means a locked task's segment count is wrong (need `2*lock_count+1` intervals). `E-VAL-218` (`core any`) means use `ptpn allocate` or an explicit core. |
 | `E-UNS-001` | The model is outside the chosen policy's supported class. EDF/FIFO/LLF require a static partition, `cores_per_cpu 1`, one in-flight job per task, no locks, and no dependency-driven releases; PIP/PCP/SRP require `task_place_capacity 1`. Simplify the model or change policy. |
 | `E-UNS-003` | Sporadic arrivals are not implemented. Replace with `periodic` using `period = mit` (densest arrival; conservative WCRT upper bound). |
 | `E-UNS-004` | Sub-millisecond (`us`) timing is unsupported. Use `ms` and adjust precision. |
@@ -84,14 +89,8 @@ counterexample and never produces exit 6.
 
 ## Trust boundary
 
-- Treat LLM proposals and generated C as untrusted. Use `--execute` only when
-  measurement is intended; the loop compiles and runs each program in a temp
-  directory with a wall-clock timeout, best-effort `RLIMIT_CPU/AS/FSIZE`, its
-  own session, and a scrubbed environment.
-- The `measured by llm` artifact records the binary SHA-256 plus the exact
-  compile command; keep it in the model as provenance.
-- Measured wall-clock intervals are observations, not a WCET upper bound.
-  Never present them, or `estimated` values, as certified hard real-time
-  guarantees.
+- Estimated values are not certified WCET bounds. Never present an estimate
+  (including `estimated by "llm"`) as a hard real-time guarantee; only a
+  bound the user supplied as `certified by "<tool>"` carries that claim.
 - Report analyzer output mechanically; do not claim schedulability that the
   exit code and `exact`/`truncated` fields do not support.

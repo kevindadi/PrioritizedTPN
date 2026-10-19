@@ -1,9 +1,9 @@
 // PTPN introductory RTSL model.
 //
 // Exercises a periodic task, an aperiodic task with a lock, a fork/join, and
-// one `measured by llm` task left unmeasured. `ptpn check` accepts it and
-// reports `fusion` in result.pending_measurements; run the measurement loop
-// (or supply intervals by hand) before `ptpn rtsl`.
+// one `measured by llm` task left pending. `ptpn check` accepts it and reports
+// `fusion` in result.pending_measurements; fill its time interval before
+// `ptpn rtsl`.
 //
 // RTSL time values are normalized to milliseconds (one engine tick = 1 ms).
 

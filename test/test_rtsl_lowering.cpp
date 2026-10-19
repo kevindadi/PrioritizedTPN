@@ -314,7 +314,7 @@ TEST(RtslLowering, MeasuredWithoutIntervalsIsRejectedOutsideCheckMode) {
     const ptpn::Diagnostic* pending = find_diagnostic(diagnostics, "E-VAL-213");
     ASSERT_NE(pending, nullptr);
     EXPECT_EQ(pending->severity, "error");
-    EXPECT_EQ(pending->fix.value_or(""), "run the measurement step first");
+    EXPECT_EQ(pending->fix.value_or(""), "fill the time interval in the RTSL source first");
     EXPECT_FALSE(diagnostics.ok());
     EXPECT_FALSE(dsl::lower(program, source_map, diagnostics, mode).has_value());
   }

@@ -157,8 +157,7 @@ target_link_libraries(ptpn_diagnostics
 )
 
 # RTSL front-end: lexer, panic-mode parser, semantic validation, and lowering
-# to the in-memory TDG (docs/rtsl-spec.md). Lowering does not touch the
-# analysis core.
+# to the in-memory TDG. Lowering does not touch the analysis core.
 add_library(ptpn_dsl STATIC
     src/dsl/lexer.cpp
     src/dsl/parser.cpp

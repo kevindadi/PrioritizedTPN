@@ -12,8 +12,8 @@
 namespace dsl {
 
 // Byte-accurate source span. `byte_end` is exclusive. The span covers
-// `[byte_start, byte_end)` in the original file so that Phase 2b can replace
-// the whole range with formatted text (docs/rtsl-spec.md section 9).
+// `[byte_start, byte_end)` in the original file so that a later phase can
+// replace the whole range with formatted text.
 struct Span {
   std::string file;
   std::size_t byte_start = 0;
@@ -30,10 +30,10 @@ struct Span {
   }
 };
 
-// Side table from structured subject keys (docs/rtsl-spec.md section 9) to
-// source spans. It never pollutes model::TDG; later stages backfill
-// Diagnostic::location by looking the subject up here. A missing key simply
-// leaves the location unset, which the diagnostics protocol allows.
+// Side table from structured subject keys to source spans. It never pollutes
+// model::TDG; later stages backfill Diagnostic::location by looking the subject
+// up here. A missing key simply leaves the location unset, which the
+// diagnostics protocol allows.
 class SourceMap {
  public:
   // First binding wins: duplicate declarations are validation errors, and the

@@ -15,7 +15,7 @@
 namespace dsl {
 namespace ast {
 
-// Defaults for `measured by llm` configuration (docs/rtsl-spec.md section 7).
+// Defaults for `measured by llm` configuration.
 inline constexpr std::int64_t kDefaultMeasuredRuns = 20;
 inline constexpr std::int64_t kDefaultMeasuredTimeout = 5;
 
@@ -160,12 +160,11 @@ struct Program {
 };
 
 // Canonical subject key for an edge: endpoints sorted lexicographically and
-// joined with commas (docs/rtsl-spec.md section 9), for example
-// "edge:sensor->fusion,log".
+// joined with commas, for example "edge:sensor->fusion,log".
 std::string canonical_edge_subject(const std::vector<std::string>& sources,
                                    const std::vector<std::string>& targets);
 
-// Canonical implicit-node names (docs/rtsl-spec.md section 8).
+// Canonical implicit-node names.
 std::string canonical_fork_name(const std::string& source, const std::vector<std::string>& targets);
 std::string canonical_join_name(const std::vector<std::string>& sources, const std::string& target);
 

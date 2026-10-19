@@ -229,7 +229,7 @@ TEST(RtslPipelineCli, MeasuredWithoutIntervalsIsRejectedByRtslAndAllocate) {
   const nlohmann::json* pending = find_diagnostic(rtsl_envelope, "E-VAL-213");
   ASSERT_NE(pending, nullptr);
   EXPECT_EQ(pending->at("severity"), "error");
-  EXPECT_EQ(pending->at("fix"), "run the measurement step first");
+  EXPECT_EQ(pending->at("fix"), "fill the time interval in the RTSL source first");
   ASSERT_TRUE(pending->contains("location"));
   EXPECT_EQ(pending->at("location").at("file"), path);
   EXPECT_EQ(pending->at("location").at("line"), 5);
@@ -245,7 +245,8 @@ TEST(RtslPipelineCli, MeasuredWithoutIntervalsIsRejectedByRtslAndAllocate) {
   const CliResult legacy = run_cli({"rtsl", "-f", path});
   EXPECT_EQ(legacy.exit_code, 1);
   EXPECT_NE(legacy.stderr_text.find("E-VAL-213"), std::string::npos);
-  EXPECT_NE(legacy.stderr_text.find("run the measurement step first"), std::string::npos);
+  EXPECT_NE(legacy.stderr_text.find("fill the time interval in the RTSL source first"),
+            std::string::npos);
 }
 
 TEST(RtslPipelineCli, CoreAnyIsRejectedByRtslAndExpandedByAllocate) {

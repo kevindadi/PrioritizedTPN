@@ -17,7 +17,8 @@ The following dependencies are fetched at configure time with `FetchContent`:
 [nlohmann/json](https://github.com/nlohmann/json) (JSON),
 [spdlog](https://github.com/gabime/spdlog) / [fmt](https://github.com/fmtlib/fmt)
 (logging), and [GoogleTest](https://github.com/google/googletest) (tests).
-Python 3.8+ is only needed for `tools/llm` and the helper scripts.
+Python 3.8+ is only needed for the helper scripts (`example/build.py`,
+`example/run.py`).
 
 **Linux (Debian/Ubuntu) — system Boost:**
 
@@ -127,21 +128,10 @@ reference `example/...` and `test/golden/...` relative to it. Golden
 comparisons are skipped on builds that do not use libstdc++, so regenerate
 goldens only on libstdc++ builds.
 
-Python tests for the LLM prototype (stdlib `unittest`, run from the repo root):
-
-```bash
-python -m unittest discover tools/llm/tests
-```
-
 ## Formatting
 
-CI pins **clang-format 21.1.8** (installed with pip). Use that exact version;
-other versions produce different output. Check the tree with:
-
-```bash
-find src test -type f \( -name '*.cpp' -o -name '*.h' \) -print0 \
-  | xargs -0 clang-format --dry-run --Werror
-```
+There is no `.clang-format` config and no CI format gate (both were removed
+deliberately). Match the surrounding code style when editing.
 
 ## Docker
 

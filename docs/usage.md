@@ -1,8 +1,8 @@
 # Using PTPN
 
 This page describes the CLI subcommands, common options, reductions,
-core-allocation search, the LLM integration, scheduling policies, and example
-command lines. For build and installation instructions see
+core-allocation search, scheduling policies, and example command lines. For
+build and installation instructions see
 [install.md](install.md). The binary is `build/ptpn` in a default native build.
 
 ## Input modes
@@ -11,7 +11,6 @@ command lines. For build and installation instructions see
 |------|---------|-------|----------|
 | **RTSL** | `ptpn rtsl -f model.rtsl` | RTSL v1 source (declarative front-end) | RTSL → AST/validation → TDG (in process) → PTPN → analysis |
 | **Check** | `ptpn check -f model.rtsl` | RTSL v1 source | RTSL → AST/validation only (no lowering) |
-| **Measurement** | `python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json` | RTSL with unmeasured `measured by llm` tasks | `ptpn check` envelope → generated C → measured intervals injected into `.rtsl` |
 | **TDG** | `ptpn tdg -f model.json` | Task dependency graph JSON | JSON → TDG → PTPN → analysis |
 | **Direct** | `ptpn ptpn -f model.ptpn` | PTPN source file | `.ptpn` → PTPN → analysis |
 
@@ -89,7 +88,7 @@ system demo {
   task fusion: aperiodic {
     core 1
     locks mutex1
-    time measured by llm { runs 10, timeout 2 }   // pending until measured
+    time measured by llm { runs 10, timeout 2 }   // pending until filled
   }
 
   task logger: aperiodic {
@@ -115,17 +114,16 @@ system demo {
 #    result.pending_measurements lists the unmeasured task.
 ./build/ptpn check -f example/introduction/demo.rtsl --diagnostics json
 
-# 2. Measure the `measured by llm` task and inject its interval in place.
-#    --tasks-json maps each pending task id to a natural-language description.
-#    --execute compiles and runs the proposed C; without it this is a dry run
-#    that writes nothing.
-cat > tasks.json <<'JSON'
-{"fusion": "merge one sensor sample and update the shared state"}
-JSON
-python -m tools.llm measure --rtsl example/introduction/demo.rtsl \
-    --tasks-json tasks.json --execute
+# 2. Fill the pending `measured by llm` task directly in the source:
+#      time measured by llm { runs 10, timeout 2 }          (before)
+#      time [ [1, 1], [1, 2], [1, 1] ] estimated by "llm"    (after; fusion
+#          holds one lock, so 2*lock_count+1 = 3 segments — the pending
+#          entry's expected_segments says how many)
+#    Use `certified by "<tool>"` only for a real bound. Re-run `ptpn check`
+#    until result.pending_measurements is empty.
 
-# 3. Full pipeline: lower in process, analyze, export metrics.
+# 3. Full pipeline (after the pending task is filled): lower in process,
+#    analyze, export metrics.
 ./build/ptpn rtsl -f example/introduction/demo.rtsl \
     --export-tdg /tmp/demo.tdg.json --export-metrics metrics.json
 
@@ -211,49 +209,6 @@ Feasibility requires an untruncated, bounded, deadlock-free, schedulable
 analysis. `--require-certified-wcet` restricts `best` to tasks whose
 `wcet_kind` is `certified`; measured/estimated/model timing is still analyzed
 and reported but cannot win under that gate.
-
-## LLM integration (`tools/llm`)
-
-The **mainline** is the RTSL measurement loop. For models that declare
-`time ... measured by llm { ... }`, `ptpn check` reports the unmeasured tasks
-in `result.pending_measurements`; the measure command asks an LLM for one
-self-contained C program per execution segment, compiles and runs them, and
-injects the measured intervals plus a binary/compile-command artifact with a
-single span replacement:
-
-```bash
-python -m tools.llm measure --rtsl model.rtsl --tasks-json tasks.json \
-    --execute
-```
-
-`--tasks-json` maps each pending task id to a natural-language description;
-`--response-file` replays a response offline; `--out` writes elsewhere;
-without `--execute` the command is a dry run and writes nothing. Integers are
-converted to the model's millisecond base by rounding up (any non-zero
-observation is at least 1 ms).
-
-**Trust boundary:** the LLM is an untrusted proposer. Its output is schema
-validated; generated programs run only with `--execute`, with a timeout and
-best-effort resource limits. The measured min/max wall-clock interval includes
-process startup, has no confidence bound, and is **not a WCET upper bound**.
-Do not use `wcet_kind=measured` for hard real-time claims; certified timing
-requires a sound static WCET tool or validated MBPTA. Locked tasks require
-`2 * lock_count + 1` per-segment measurements; the emitter rejects a single
-total interval for them.
-
-### Standalone generation prototype
-
-The older prototype turns a validated task specification into LLM-proposed C
-programs, compiles and runs them in a temporary directory, and emits a TDG
-with `wcet_kind: "measured"`:
-
-```bash
-python -m tools.llm generate --spec spec.json --out model.json \
-    --execute --runs 20 --timeout 5 --tdg-out graph.json
-```
-
-`--response-file` replays a saved model response without network access.
-`--dry-run` prints the deterministic prompt. The same trust boundary applies.
 
 ## Symmetry reduction (`--reduction symmetry`)
 
