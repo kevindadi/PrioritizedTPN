@@ -225,13 +225,14 @@ corresponding byte-accurate spans.
 | `E-VAL-215` | Unknown scheduling policy (validated via `parse_schedule_policy`). | `use one of: fixed, fixed_prior_with_resume, fixed_prior_with_restart, rm, dm, edf, fifo, llf, pip, pcp, srp` |
 | `E-VAL-216` | Multi-to-multi edge (at least two sources and at least two targets). | `split the multi-to-multi edge into explicit intermediate tasks` |
 | `E-VAL-217` | Missing `cpus`, `cpus < 1`, or `cores_per_cpu < 1`. | `set cpus/cores_per_cpu to a positive value` |
-| `E-VAL-218` | `core any` in a command that cannot expand the core domain. `ptpn check` emits it with `severity: "hint"`; `rtsl` (Phase 2b) emits it as an error. | `use ptpn allocate to expand the core domain` |
+| `E-VAL-218` | `core any` in a command that cannot expand the core domain. `ptpn check` emits it with `severity: "hint"`; `rtsl` emits it as an error; `allocate` expands the domain silently. | `use ptpn allocate to expand the core domain` |
 | `E-VAL-219` | Duplicate attribute declaration (system attributes, task attributes, or `measured` sub-attributes). | `remove the duplicate declaration` |
 | `E-VAL-220` | `measured` configuration with non-positive `runs` or `timeout`. | `set runs/timeout to positive integers` |
 
-RTSL validation also reuses `E-VAL-014` (lock prefix) immediately. Lowering-
-time checks such as `E-VAL-015` (segment count) and `E-VAL-011` (core vs
-`allowed_cores`) are wired by Phase 2b together with `E-UNS-001`.
+RTSL validation also reuses `E-VAL-014` (lock prefix). The lowering-time
+checks `E-VAL-015` (segment count) and `E-VAL-011` (core vs `allowed_cores`)
+are reported with `.rtsl` source locations, and `E-UNS-001` is backfilled with
+the location of the offending task, implicit fork/join node, or policy.
 
 ### Unsupported (`E-UNS-`, exit 4)
 

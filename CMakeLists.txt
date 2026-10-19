@@ -161,13 +161,14 @@ target_link_libraries(ptpn_diagnostics
     nlohmann_json::nlohmann_json
 )
 
-# RTSL front-end: lexer, panic-mode parser and semantic validation for the
-# task-dependency DSL (docs/rtsl-spec.md). Phase 2a stops at validation; no
-# lowering is performed by this library.
+# RTSL front-end: lexer, panic-mode parser, semantic validation, and lowering
+# to the in-memory TDG (docs/rtsl-spec.md). Lowering does not touch the
+# analysis core.
 add_library(ptpn_dsl STATIC
     src/dsl/lexer.cpp
     src/dsl/parser.cpp
     src/dsl/validate.cpp
+    src/dsl/lower.cpp
 )
 target_link_libraries(ptpn_dsl
     PUBLIC
@@ -177,6 +178,7 @@ target_link_libraries(ptpn_dsl
 
 add_library(ptpn_json STATIC
     src/parse/json.cpp
+    src/parse/json_writer.cpp
 )
 target_link_libraries(ptpn_json
     PUBLIC

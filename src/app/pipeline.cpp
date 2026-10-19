@@ -13,11 +13,13 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <set>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <string_view>
 #include <typeinfo>
 #include <variant>
 
@@ -27,6 +29,12 @@
 #include "analysis/reductions/cone_projection.h"
 #include "app/pipeline.h"
 #include "common/diagnostics.h"
+#include "dsl/ast.h"
+#include "dsl/lexer.h"
+#include "dsl/lower.h"
+#include "dsl/parser.h"
+#include "dsl/source_map.h"
+#include "dsl/validate.h"
 #include "export/export_dot.h"
 #include "export/export_ptpn.h"
 #include "export/scg_dot.h"
@@ -39,6 +47,7 @@
 #include "model/petri.h"
 #include "model/tdg.h"
 #include "parse/json.h"
+#include "parse/json_writer.h"
 #include "parse/ptpn_parser.h"
 
 using namespace std;
@@ -67,9 +76,9 @@ void log_step_timing(const string& step, long long ms, const string& detail = {}
 }
 
 bool has_any_export(const ExportTargets& exports) {
-  return !exports.tdg_dot.empty() || !exports.wcet_json.empty() || !exports.ptpn_dot.empty() ||
-         !exports.scg_dot.empty() || !exports.metrics_json.empty() || !exports.romeo_file.empty() ||
-         !exports.ppn_file.empty() || !exports.tina_file.empty();
+  return !exports.tdg_dot.empty() || !exports.tdg_json.empty() || !exports.wcet_json.empty() ||
+         !exports.ptpn_dot.empty() || !exports.scg_dot.empty() || !exports.metrics_json.empty() ||
+         !exports.romeo_file.empty() || !exports.ppn_file.empty() || !exports.tina_file.empty();
 }
 
 // Temporarily raises the global log level (used to keep per-candidate lowering
@@ -322,8 +331,37 @@ std::optional<string> unsupported_subject(const string& message, SchedulePolicy 
   return "policy:" + schedule_policy_to_string(policy);
 }
 
-int build_ptpn_from_tdg(tdg::TDG& tdg, petri::PTPN& ptpn,
-                        ptpn::Diagnostics* diagnostics = nullptr) {
+// Resolves a lowering-subject key to the RTSL SourceMap entry that anchors it.
+// Implicit nodes are bound under `fork:<name>` / `join:<name>` and the policy
+// under `policy`, while lowering reports `node:<name>` / `policy:<name>`.
+std::optional<ptpn::SourceLocation> source_map_location(const dsl::SourceMap& source_map,
+                                                        const std::string& subject) {
+  if (const auto location = source_map.location_for(subject); location.has_value()) {
+    return location;
+  }
+
+  constexpr std::string_view kNodePrefix = "node:";
+  if (subject.compare(0, kNodePrefix.size(), kNodePrefix) == 0) {
+    const std::string name = subject.substr(kNodePrefix.size());
+    if (auto location = source_map.location_for("fork:" + name); location.has_value()) {
+      return location;
+    }
+    if (auto location = source_map.location_for("join:" + name); location.has_value()) {
+      return location;
+    }
+    return std::nullopt;
+  }
+
+  constexpr std::string_view kPolicyPrefix = "policy:";
+  if (subject.compare(0, kPolicyPrefix.size(), kPolicyPrefix) == 0) {
+    return source_map.location_for("policy");
+  }
+  return std::nullopt;
+}
+
+int build_ptpn_from_tdg(const tdg::TDG& tdg, petri::PTPN& ptpn,
+                        ptpn::Diagnostics* diagnostics = nullptr,
+                        const dsl::SourceMap* source_map = nullptr) {
   spdlog::info("\n[PTPN] Converting TDG to PTPN...");
   try {
     converter::TDG2PN::transform(tdg, ptpn);
@@ -333,8 +371,12 @@ int build_ptpn_from_tdg(tdg::TDG& tdg, petri::PTPN& ptpn,
       // All std::invalid_argument throws from the lowering facade are
       // supported-class guards (EDF/FIFO/LLF and PIP/PCP/SRP restrictions).
       if (dynamic_cast<const std::invalid_argument*>(&error) != nullptr) {
-        diagnostics->add("E-UNS-001", error.what(), unsupported_subject(error.what(), tdg.policy),
-                         std::nullopt,
+        const optional<string> subject = unsupported_subject(error.what(), tdg.policy);
+        std::optional<ptpn::SourceLocation> location;
+        if (source_map != nullptr && subject.has_value()) {
+          location = source_map_location(*source_map, *subject);
+        }
+        diagnostics->add("E-UNS-001", error.what(), subject, std::move(location),
                          "simplify the model or choose a supported scheduling policy");
       } else {
         diagnostics->add("E-INT-003", error.what(),
@@ -884,7 +926,119 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
   return 0;
 }
 
+// Shared post-load TDG pipeline: compat exports, PTPN lowering, state-class
+// analysis, metrics and the total timing line. `tdg` and `rtsl` both go through
+// this function so analysis and export semantics cannot diverge (C1).
+int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts, const string& input_label,
+                     const PipelineClock::time_point& pipeline_start, size_t initial_memory,
+                     ptpn::Diagnostics* diagnostics, const dsl::SourceMap* source_map = nullptr) {
+#if defined(PTPN_ENABLE_COMPAT)
+  if (!opts.exports.ppn_file.empty()) {
+    if (validate_ptopner_tdg(tdg) != 0) {
+      return 1;
+    }
+  }
+
+  if (!opts.exports.romeo_file.empty()) {
+    const auto romeo_opts =
+        make_romeo_export_options(opts.romeo_format, opts.romeo_explicit_core_places);
+    if (export_romeo_from_tdg(tdg, opts.exports.romeo_file, romeo_opts) != 0) {
+      return 1;
+    }
+  }
+#endif
+
+  const bool needs_ptpn = should_run_analysis(opts) || !opts.exports.ptpn_dot.empty() ||
+                          !opts.exports.ppn_file.empty() || !opts.exports.scg_dot.empty() ||
+                          !opts.exports.metrics_json.empty();
+
+  if (!needs_ptpn) {
+    if (!has_any_export(opts.exports)) {
+      spdlog::warn("[MAIN] No exports requested and analysis disabled; nothing to do");
+      return 0;
+    }
+    const auto end_time = PipelineClock::now();
+    log_step_timing(input_label + " pipeline (total)", elapsed_ms(pipeline_start),
+                    to_string(get_memory_usage() - initial_memory) + " KB");
+    return 0;
+  }
+
+  petri::PTPN ptpn;
+  const auto lowering_start = PipelineClock::now();
+  if (build_ptpn_from_tdg(tdg, ptpn, diagnostics, source_map) != 0) {
+    return 1;
+  }
+  log_step_timing("TDG2PN lowering", elapsed_ms(lowering_start));
+
+  return run_ptpn_postprocess(ptpn, input_label, opts, pipeline_start, initial_memory, diagnostics);
+}
+
+// Lexes, parses, validates and lowers an RTSL file. On failure the collector
+// carries the diagnostics (E-SYN/E-VAL/E-UNS); the caller decides whether to
+// print them in the legacy format or return the protocol exit code.
+std::optional<tdg::TDG> load_tdg_from_rtsl(const string& input_file,
+                                           dsl::ValidationOptions::Mode mode,
+                                           dsl::SourceMap& source_map,
+                                           ptpn::Diagnostics& diagnostics) {
+  std::ifstream input(input_file, std::ios::binary);
+  if (!input) {
+    ptpn::SourceLocation location;
+    location.file = input_file;
+    diagnostics.add("E-SYN-002", "failed to open RTSL file: " + input_file, std::nullopt,
+                    std::move(location), "check that the input path exists and is readable");
+    return std::nullopt;
+  }
+
+  const string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  dsl::Lexer lexer(source, input_file, diagnostics);
+  std::vector<dsl::Token> tokens = lexer.tokenize();
+  dsl::Parser parser(std::move(tokens), input_file, diagnostics, source_map);
+  const dsl::ast::Program program = parser.parse();
+
+  dsl::ValidationOptions options;
+  options.mode = mode;
+  dsl::validate(program, source_map, diagnostics, options);
+  if (!diagnostics.ok()) {
+    return std::nullopt;
+  }
+
+  return dsl::lower(program, source_map, diagnostics, mode);
+}
+
 }  // namespace
+
+void print_legacy_diagnostics(const ptpn::Diagnostics& diagnostics) {
+  for (const ptpn::Diagnostic& diagnostic : diagnostics.entries()) {
+    if (diagnostic.severity == "hint") {
+      std::cerr << "HINT: ";
+    } else if (diagnostic.severity == "warning") {
+      std::cerr << "WARNING: ";
+    } else {
+      std::cerr << "ERROR: ";
+    }
+    if (diagnostic.location.has_value()) {
+      const ptpn::SourceLocation& location = diagnostic.location.value();
+      if (!location.file.empty()) {
+        std::cerr << location.file;
+        if (location.line > 0) {
+          std::cerr << ':' << location.line;
+          if (location.column > 0) {
+            std::cerr << ':' << location.column;
+          }
+        }
+        std::cerr << ": ";
+      }
+    }
+    std::cerr << diagnostic.code << ": " << diagnostic.message << '\n';
+    if (diagnostic.fix.has_value() && !diagnostic.fix->empty()) {
+      std::cerr << "  fix: " << diagnostic.fix.value() << '\n';
+    }
+  }
+  if (diagnostics.truncated()) {
+    std::cerr << "ERROR: additional diagnostics were truncated (cap "
+              << ptpn::Diagnostics::kMaxDiagnostics << ")\n";
+  }
+}
 
 bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path) {
   nlohmann::json wcet = nlohmann::json::object();
@@ -1003,45 +1157,68 @@ int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t init
   const size_t tdg_memory = get_memory_usage() - initial_memory;
   log_step_timing("TDG parsing", elapsed_ms(tdg_start), to_string(tdg_memory) + " KB");
 
-#if defined(PTPN_ENABLE_COMPAT)
-  if (!opts.exports.ppn_file.empty()) {
-    if (validate_ptopner_tdg(tdg) != 0) {
-      return 1;
-    }
-  }
+  return run_tdg_analysis(tdg, opts, "TDG", pipeline_start, initial_memory, diagnostics);
+}
 
-  if (!opts.exports.romeo_file.empty()) {
-    const auto romeo_opts =
-        make_romeo_export_options(opts.romeo_format, opts.romeo_explicit_core_places);
-    if (export_romeo_from_tdg(tdg, opts.exports.romeo_file, romeo_opts) != 0) {
-      return 1;
-    }
-  }
-#endif
-
-  const bool needs_ptpn = should_run_analysis(opts) || !opts.exports.ptpn_dot.empty() ||
-                          !opts.exports.ppn_file.empty() || !opts.exports.scg_dot.empty() ||
-                          !opts.exports.metrics_json.empty();
-
-  if (!needs_ptpn) {
-    if (!has_any_export(opts.exports)) {
-      spdlog::warn("[MAIN] No exports requested and analysis disabled; nothing to do");
-      return 0;
-    }
-    const auto end_time = PipelineClock::now();
-    log_step_timing("TDG pipeline (total)", elapsed_ms(pipeline_start),
-                    to_string(get_memory_usage() - initial_memory) + " KB");
-    return 0;
-  }
-
-  petri::PTPN ptpn;
-  const auto lowering_start = PipelineClock::now();
-  if (build_ptpn_from_tdg(tdg, ptpn, diagnostics) != 0) {
+int run_rtsl_pipeline(const string& input_file, PipelineOptions opts, size_t initial_memory,
+                      ptpn::Diagnostics* diagnostics) {
+#if !defined(PTPN_ENABLE_COMPAT)
+  if (reject_compat_exports(opts.exports, diagnostics) != 0) {
     return 1;
   }
-  log_step_timing("TDG2PN lowering", elapsed_ms(lowering_start));
+#endif
+  const auto pipeline_start = PipelineClock::now();
+  spdlog::info("[RTSL] Loading source: {}", input_file);
 
-  return run_ptpn_postprocess(ptpn, "TDG", opts, pipeline_start, initial_memory, diagnostics);
+  ptpn::Diagnostics local;
+  ptpn::Diagnostics& collector = diagnostics != nullptr ? *diagnostics : local;
+  dsl::SourceMap source_map;
+  std::optional<tdg::TDG> lowered =
+      load_tdg_from_rtsl(input_file, dsl::ValidationOptions::Mode::Rtsl, source_map, collector);
+  if (!lowered.has_value()) {
+    if (diagnostics == nullptr) {
+      print_legacy_diagnostics(collector);
+      return 1;
+    }
+    return collector.exit_code() != 0 ? collector.exit_code() : 1;
+  }
+
+  tdg::TDG& tdg = *lowered;
+  apply_policy_override(tdg, opts.policy_override);
+  spdlog::info("[TDG] Configuration: {} CPUs, {} cores per CPU, policy={}", tdg.num_cpus,
+               tdg.cores_per_cpu, schedule_policy_to_string(tdg.policy));
+
+  if (!opts.exports.tdg_json.empty()) {
+    if (!parse::write_tdg_json(tdg, opts.exports.tdg_json)) {
+      spdlog::warn("[OUTPUT] Failed to save TDG JSON to: {}", opts.exports.tdg_json);
+      if (diagnostics != nullptr) {
+        diagnostics->add("E-INT-002", "failed to write TDG JSON: " + opts.exports.tdg_json,
+                         "output:" + opts.exports.tdg_json, std::nullopt,
+                         "check that the output path is writable");
+      }
+      return 1;
+    }
+    spdlog::info("[OUTPUT] TDG JSON exported to: {}", opts.exports.tdg_json);
+  }
+
+  if (!opts.exports.wcet_json.empty()) {
+    if (!write_wcet_json(tdg, opts.exports.wcet_json)) {
+      spdlog::warn("[OUTPUT] Failed to save WCET JSON to: {}", opts.exports.wcet_json);
+      if (diagnostics != nullptr) {
+        diagnostics->add("E-INT-002", "failed to write WCET JSON: " + opts.exports.wcet_json,
+                         "output:" + opts.exports.wcet_json, std::nullopt,
+                         "check that the output path is writable");
+      }
+      return 1;
+    }
+    spdlog::info("[OUTPUT] WCET JSON exported to: {}", opts.exports.wcet_json);
+  }
+
+  log_step_timing("RTSL lowering", elapsed_ms(pipeline_start),
+                  to_string(get_memory_usage() - initial_memory) + " KB");
+
+  return run_tdg_analysis(tdg, opts, "RTSL", pipeline_start, initial_memory, diagnostics,
+                          &source_map);
 }
 
 int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts, size_t initial_memory,
@@ -1147,12 +1324,29 @@ int run_export_ptopner(const ExportCommandOptions& opts) {
 #endif  // defined(PTPN_ENABLE_COMPAT)
 
 int run_allocation(const AllocationCommandOptions& opts, ptpn::Diagnostics* diagnostics) {
-  spdlog::info("[ALLOC] Loading TDG JSON: {}", opts.input_file);
-
-  parse::Parser parser;
   tdg::TDG tdg(1, 1);
-  if (load_tdg_from_json(opts.input_file, tdg, parser, diagnostics) != 0) {
-    return 1;
+  const bool is_rtsl = fs::path(opts.input_file).extension() == ".rtsl";
+  if (is_rtsl) {
+    spdlog::info("[ALLOC] Loading RTSL source: {}", opts.input_file);
+    ptpn::Diagnostics local;
+    ptpn::Diagnostics& collector = diagnostics != nullptr ? *diagnostics : local;
+    dsl::SourceMap source_map;
+    std::optional<tdg::TDG> lowered = load_tdg_from_rtsl(
+        opts.input_file, dsl::ValidationOptions::Mode::Allocate, source_map, collector);
+    if (!lowered.has_value()) {
+      if (diagnostics == nullptr) {
+        print_legacy_diagnostics(collector);
+        return 1;
+      }
+      return collector.exit_code() != 0 ? collector.exit_code() : 1;
+    }
+    tdg = std::move(*lowered);
+  } else {
+    spdlog::info("[ALLOC] Loading TDG JSON: {}", opts.input_file);
+    parse::Parser parser;
+    if (load_tdg_from_json(opts.input_file, tdg, parser, diagnostics) != 0) {
+      return 1;
+    }
   }
   apply_policy_override(tdg, opts.policy_override);
 

@@ -81,8 +81,14 @@ allocation::Objective parse_objective_option(const string& objective) {
   return allocation::Objective::MAX_WCRT;
 }
 
-void add_export_target_options(CLI::App* cmd, app::ExportTargets& exports) {
-  cmd->add_option("--export-tdg", exports.tdg_dot, "Write TDG Graphviz DOT to PATH");
+void add_export_target_options(CLI::App* cmd, app::ExportTargets& exports,
+                               bool tdg_export_is_json = false) {
+  if (tdg_export_is_json) {
+    cmd->add_option("--export-tdg", exports.tdg_json,
+                    "Write the lowered TDG JSON (round-trippable through ptpn tdg) to PATH");
+  } else {
+    cmd->add_option("--export-tdg", exports.tdg_dot, "Write TDG Graphviz DOT to PATH");
+  }
   cmd->add_option("--export-wcet", exports.wcet_json, "Write per-task WCET summary JSON to PATH");
   cmd->add_option("--export-ptpn", exports.ptpn_dot, "Write PTPN structure Graphviz DOT to PATH");
   cmd->add_option("--export-scg", exports.scg_dot,
@@ -96,7 +102,8 @@ void add_export_target_options(CLI::App* cmd, app::ExportTargets& exports) {
   cmd->add_option("--tina", exports.tina_file, "Export Tina .net to PATH (not implemented)");
 }
 
-void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
+void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts,
+                                 bool tdg_export_is_json = false) {
   cmd->add_option("-m,--max-states", opts.max_states,
                   "Maximum number of states in reachability graph (default: 10000)");
   cmd->add_flag("--no-analysis", opts.skip_analysis, "Skip state-class reachability analysis");
@@ -132,7 +139,7 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
                   "are not certified when pruning occurs")
       ->check(CLI::NonNegativeNumber);
   add_diagnostics_options(cmd, opts.diagnostics);
-  add_export_target_options(cmd, opts.exports);
+  add_export_target_options(cmd, opts.exports, tdg_export_is_json);
 }
 
 void configure_export_subcommand(CLI::App* cmd, app::ExportCommandOptions& opts,
@@ -155,8 +162,9 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
   app.footer(
       "Usage:\n"
       "  ptpn tdg -f <input.json> [--export-scg graph.dot] ...\n"
+      "  ptpn rtsl -f <model.rtsl> [--export-tdg lowered.json] ...\n"
       "  ptpn ptpn -f <model.ptpn> [--romeo out.cts] ...\n"
-      "  ptpn allocate -f <input.json> -o <report.json> [--objective ...]\n"
+      "  ptpn allocate -f <input.json|model.rtsl> -o <report.json> [--objective ...]\n"
       "  ptpn check -f <model.rtsl> [--diagnostics json]\n"
       "  ptpn export romeo -f <input> -o <out.cts> [--policy ...]\n"
       "  ptpn export ptopner -f <input> -o <out.ppn>\n"
@@ -164,18 +172,22 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
       "File exports are opt-in. Run 'ptpn <subcommand> -h' for details.");
 
   app::PipelineOptions tdg_opts;
+  app::PipelineOptions rtsl_opts;
   app::PipelineOptions ptpn_opts;
   app::ExportCommandOptions romeo_export_opts;
   app::ExportCommandOptions ptopner_export_opts;
   app::AllocationCommandOptions allocation_opts;
   app::CheckCommandOptions check_opts;
   string tdg_file;
+  string rtsl_file;
   string ptpn_file;
   string allocation_objective = "max-wcrt";
   string tdg_policy_string;
+  string rtsl_policy_string;
   string ptopner_policy_string;
   string allocation_policy_string;
   bool romeo_no_core_places = false;
+  bool rtsl_romeo_no_core_places = false;
   bool export_romeo_no_core_places = false;
 
   auto* tdg_cmd = app.add_subcommand("tdg", "Analyze from TDG JSON input");
@@ -209,6 +221,38 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
       "  ptpn tdg -f input.json --no-analysis --export-wcet wcet.json\n"
       "  ptpn tdg -f input.json --romeo out.cts --format scheduling-net");
 
+  auto* rtsl_cmd = app.add_subcommand("rtsl", "Analyze an RTSL model end to end");
+  rtsl_cmd->add_option("-f,--file", rtsl_file, "Input RTSL file")->required(true);
+  add_common_pipeline_options(rtsl_cmd, rtsl_opts, /*tdg_export_is_json=*/true);
+  rtsl_cmd
+      ->add_option("--format", rtsl_opts.romeo_format,
+                   "Romeo export format: scheduling-net or inhibitor-arc "
+                   "(default: scheduling-net)")
+      ->check(CLI::IsMember({"scheduling-net", "inhibitor-arc"}));
+  rtsl_cmd->add_flag("--romeo-no-core-places", rtsl_romeo_no_core_places,
+                     "Omit explicit core resource places in Romeo export");
+  rtsl_cmd
+      ->add_option("--policy", rtsl_policy_string,
+                   "Override the RTSL scheduling policy for lowering "
+                   "(fixed_prior_with_resume for native analysis, "
+                   "fixed_prior_with_restart for PToPNer)")
+      ->transform([&rtsl_opts](const string& value) {
+        rtsl_opts.policy_override = parse_policy_option(value);
+        return value;
+      });
+  rtsl_cmd->footer(
+      "Examples:\n"
+      "  ptpn rtsl -f model.rtsl\n"
+      "  ptpn rtsl -f model.rtsl --export-tdg lowered.json --export-metrics "
+      "metrics.json\n"
+      "  ptpn rtsl -f model.rtsl --diagnostics json\n"
+      "  ptpn rtsl -f model.rtsl --policy fixed_prior_with_resume --export-scg "
+      "scg.dot\n"
+      "\n"
+      "Lowering runs in process; `--export-tdg` materializes the TDG JSON\n"
+      "that `ptpn tdg` consumes. Models using `core any` require `ptpn\n"
+      "allocate` (E-VAL-218).");
+
   auto* ptpn_cmd = app.add_subcommand("ptpn", "Analyze from PTPN source file");
   ptpn_cmd->add_option("-f,--file", ptpn_file, "Input .ptpn source file")->required(true);
   add_common_pipeline_options(ptpn_cmd, ptpn_opts);
@@ -221,7 +265,9 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
 
   auto* allocate_cmd = app.add_subcommand(
       "allocate", "Search deterministic core allocations with the exact PTPN analysis");
-  allocate_cmd->add_option("-f,--file", allocation_opts.input_file, "Input TDG JSON file")
+  allocate_cmd
+      ->add_option("-f,--file", allocation_opts.input_file,
+                   "Input TDG JSON or RTSL file (-f model.rtsl expands core any)")
       ->required(true);
   allocate_cmd
       ->add_option("-o,--output", allocation_opts.output_file, "Output allocation report JSON")
@@ -322,6 +368,11 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
     diagnostics_engaged = tdg_opts.diagnostics.engaged();
     diagnostics_stdout = tdg_opts.diagnostics.output == "json";
     diagnostics_file = tdg_opts.diagnostics.file;
+  } else if (rtsl_cmd->parsed()) {
+    debug_mode = rtsl_opts.debug_mode;
+    diagnostics_engaged = rtsl_opts.diagnostics.engaged();
+    diagnostics_stdout = rtsl_opts.diagnostics.output == "json";
+    diagnostics_file = rtsl_opts.diagnostics.file;
   } else if (ptpn_cmd->parsed()) {
     debug_mode = ptpn_opts.debug_mode;
     diagnostics_engaged = ptpn_opts.diagnostics.engaged();
@@ -369,6 +420,15 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
     }
 #endif
     return app::run_tdg_pipeline(tdg_file, tdg_opts, initial_memory, diag);
+  }
+  if (rtsl_cmd->parsed()) {
+    rtsl_opts.romeo_explicit_core_places = !rtsl_romeo_no_core_places;
+#if !defined(PTPN_ENABLE_COMPAT)
+    if (reject_compat_exports(rtsl_opts.exports, diag) != 0) {
+      return 1;
+    }
+#endif
+    return app::run_rtsl_pipeline(rtsl_file, rtsl_opts, initial_memory, diag);
   }
   if (ptpn_cmd->parsed()) {
 #if !defined(PTPN_ENABLE_COMPAT)

@@ -24,6 +24,8 @@ A **Priority Timed Petri Net** analyzer for real-time scheduling. It lowers task
 | Mode | Command | Input | Pipeline |
 |------|---------|-------|----------|
 | **TDG** | `ptpn tdg -f model.json` | Task dependency graph JSON | JSON → TDG → PTPN → analysis |
+| **RTSL** | `ptpn rtsl -f model.rtsl` | RTSL v1 source (declarative front-end) | RTSL → AST/validation → TDG → PTPN → analysis |
+| **Check** | `ptpn check -f model.rtsl` | RTSL v1 source | RTSL → AST/validation only (no lowering) |
 | **Direct** | `ptpn ptpn -f model.ptpn` | PTPN source file | `.ptpn` → PTPN → analysis |
 
 ```text
@@ -154,12 +156,19 @@ ctest --test-dir build --output-on-failure
 # Analyze from TDG JSON (reachability only, no files written)
 ./build/ptpn tdg -f example/p-bench/initial.json
 
+# Lower and analyze an RTSL model; export the lowered TDG JSON
+./build/ptpn rtsl -f model.rtsl --export-tdg lowered.json --export-metrics metrics.json
+
+# Validate an RTSL model without lowering (LLM/diagnostics workflow)
+./build/ptpn check -f model.rtsl --diagnostics json
+
 # Analyze from PTPN source
 ./build/ptpn ptpn -f model.ptpn
 
 # Help
 ./build/ptpn --help
 ./build/ptpn tdg --help
+./build/ptpn rtsl --help
 ./build/ptpn export romeo --help
 ```
 
@@ -168,11 +177,14 @@ ctest --test-dir build --output-on-failure
 | Subcommand | Purpose |
 |------------|---------|
 | `ptpn tdg` | Load TDG JSON, lower to PTPN, analyze and/or export |
+| `ptpn rtsl` | Load RTSL source, lower in process to TDG, then run the TDG analysis pipeline |
+| `ptpn check` | Lex, parse, and validate RTSL (no lowering or analysis) |
 | `ptpn ptpn` | Load `.ptpn` source, analyze and/or export |
+| `ptpn allocate` | Search core allocations from TDG JSON or RTSL (`core any` is expanded) |
 | `ptpn export romeo` | Export Romeo CTS from TDG JSON (`--format scheduling-net\|inhibitor-arc`) |
 | `ptpn export ptopner` | Export PToPNer `.ppn` (`-f` input, `-o` output) |
 
-### Common Options (`tdg` / `ptpn`)
+### Common Options (`tdg` / `rtsl` / `ptpn`)
 
 | Option | Description |
 |--------|-------------|
@@ -187,7 +199,7 @@ ctest --test-dir build --output-on-failure
 | `--debug` | Enable debug logging |
 | `-v, --version` | Show version |
 
-**TDG-only:**
+**Input-lowering options (`tdg` / `rtsl`):**
 
 | Option | Description |
 |--------|-------------|
@@ -197,12 +209,12 @@ ctest --test-dir build --output-on-failure
 
 | Option | Output |
 |--------|--------|
-| `--export-tdg PATH` | TDG Graphviz DOT (TDG mode only) |
-| `--export-wcet PATH` | Per-task WCET summary JSON (TDG mode only) |
+| `--export-tdg PATH` | TDG Graphviz DOT (`tdg`) or lowered TDG JSON round-trippable through `ptpn tdg` (`rtsl`) |
+| `--export-wcet PATH` | Per-task WCET summary JSON (`tdg`/`rtsl`) |
 | `--export-ptpn PATH` | PTPN structure Graphviz DOT |
 | `--export-scg PATH` | State-class reachability graph DOT |
 | `--export-metrics PATH` | Performance / schedulability metrics JSON |
-| `--romeo PATH` | Romeo CTS (via `tdg2romeo`, TDG mode only) |
+| `--romeo PATH` | Romeo CTS (via `tdg2romeo`, `tdg`/`rtsl`) |
 | `--ppn PATH` | PToPNer `.ppn` |
 | `--tina PATH` | Tina `.net` (not implemented) |
 
@@ -254,6 +266,11 @@ equality canonicalization, suspension-clock projection, and no reduction:
 ./build/ptpn allocate -f input.json -o allocation.json \
     --objective max-load --max-candidates 64
 ```
+
+`allocate` also accepts an RTSL source (`-f model.rtsl`): `core any` is expanded
+to the full `0 .. num_cpus-1` domain before the search, so the same model can
+be checked (`ptpn check`), rejected for direct analysis (`ptpn rtsl`), or
+allocated without hand-editing cores.
 
 The report contains:
 

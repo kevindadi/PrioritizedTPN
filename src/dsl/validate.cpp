@@ -332,9 +332,18 @@ void Validator::validate_core(const ast::TaskDecl& task) {
   }
 
   if (any_span.valid()) {
-    report(diagnostics_, "E-VAL-218", subject, any_span,
-           "task '" + task.id + "' uses 'core any', which requires ptpn allocate",
-           "use `ptpn allocate` to expand the core domain before analysis", "hint");
+    // `check` only hints, `rtsl` rejects (analysis needs a fixed core), and
+    // `allocate` expands the domain before searching (docs/rtsl-spec.md
+    // section 6).
+    if (options_.mode == ValidationOptions::Mode::Rtsl) {
+      report(diagnostics_, "E-VAL-218", subject, any_span,
+             "task '" + task.id + "' uses 'core any', which requires ptpn allocate",
+             "use `ptpn allocate` to expand the core domain before analysis");
+    } else if (options_.mode == ValidationOptions::Mode::Check) {
+      report(diagnostics_, "E-VAL-218", subject, any_span,
+             "task '" + task.id + "' uses 'core any', which requires ptpn allocate",
+             "use `ptpn allocate` to expand the core domain before analysis", "hint");
+    }
   }
 }
 
