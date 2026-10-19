@@ -1,6 +1,7 @@
 #include "parse/ptpn_parser.h"
 
 #include <fstream>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <unordered_map>
@@ -136,42 +137,64 @@ static bool parse_bare_transition_attribute(TransitionNode& trans, std::string::
   return false;
 }
 
-bool PTPNParser::validate(const PTPNAST& ast, std::string& error) {
+namespace {
+
+bool validate_impl(const PTPNAST& ast, std::string& error, ptpn::Diagnostics* diagnostics,
+                   const std::string& file) {
+  std::optional<ptpn::SourceLocation> location;
+  if (!file.empty()) {
+    ptpn::SourceLocation file_location;
+    file_location.file = file;
+    location = std::move(file_location);
+  }
+
+  const auto fail = [&](const char* code, const std::string& message,
+                        std::optional<std::string> subject,
+                        std::optional<std::string> fix = std::nullopt) {
+    error = message;
+    if (diagnostics != nullptr) {
+      diagnostics->add(code, message, std::move(subject), location, std::move(fix));
+    }
+    return false;
+  };
+
   std::set<std::string> place_ids;
   for (const auto& place : ast.places) {
     if (place.id.empty()) {
-      error = "Place definition has empty id";
-      return false;
+      return fail("E-VAL-101", "Place definition has empty id", std::nullopt,
+                  "give every place a non-empty identifier");
     }
     if (!place_ids.insert(place.id).second) {
-      error = "Duplicate place id: " + place.id;
-      return false;
+      return fail("E-VAL-102", "Duplicate place id: " + place.id, "place:" + place.id,
+                  "rename one of the duplicate places");
     }
     if (place.capacity < 0) {
-      error = "Negative capacity for place: " + place.id;
-      return false;
+      return fail("E-VAL-103", "Negative capacity for place: " + place.id, "place:" + place.id,
+                  "set the place capacity to a non-negative integer");
     }
   }
 
   std::set<std::string> transition_ids;
   for (const auto& trans : ast.transitions) {
     if (trans.id.empty()) {
-      error = "Transition definition has empty id";
-      return false;
+      return fail("E-VAL-104", "Transition definition has empty id", std::nullopt,
+                  "give every transition a non-empty identifier");
     }
     if (!transition_ids.insert(trans.id).second) {
-      error = "Duplicate transition id: " + trans.id;
-      return false;
+      return fail("E-VAL-105", "Duplicate transition id: " + trans.id, "transition:" + trans.id,
+                  "rename one of the duplicate transitions");
     }
     if (trans.time_min < 0 || trans.time_max < trans.time_min) {
-      error = "Invalid time range for transition: " + trans.id;
-      return false;
+      return fail("E-VAL-106", "Invalid time range for transition: " + trans.id,
+                  "transition:" + trans.id,
+                  "write the interval as [min, max] with 0 <= min <= max");
     }
     const petri::TimeInterval interval(trans.time_min, trans.time_max, trans.left_open,
                                        trans.right_open);
     if (!interval.is_valid()) {
-      error = "Invalid or empty integer time range for transition: " + trans.id;
-      return false;
+      return fail("E-VAL-107", "Invalid or empty integer time range for transition: " + trans.id,
+                  "transition:" + trans.id,
+                  "use a non-empty interval; open bounds require a strict gap");
     }
   }
 
@@ -184,42 +207,60 @@ bool PTPNParser::validate(const PTPNAST& ast, std::string& error) {
   }
 
   for (const auto& arc : ast.arcs) {
+    const std::string arc_subject = "arc:" + arc.source + "->" + arc.target;
     const auto src_it = node_is_place.find(arc.source);
     const auto tgt_it = node_is_place.find(arc.target);
     if (src_it == node_is_place.end()) {
-      error = "Arc source not found: " + arc.source;
-      return false;
+      return fail("E-VAL-108", "Arc source not found: " + arc.source, arc_subject,
+                  "declare the source place or transition before using it in an arc");
     }
     if (tgt_it == node_is_place.end()) {
-      error = "Arc target not found: " + arc.target;
-      return false;
+      return fail("E-VAL-109", "Arc target not found: " + arc.target, arc_subject,
+                  "declare the target place or transition before using it in an arc");
     }
     if (src_it->second == tgt_it->second) {
-      error = "Invalid arc (place->place or transition->transition): " + arc.source + " -> " +
-              arc.target;
-      return false;
+      return fail("E-VAL-110",
+                  "Invalid arc (place->place or transition->transition): " + arc.source + " -> " +
+                      arc.target,
+                  arc_subject,
+                  "connect a place to a transition (pre-arc) or a transition to a "
+                  "place (post-arc)");
     }
     if (arc.weight <= 0) {
-      error = "Arc weight must be positive: " + arc.source + " -> " + arc.target;
-      return false;
+      return fail("E-VAL-111", "Arc weight must be positive: " + arc.source + " -> " + arc.target,
+                  arc_subject, "set the arc weight to a positive integer");
     }
   }
 
   for (const auto& init : ast.initial_marking) {
     if (place_ids.find(init.place) == place_ids.end()) {
-      error = "Initial marking references unknown place: " + init.place;
-      return false;
+      return fail("E-VAL-112", "Initial marking references unknown place: " + init.place,
+                  "place:" + init.place, "reference a declared place in @init");
     }
     if (init.tokens < 0) {
-      error = "Negative token count for place: " + init.place;
-      return false;
+      return fail("E-VAL-113", "Negative token count for place: " + init.place,
+                  "place:" + init.place, "set the token count to a non-negative integer");
     }
   }
 
   return true;
 }
 
-bool PTPNParser::parse(const std::string& input, PTPNAST& ast, std::string& error) {
+}  // namespace
+
+bool PTPNParser::validate(const PTPNAST& ast, std::string& error) {
+  return validate_impl(ast, error, nullptr, {});
+}
+
+bool PTPNParser::validate(const PTPNAST& ast, std::string& error, ptpn::Diagnostics& diagnostics,
+                          const std::string& file) {
+  return validate_impl(ast, error, &diagnostics, file);
+}
+
+namespace {
+
+bool parse_impl(const std::string& input, PTPNAST& ast, std::string& error,
+                ptpn::Diagnostics* diagnostics, const std::string& file) {
   ast = PTPNAST();
 
   auto it = input.begin();
@@ -473,23 +514,53 @@ bool PTPNParser::parse(const std::string& input, PTPNAST& ast, std::string& erro
       }
     }
 
-    return validate(ast, error);
+    return validate_impl(ast, error, diagnostics, file);
   } catch (const std::exception& e) {
     error = e.what();
+    if (diagnostics != nullptr) {
+      diagnostics->add("E-INT-001", e.what());
+    }
     return false;
   }
 }
 
-bool PTPNParser::parse_file(const std::string& filepath, PTPNAST& ast, std::string& error) {
+bool parse_file_impl(const std::string& filepath, PTPNAST& ast, std::string& error,
+                     ptpn::Diagnostics* diagnostics) {
   std::ifstream file(filepath);
   if (!file.is_open()) {
     error = "Cannot open file: " + filepath;
+    if (diagnostics != nullptr) {
+      ptpn::SourceLocation location;
+      location.file = filepath;
+      diagnostics->add("E-SYN-002", error, std::nullopt, location,
+                       "check that the path exists and is readable");
+    }
     return false;
   }
 
   std::stringstream buffer;
   buffer << file.rdbuf();
-  return parse(buffer.str(), ast, error);
+  return parse_impl(buffer.str(), ast, error, diagnostics, filepath);
+}
+
+}  // namespace
+
+bool PTPNParser::parse(const std::string& input, PTPNAST& ast, std::string& error) {
+  return parse_impl(input, ast, error, nullptr, {});
+}
+
+bool PTPNParser::parse(const std::string& input, PTPNAST& ast, std::string& error,
+                       ptpn::Diagnostics& diagnostics) {
+  return parse_impl(input, ast, error, &diagnostics, {});
+}
+
+bool PTPNParser::parse_file(const std::string& filepath, PTPNAST& ast, std::string& error) {
+  return parse_file_impl(filepath, ast, error, nullptr);
+}
+
+bool PTPNParser::parse_file(const std::string& filepath, PTPNAST& ast, std::string& error,
+                            ptpn::Diagnostics& diagnostics) {
+  return parse_file_impl(filepath, ast, error, &diagnostics);
 }
 
 petri::PTPN PTPNBuilder::build(const PTPNAST& ast) {
@@ -545,10 +616,30 @@ ptpn::Result<petri::PTPN> PTPNBuilder::parse(const std::string& source) {
   return ptpn::Result<petri::PTPN>::success(build(ast));
 }
 
+ptpn::Result<petri::PTPN> PTPNBuilder::parse(const std::string& source,
+                                             ptpn::Diagnostics& diagnostics) {
+  PTPNAST ast;
+  std::string error;
+  if (!PTPNParser::parse(source, ast, error, diagnostics)) {
+    return ptpn::Result<petri::PTPN>::failure(std::move(error));
+  }
+  return ptpn::Result<petri::PTPN>::success(build(ast));
+}
+
 ptpn::Result<petri::PTPN> PTPNBuilder::parse_file(const std::string& filepath) {
   PTPNAST ast;
   std::string error;
   if (!PTPNParser::parse_file(filepath, ast, error)) {
+    return ptpn::Result<petri::PTPN>::failure(std::move(error));
+  }
+  return ptpn::Result<petri::PTPN>::success(build(ast));
+}
+
+ptpn::Result<petri::PTPN> PTPNBuilder::parse_file(const std::string& filepath,
+                                                  ptpn::Diagnostics& diagnostics) {
+  PTPNAST ast;
+  std::string error;
+  if (!PTPNParser::parse_file(filepath, ast, error, diagnostics)) {
     return ptpn::Result<petri::PTPN>::failure(std::move(error));
   }
   return ptpn::Result<petri::PTPN>::success(build(ast));

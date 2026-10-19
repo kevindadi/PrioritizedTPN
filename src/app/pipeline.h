@@ -12,7 +12,23 @@ namespace tdg {
 class TDG;
 }
 
+namespace ptpn {
+class Diagnostics;
+}
+
 namespace app {
+
+// CLI transport selection for the versioned diagnostics envelope.
+// `output == "json"` writes the envelope to stdout; `file` writes it to PATH.
+// Without either, no envelope is produced and CLI behavior is unchanged.
+struct DiagnosticsOptions {
+  std::string output;
+  std::string file;
+
+  [[nodiscard]] bool engaged() const {
+    return !output.empty() || !file.empty();
+  }
+};
 
 struct ExportTargets {
   std::string tdg_dot;
@@ -46,6 +62,7 @@ struct PipelineOptions {
   std::optional<SchedulePolicy> policy_override;
   std::string romeo_format = "scheduling-net";
   bool romeo_explicit_core_places = true;
+  DiagnosticsOptions diagnostics;
   ExportTargets exports;
 };
 
@@ -68,6 +85,7 @@ struct AllocationCommandOptions {
   bool require_certified_wcet = false;
   bool debug_mode = false;
   std::optional<SchedulePolicy> policy_override;
+  DiagnosticsOptions diagnostics;
 };
 
 size_t get_memory_usage();
@@ -78,14 +96,15 @@ size_t get_memory_usage();
 // if the file cannot be opened.
 bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path);
 
-int run_tdg_pipeline(const std::string& input_file, PipelineOptions opts, size_t initial_memory);
+int run_tdg_pipeline(const std::string& input_file, PipelineOptions opts, size_t initial_memory,
+                     ptpn::Diagnostics* diagnostics = nullptr);
 int run_ptpn_pipeline(const std::string& input_file, const PipelineOptions& opts,
-                      size_t initial_memory);
+                      size_t initial_memory, ptpn::Diagnostics* diagnostics = nullptr);
 #if defined(PTPN_ENABLE_COMPAT)
 int run_export_romeo(const ExportCommandOptions& opts);
 int run_export_ptopner(const ExportCommandOptions& opts);
 #endif
-int run_allocation(const AllocationCommandOptions& opts);
+int run_allocation(const AllocationCommandOptions& opts, ptpn::Diagnostics* diagnostics = nullptr);
 
 }  // namespace app
 

@@ -1,10 +1,13 @@
 #include <CLI/CLI.hpp>
 #include <cstddef>
+#include <fstream>
 #include <iostream>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <string>
 
 #include "app/pipeline.h"
+#include "common/diagnostics.h"
 #include "model/types.h"
 
 using namespace std;
@@ -26,16 +29,36 @@ int report_export_unavailable(const string& feature) {
   return 1;
 }
 
-int reject_compat_exports(const app::ExportTargets& exports) {
+int reject_compat_exports(const app::ExportTargets& exports, ptpn::Diagnostics* diagnostics) {
   if (exports.romeo_file.empty() && exports.ppn_file.empty()) {
     return 0;
   }
-  cerr << "ERROR: Romeo/PToPNer export is not available: built without compat "
-          "support (rebuild with -DPTPN_ENABLE_COMPAT=ON)"
-       << endl;
+  const string message =
+      "Romeo/PToPNer export is not available: built without compat support "
+      "(rebuild with -DPTPN_ENABLE_COMPAT=ON)";
+  cerr << "ERROR: " << message << endl;
+  if (diagnostics != nullptr) {
+    diagnostics->add("E-UNS-002", message, "policy:compat", std::nullopt,
+                     "rebuild with -DPTPN_ENABLE_COMPAT=ON or drop --romeo/--ppn");
+  }
   return 1;
 }
 #endif
+
+// When the diagnostics envelope is active, stdout carries only the envelope;
+// human-readable logs move to stderr (the [STATS] line format is unchanged).
+void redirect_logs_to_stderr() {
+  auto logger = spdlog::stderr_color_mt("ptpn-diagnostics");
+  spdlog::set_default_logger(std::move(logger));
+}
+
+void add_diagnostics_options(CLI::App* cmd, app::DiagnosticsOptions& diagnostics) {
+  cmd->add_option("--diagnostics", diagnostics.output,
+                  "Emit the versioned diagnostics JSON envelope on stdout (json)")
+      ->check(CLI::IsMember({"json"}));
+  cmd->add_option("--diagnostics-file", diagnostics.file,
+                  "Write the versioned diagnostics JSON envelope to PATH");
+}
 
 SchedulePolicy parse_policy_option(const string& policy) {
   const SchedulePolicy parsed = parse_schedule_policy(policy);
@@ -107,6 +130,7 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts) {
                   "bound on the response time of interest; deadlock/SCC results "
                   "are not certified when pruning occurs")
       ->check(CLI::NonNegativeNumber);
+  add_diagnostics_options(cmd, opts.diagnostics);
   add_export_target_options(cmd, opts.exports);
 }
 
@@ -122,7 +146,8 @@ void configure_export_subcommand(CLI::App* cmd, app::ExportCommandOptions& opts,
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagnostics_engaged,
+            bool& diagnostics_stdout, std::string& diagnostics_file, std::streambuf*& saved_cout) {
   CLI::App app{"PTPN - Priority Timed Petri Net Analyzer"};
   app.set_version_flag("-v,--version", "1.0.0");
   app.require_subcommand(1);
@@ -219,6 +244,7 @@ int main(int argc, char* argv[]) {
                          "Only consider allocations whose WCET provenance is certified");
   allocate_cmd->add_flag("--debug", allocation_opts.debug_mode,
                          "Enable debug logging (including per-candidate analysis logs)");
+  add_diagnostics_options(allocate_cmd, allocation_opts.diagnostics);
   allocate_cmd
       ->add_option("--policy", allocation_policy_string,
                    "Override the TDG scheduling policy before allocation analysis")
@@ -277,14 +303,30 @@ int main(int argc, char* argv[]) {
   bool debug_mode = false;
   if (tdg_cmd->parsed()) {
     debug_mode = tdg_opts.debug_mode;
+    diagnostics_engaged = tdg_opts.diagnostics.engaged();
+    diagnostics_stdout = tdg_opts.diagnostics.output == "json";
+    diagnostics_file = tdg_opts.diagnostics.file;
   } else if (ptpn_cmd->parsed()) {
     debug_mode = ptpn_opts.debug_mode;
+    diagnostics_engaged = ptpn_opts.diagnostics.engaged();
+    diagnostics_stdout = ptpn_opts.diagnostics.output == "json";
+    diagnostics_file = ptpn_opts.diagnostics.file;
   } else if (allocate_cmd->parsed()) {
     debug_mode = allocation_opts.debug_mode;
+    diagnostics_engaged = allocation_opts.diagnostics.engaged();
+    diagnostics_stdout = allocation_opts.diagnostics.output == "json";
+    diagnostics_file = allocation_opts.diagnostics.file;
   } else if (export_romeo_cmd->parsed()) {
     debug_mode = romeo_export_opts.debug_mode;
   } else if (export_ptopner_cmd->parsed()) {
     debug_mode = ptopner_export_opts.debug_mode;
+  }
+
+  if (diagnostics_engaged) {
+    // Keep stdout reserved for the envelope; logs (including [STATS]) and any
+    // stray direct stdout writes are redirected to stderr.
+    redirect_logs_to_stderr();
+    saved_cout = std::cout.rdbuf(std::cerr.rdbuf());
   }
 
   if (debug_mode) {
@@ -297,26 +339,27 @@ int main(int argc, char* argv[]) {
   spdlog::info("==========================================");
 
   const size_t initial_memory = app::get_memory_usage();
+  ptpn::Diagnostics* diag = diagnostics_engaged ? &diagnostics : nullptr;
 
   if (tdg_cmd->parsed()) {
     tdg_opts.romeo_explicit_core_places = !romeo_no_core_places;
 #if !defined(PTPN_ENABLE_COMPAT)
-    if (reject_compat_exports(tdg_opts.exports) != 0) {
+    if (reject_compat_exports(tdg_opts.exports, diag) != 0) {
       return 1;
     }
 #endif
-    return app::run_tdg_pipeline(tdg_file, tdg_opts, initial_memory);
+    return app::run_tdg_pipeline(tdg_file, tdg_opts, initial_memory, diag);
   }
   if (ptpn_cmd->parsed()) {
 #if !defined(PTPN_ENABLE_COMPAT)
-    if (reject_compat_exports(ptpn_opts.exports) != 0) {
+    if (reject_compat_exports(ptpn_opts.exports, diag) != 0) {
       return 1;
     }
 #endif
-    return app::run_ptpn_pipeline(ptpn_file, ptpn_opts, initial_memory);
+    return app::run_ptpn_pipeline(ptpn_file, ptpn_opts, initial_memory, diag);
   }
   if (allocate_cmd->parsed()) {
-    return app::run_allocation(allocation_opts);
+    return app::run_allocation(allocation_opts, diag);
   }
   if (export_romeo_cmd->parsed()) {
 #if defined(PTPN_ENABLE_COMPAT)
@@ -335,4 +378,71 @@ int main(int argc, char* argv[]) {
   }
 
   return 1;
+}
+
+int main(int argc, char* argv[]) {
+  ptpn::Diagnostics diagnostics;
+  bool diagnostics_engaged = false;
+  bool diagnostics_stdout = false;
+  std::string diagnostics_file;
+  std::streambuf* saved_cout = nullptr;
+  int result_code = 1;
+
+  try {
+    result_code = run_cli(argc, argv, diagnostics, diagnostics_engaged, diagnostics_stdout,
+                          diagnostics_file, saved_cout);
+  } catch (const std::exception& e) {
+    if (diagnostics_engaged) {
+      diagnostics.add("E-INT-001", e.what(), "system:internal", std::nullopt,
+                      "report this as an internal error");
+    }
+    std::cerr << "ERROR: " << e.what() << std::endl;
+    result_code = 1;
+  } catch (...) {
+    if (diagnostics_engaged) {
+      diagnostics.add("E-INT-001", "unknown internal error", "system:internal", std::nullopt,
+                      "report this as an internal error");
+    }
+    std::cerr << "ERROR: unknown internal error" << std::endl;
+    result_code = 1;
+  }
+
+  if (saved_cout != nullptr) {
+    std::cout.rdbuf(saved_cout);
+  }
+
+  if (!diagnostics_engaged) {
+    return result_code;
+  }
+
+  // The envelope is the machine-readable outcome: failures without a specific
+  // diagnostic still surface as an internal error rather than a false success.
+  if (result_code != 0 && diagnostics.exit_code() == 0) {
+    diagnostics.add("E-INT-001", "operation failed with exit code " + std::to_string(result_code),
+                    "system:internal", std::nullopt,
+                    "report this failure; it has no specific diagnostic");
+  }
+
+  // Open the file destination before serializing so a write failure is part of
+  // the same envelope that would have been written.
+  std::ofstream envelope_file;
+  if (!diagnostics_file.empty()) {
+    envelope_file.open(diagnostics_file);
+    if (!envelope_file) {
+      std::cerr << "ERROR: Failed to write diagnostics file: " << diagnostics_file << std::endl;
+      diagnostics.add("E-INT-002", "failed to write diagnostics file: " + diagnostics_file,
+                      "output:" + diagnostics_file, std::nullopt,
+                      "check that the output path is writable");
+    }
+  }
+
+  int code = diagnostics.exit_code();
+  const nlohmann::json envelope = diagnostics.to_json();
+  if (diagnostics_stdout) {
+    std::cout << envelope.dump(2) << std::endl;
+  }
+  if (envelope_file) {
+    envelope_file << envelope.dump(2) << std::endl;
+  }
+  return code;
 }
