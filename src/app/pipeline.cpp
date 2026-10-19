@@ -39,11 +39,6 @@
 #include "export/export_ptpn.h"
 #include "export/scg_dot.h"
 #include "lower/tdg2pn/tdg2pn.h"
-#if defined(PTPN_ENABLE_COMPAT)
-#  include "lower/tdg2ptopner/tdg2ptopner.h"
-#  include "lower/tdg2ptopner/validate.h"
-#  include "lower/tdg2romeo/tdg2romeo.h"
-#endif
 #include "model/petri.h"
 #include "model/tdg.h"
 #include "parse/json.h"
@@ -56,10 +51,6 @@ namespace fs = std::filesystem;
 namespace app {
 
 namespace {
-
-#if defined(PTPN_ENABLE_COMPAT)
-enum class InputFormat { AUTO, TDG, PTPN };
-#endif
 
 using PipelineClock = chrono::high_resolution_clock;
 
@@ -77,8 +68,7 @@ void log_step_timing(const string& step, long long ms, const string& detail = {}
 
 bool has_any_export(const ExportTargets& exports) {
   return !exports.tdg_dot.empty() || !exports.tdg_json.empty() || !exports.wcet_json.empty() ||
-         !exports.ptpn_dot.empty() || !exports.scg_dot.empty() || !exports.metrics_json.empty() ||
-         !exports.romeo_file.empty() || !exports.ppn_file.empty() || !exports.tina_file.empty();
+         !exports.ptpn_dot.empty() || !exports.scg_dot.empty() || !exports.metrics_json.empty();
 }
 
 // Temporarily raises the global log level (used to keep per-candidate lowering
@@ -132,39 +122,6 @@ bool should_run_analysis(const PipelineOptions& opts) {
   return !opts.skip_analysis;
 }
 
-#if !defined(PTPN_ENABLE_COMPAT)
-int reject_compat_exports(const ExportTargets& exports, ptpn::Diagnostics* diagnostics) {
-  if (exports.romeo_file.empty() && exports.ppn_file.empty()) {
-    return 0;
-  }
-  const string message =
-      "Romeo/PToPNer export is not available: built without compat support "
-      "(rebuild with -DPTPN_ENABLE_COMPAT=ON)";
-  cerr << "ERROR: " << message << endl;
-  if (diagnostics != nullptr) {
-    diagnostics->add("E-UNS-002", message, "policy:compat", std::nullopt,
-                     "rebuild with -DPTPN_ENABLE_COMPAT=ON");
-  }
-  return 1;
-}
-#endif
-
-#if defined(PTPN_ENABLE_COMPAT)
-InputFormat resolve_input_format(const fs::path& input_path, const string& format_hint) {
-  if (format_hint == "tdg") {
-    return InputFormat::TDG;
-  }
-  if (format_hint == "ptpn") {
-    return InputFormat::PTPN;
-  }
-  const string ext = input_path.extension().string();
-  if (ext == ".ptpn") {
-    return InputFormat::PTPN;
-  }
-  return InputFormat::TDG;
-}
-#endif
-
 state_class::CanonicalizationMode parse_canonicalization(const string& mode) {
   if (mode == "max-lower") {
     return state_class::CanonicalizationMode::MAX_LOWER_BOUND;
@@ -182,23 +139,6 @@ state_class::ReductionMode parse_reduction(const string& mode) {
   return state_class::ReductionMode::NONE;
 }
 
-#if defined(PTPN_ENABLE_COMPAT)
-romeo::RomeoFormat romeo_format_from_string(const string& format) {
-  if (format == "inhibitor-arc" || format == "inhibitor_arc") {
-    return romeo::RomeoFormat::InhibitorArc;
-  }
-  return romeo::RomeoFormat::SchedulingNet;
-}
-
-romeo::RomeoExportOptions make_romeo_export_options(const string& format,
-                                                    bool explicit_core_places) {
-  romeo::RomeoExportOptions opts;
-  opts.format = romeo_format_from_string(format);
-  opts.explicit_core_places = explicit_core_places;
-  return opts;
-}
-#endif
-
 void apply_policy_override(tdg::TDG& tdg, const optional<SchedulePolicy>& policy_override) {
   if (!policy_override.has_value()) {
     return;
@@ -206,47 +146,6 @@ void apply_policy_override(tdg::TDG& tdg, const optional<SchedulePolicy>& policy
   tdg.policy = policy_override.value();
   spdlog::info("[TDG] Scheduling policy override: {}", schedule_policy_to_string(tdg.policy));
 }
-
-#if defined(PTPN_ENABLE_COMPAT)
-int validate_ptopner_tdg(const tdg::TDG& tdg) {
-  const auto ppn_validation = ptopner_export::validate_for_ptopner(tdg);
-  if (!ppn_validation.ok) {
-    cerr << "ERROR: PToPNer export validation failed:" << endl;
-    for (const auto& err : ppn_validation.errors) {
-      cerr << "  - " << err << endl;
-    }
-    return 1;
-  }
-  if (!ppn_validation.warnings.empty()) {
-    cout << "PToPNer export warnings:" << endl;
-    for (const auto& warn : ppn_validation.warnings) {
-      cout << "  - " << warn << endl;
-    }
-  }
-  return 0;
-}
-
-int export_romeo_from_tdg(const tdg::TDG& tdg, const string& output_path,
-                          const romeo::RomeoExportOptions& opts) {
-  const auto result = romeo::export_tdg_to_romeo_cts(tdg, output_path, opts);
-  if (result.success) {
-    spdlog::info("[OUTPUT] Romeo CTS exported to: {}", output_path);
-    return 0;
-  }
-  cerr << "ERROR: Failed to export Romeo CTS: " << result.error_message << endl;
-  return 1;
-}
-
-int export_ppn_from_ptpn(const petri::PTPN& ptpn, const string& output_path) {
-  const auto ppn_export = ptopner_export::export_ptpn_to_ppn_file(ptpn, output_path);
-  if (!ppn_export.success) {
-    cerr << "ERROR: PToPNer export failed: " << ppn_export.error_message << endl;
-    return 1;
-  }
-  spdlog::info("[OUTPUT] PToPNer .ppn exported to: {}", output_path);
-  return 0;
-}
-#endif
 
 int load_tdg_from_json(const string& input_file, tdg::TDG& tdg, parse::Parser& parser,
                        ptpn::Diagnostics* diagnostics = nullptr) {
@@ -665,23 +564,6 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
     }
   }
 
-#if defined(PTPN_ENABLE_COMPAT)
-  if (!opts.exports.ppn_file.empty()) {
-    if (export_ppn_from_ptpn(ptpn, opts.exports.ppn_file) != 0) {
-      if (diagnostics != nullptr) {
-        diagnostics->add("E-INT-002", "failed to write PToPNer export: " + opts.exports.ppn_file,
-                         "output:" + opts.exports.ppn_file, std::nullopt,
-                         "check that the output path is writable");
-      }
-      return 1;
-    }
-  }
-#endif
-
-  if (!opts.exports.tina_file.empty()) {
-    spdlog::info("[OUTPUT] Tina export not implemented");
-  }
-
   if (opts.reduction_mode == "cone" && should_run_analysis(opts)) {
     if (!opts.exports.scg_dot.empty()) {
       spdlog::warn(
@@ -926,31 +808,14 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
   return 0;
 }
 
-// Shared post-load TDG pipeline: compat exports, PTPN lowering, state-class
-// analysis, metrics and the total timing line. `tdg` and `rtsl` both go through
-// this function so analysis and export semantics cannot diverge (C1).
+// Shared post-load TDG pipeline: PTPN lowering, state-class analysis, metrics
+// and the total timing line. `tdg` and `rtsl` both go through this function so
+// analysis and export semantics cannot diverge (C1).
 int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts, const string& input_label,
                      const PipelineClock::time_point& pipeline_start, size_t initial_memory,
                      ptpn::Diagnostics* diagnostics, const dsl::SourceMap* source_map = nullptr) {
-#if defined(PTPN_ENABLE_COMPAT)
-  if (!opts.exports.ppn_file.empty()) {
-    if (validate_ptopner_tdg(tdg) != 0) {
-      return 1;
-    }
-  }
-
-  if (!opts.exports.romeo_file.empty()) {
-    const auto romeo_opts =
-        make_romeo_export_options(opts.romeo_format, opts.romeo_explicit_core_places);
-    if (export_romeo_from_tdg(tdg, opts.exports.romeo_file, romeo_opts) != 0) {
-      return 1;
-    }
-  }
-#endif
-
   const bool needs_ptpn = should_run_analysis(opts) || !opts.exports.ptpn_dot.empty() ||
-                          !opts.exports.ppn_file.empty() || !opts.exports.scg_dot.empty() ||
-                          !opts.exports.metrics_json.empty();
+                          !opts.exports.scg_dot.empty() || !opts.exports.metrics_json.empty();
 
   if (!needs_ptpn) {
     if (!has_any_export(opts.exports)) {
@@ -1115,11 +980,6 @@ size_t get_memory_usage() {
 
 int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t initial_memory,
                      ptpn::Diagnostics* diagnostics) {
-#if !defined(PTPN_ENABLE_COMPAT)
-  if (reject_compat_exports(opts.exports, diagnostics) != 0) {
-    return 1;
-  }
-#endif
   const auto pipeline_start = PipelineClock::now();
   const auto tdg_start = PipelineClock::now();
   spdlog::info("[TDG] Loading JSON: {}", input_file);
@@ -1162,11 +1022,6 @@ int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t init
 
 int run_rtsl_pipeline(const string& input_file, PipelineOptions opts, size_t initial_memory,
                       ptpn::Diagnostics* diagnostics) {
-#if !defined(PTPN_ENABLE_COMPAT)
-  if (reject_compat_exports(opts.exports, diagnostics) != 0) {
-    return 1;
-  }
-#endif
   const auto pipeline_start = PipelineClock::now();
   spdlog::info("[RTSL] Loading source: {}", input_file);
 
@@ -1223,11 +1078,6 @@ int run_rtsl_pipeline(const string& input_file, PipelineOptions opts, size_t ini
 
 int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts, size_t initial_memory,
                       ptpn::Diagnostics* diagnostics) {
-#if !defined(PTPN_ENABLE_COMPAT)
-  if (reject_compat_exports(opts.exports, diagnostics) != 0) {
-    return 1;
-  }
-#endif
   const auto pipeline_start = PipelineClock::now();
   const auto parse_start = PipelineClock::now();
   spdlog::info("[PTPN] Loading source: {}", input_file);
@@ -1254,74 +1104,6 @@ int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts, siz
 
   return run_ptpn_postprocess(ptpn, "PTPN", opts, pipeline_start, initial_memory, diagnostics);
 }
-
-#if defined(PTPN_ENABLE_COMPAT)
-int run_export_romeo(const ExportCommandOptions& opts) {
-  const fs::path input_path(opts.input_file);
-  if (opts.input_format == "ptpn" ||
-      (opts.input_format == "auto" && input_path.extension() == ".ptpn")) {
-    cerr << "ERROR: Romeo export accepts TDG JSON only (use tdg2romeo, not PTPN input)" << endl;
-    return 1;
-  }
-
-  spdlog::info("[EXPORT] Romeo from TDG JSON: {}", opts.input_file);
-  parse::Parser parser;
-  tdg::TDG tdg(1, 1);
-  if (load_tdg_from_json(opts.input_file, tdg, parser) != 0) {
-    return 1;
-  }
-
-  const auto romeo_opts =
-      make_romeo_export_options(opts.romeo_format, opts.romeo_explicit_core_places);
-  return export_romeo_from_tdg(tdg, opts.output_file, romeo_opts);
-}
-
-int run_export_ptopner(const ExportCommandOptions& opts) {
-  const fs::path input_path(opts.input_file);
-  const InputFormat format = resolve_input_format(input_path, opts.input_format);
-
-  if (format == InputFormat::PTPN) {
-    spdlog::info("[EXPORT] PToPNer from PTPN source: {}", opts.input_file);
-    const auto ptpn_result = parser::PTPNBuilder::parse_file(opts.input_file);
-    if (!ptpn_result.ok()) {
-      cerr << "ERROR: Failed to parse PTPN file: " << ptpn_result.error() << endl;
-      return 1;
-    }
-    return export_ppn_from_ptpn(ptpn_result.value(), opts.output_file);
-  }
-
-  spdlog::info("[EXPORT] PToPNer from TDG JSON: {}", opts.input_file);
-  parse::Parser parser;
-  tdg::TDG tdg(1, 1);
-  if (load_tdg_from_json(opts.input_file, tdg, parser) != 0) {
-    return 1;
-  }
-
-  if (opts.policy_override.has_value()) {
-    if (opts.policy_override.value() != SchedulePolicy::FIXED_PRIOR_WITH_RESTART) {
-      cerr << "ERROR: PToPNer export requires fixed_prior_with_restart policy" << endl;
-      return 1;
-    }
-    tdg.policy = SchedulePolicy::FIXED_PRIOR_WITH_RESTART;
-  } else if (tdg.policy != SchedulePolicy::FIXED_PRIOR_WITH_RESTART) {
-    spdlog::info(
-        "[EXPORT] Overriding TDG policy {} -> fixed_prior_with_restart for "
-        "PToPNer",
-        schedule_policy_to_string(tdg.policy));
-    tdg.policy = SchedulePolicy::FIXED_PRIOR_WITH_RESTART;
-  }
-
-  if (validate_ptopner_tdg(tdg) != 0) {
-    return 1;
-  }
-
-  petri::PTPN ptpn;
-  if (build_ptpn_from_tdg(tdg, ptpn) != 0) {
-    return 1;
-  }
-  return export_ppn_from_ptpn(ptpn, opts.output_file);
-}
-#endif  // defined(PTPN_ENABLE_COMPAT)
 
 int run_allocation(const AllocationCommandOptions& opts, ptpn::Diagnostics* diagnostics) {
   tdg::TDG tdg(1, 1);

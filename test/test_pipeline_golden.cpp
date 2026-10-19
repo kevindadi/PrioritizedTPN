@@ -28,7 +28,6 @@ using ptpn_test::load_tdg;
 //     --export-metrics test/golden/hw.metrics.json
 //   ./build/ptpn tdg -f example/s-bench/a.json \
 //     --export-ptpn test/golden/a.ptpn.dot --export-metrics test/golden/a.metrics.json
-// The PToPNer .ppn golden is covered by test_compat_golden.cpp.
 
 petri::PTPN lower_to_ptpn(const std::string& path) {
   tdg::TDG tdg = load_tdg(path);

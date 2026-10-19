@@ -87,11 +87,6 @@ endif()
 
 project(PTPN LANGUAGES CXX)
 
-# Romeo (.cts) and PToPNer (.ppn) export adapters are optional integrations for
-# external comparison tools; the mainline TDG -> PTPN analysis path does not
-# depend on them.
-option(PTPN_ENABLE_COMPAT "Build Romeo and PToPNer export adapters" OFF)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -242,61 +237,6 @@ target_link_libraries(ptpn_lowering
     spdlog::spdlog
 )
 
-if(PTPN_ENABLE_COMPAT)
-    add_library(ptpn_romeo STATIC
-        src/lower/tdg2romeo/cts_writer.cpp
-        src/lower/tdg2romeo/encode_common.cpp
-        src/lower/tdg2romeo/inhibitor_arc.cpp
-        src/lower/tdg2romeo/scheduling_net.cpp
-        src/lower/tdg2romeo/tdg2romeo.cpp
-        src/lower/tdg2romeo/tdg_helpers.cpp
-    )
-    target_link_libraries(ptpn_romeo
-        PUBLIC
-        ptpn_tdg
-        PRIVATE
-        Boost::filesystem
-        spdlog::spdlog
-    )
-
-    add_library(ptpn_ptopner STATIC
-        src/lower/tdg2ptopner/validate.cpp
-        src/lower/tdg2ptopner/export_ppn.cpp
-        src/lower/tdg2ptopner/ptpn_to_ppn.cpp
-        src/lower/tdg2ptopner/tdg2ptopner.cpp
-    )
-    target_link_libraries(ptpn_ptopner
-        PUBLIC
-        ptpn_petri
-        ptpn_tdg
-        PRIVATE
-        ptpn_lowering
-        spdlog::spdlog
-    )
-endif()
-
-# Unified lowering facade: TDG -> {PTPN, Romeo, PToPNer} with PTPN as the
-# canonical hub for composed conversions. The Romeo/PToPNer edges (and the
-# PTPN -> PToPNer edge) are compiled in only when compat exports are enabled.
-add_library(ptpn_convert STATIC
-    src/lower/convert/registry.cpp
-    src/lower/convert/tdg_converters.cpp
-    src/lower/convert/ptpn_converters.cpp
-    src/lower/convert/defaults.cpp
-)
-target_link_libraries(ptpn_convert
-    PUBLIC
-    ptpn_lowering
-)
-if(PTPN_ENABLE_COMPAT)
-    target_compile_definitions(ptpn_convert PUBLIC PTPN_ENABLE_COMPAT=1)
-    target_link_libraries(ptpn_convert
-        PUBLIC
-        ptpn_romeo
-        ptpn_ptopner
-    )
-endif()
-
 add_library(ptpn_parser STATIC
     src/parse/ptpn_parser.cpp
 )
@@ -373,6 +313,30 @@ target_link_libraries(ptpn_allocation
     spdlog::spdlog
 )
 
+# Application layer: the CLI-free TDG/RTSL/PTPN pipelines, allocation search
+# driver and the RTSL check entry point. This library must not depend on CLI11.
+add_library(ptpn_app STATIC
+    src/app/pipeline.cpp
+    src/app/check_cmd.cpp
+)
+target_include_directories(ptpn_app PUBLIC src)
+target_link_libraries(ptpn_app
+    PUBLIC
+    ptpn_allocation
+    ptpn_diagnostics
+    ptpn_dsl
+    ptpn_export
+    ptpn_json
+    ptpn_lowering
+    ptpn_metrics
+    ptpn_parser
+    ptpn_reachability
+    ptpn_reductions
+    ptpn_tdg
+    nlohmann_json::nlohmann_json
+    spdlog::spdlog
+)
+
 # Aggregate facade kept for the executables and tests.
 add_library(PTPN_core INTERFACE)
 target_link_libraries(PTPN_core
@@ -385,32 +349,39 @@ target_link_libraries(PTPN_core
     ptpn_petri
     ptpn_export
     ptpn_lowering
-    ptpn_convert
     ptpn_parser
     ptpn_dbm
     ptpn_reachability
     ptpn_metrics
     ptpn_reductions
     ptpn_allocation
+    ptpn_app
     spdlog::spdlog
     fmt::fmt
 )
-if(PTPN_ENABLE_COMPAT)
-    target_link_libraries(PTPN_core
-        INTERFACE
-        ptpn_romeo
-        ptpn_ptopner
-    )
-endif()
 
-# Main executable
-add_executable(ptpn
-    src/app/main.cpp
-    src/app/check_cmd.cpp
-    src/app/pipeline.cpp
+# CLI layer: CLI11 option registration and dispatch for the `ptpn`
+# subcommands. It maps CLI strings into the option structs from app/pipeline.h.
+add_library(ptpn_cli STATIC
+    src/cli/option_groups.cpp
+    src/cli/commands/tdg_cmd.cpp
+    src/cli/commands/rtsl_cmd.cpp
+    src/cli/commands/ptpn_cmd.cpp
+    src/cli/commands/check_cmd.cpp
+    src/cli/commands/allocate_cmd.cpp
 )
-target_include_directories(ptpn PUBLIC src)
-target_link_libraries(ptpn PRIVATE PTPN_core CLI11::CLI11)
+target_include_directories(ptpn_cli PUBLIC src)
+target_link_libraries(ptpn_cli
+    PUBLIC
+    ptpn_app
+    CLI11::CLI11
+)
+
+# Main executable: diagnostics envelope scaffolding and subcommand dispatch.
+add_executable(ptpn
+    src/cli/main.cpp
+)
+target_link_libraries(ptpn PRIVATE ptpn_cli CLI11::CLI11)
 
 # Test subdirectory
 add_subdirectory(test)

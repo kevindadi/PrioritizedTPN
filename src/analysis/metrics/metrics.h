@@ -18,7 +18,7 @@ struct TimeValue {
 };
 
 // Per-task performance metrics derived from the reachability graph. All times
-// are sound bounds over the symbolic state classes (see docs/ptopner/metrics.md).
+// are sound bounds over the symbolic state classes (see docs/metrics.md).
 struct TaskMetrics {
   std::string name;
   int core = -1;

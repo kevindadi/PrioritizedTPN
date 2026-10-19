@@ -155,7 +155,7 @@ int rank_candidates(const CandidateSummary& left, const CandidateSummary& right,
 
 // True when `left` is at least as good as `right` on all three Pareto metrics
 // and strictly better on at least one. Infinity is treated as +infinity. The
-// utilization metric is used even when incomplete (see docs/ptopner/allocation.md).
+// utilization metric is used even when incomplete (see docs/allocation.md).
 bool dominates(const CandidateSummary& left, const CandidateSummary& right) {
   const int by_time =
       compare_time(left.max_wcrt_infinite, left.max_wcrt, right.max_wcrt_infinite, right.max_wcrt);

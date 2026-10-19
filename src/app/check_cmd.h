@@ -11,11 +11,6 @@ class Diagnostics;
 
 namespace app {
 
-struct CheckCommandOptions {
-  std::string input_file;
-  DiagnosticsOptions diagnostics;
-};
-
 // Runs the RTSL front-end only: lex -> parse -> validate. No lowering or
 // analysis is performed (that arrives in Phase 2b with `ptpn rtsl`).
 //
