@@ -1,0 +1,49 @@
+// Golden input for test_rtsl_lowering.cpp (Appendix A shape, `rtsl` mode).
+//
+// Regenerate the goldens on a libstdc++ build with:
+//   ./build/ptpn rtsl -f test/golden/rtsl/appendix.rtsl --no-analysis \
+//       --export-tdg test/golden/rtsl/appendix.tdg.json
+//   ./build/ptpn tdg -f test/golden/rtsl/appendix.tdg.json --no-analysis \
+//       --export-tdg test/golden/rtsl/appendix.tdg.dot
+
+system demo {
+  cpus 4
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+
+  task sensor: periodic {
+    period 100ms
+    deadline 100ms
+    core 0
+    time [2, 3] estimated by "user spec sheet"
+  }
+
+  task fusion: aperiodic {
+    core {1, 2, 3}
+    locks mutex1
+    time [ [1, 2], [3, 4], [1, 2] ] measured by llm { runs 20, timeout 5 }
+  }
+
+  task control: interrupt {
+    core 0
+    time [1, 1] estimated
+  }
+
+  task display: aperiodic {
+    core 2
+    time [1, 1] estimated
+  }
+
+  task log: normal {
+    core 2
+    time [1, 2] estimated
+  }
+
+  start sensor
+  start control
+  end display
+
+  sensor -> {fusion, log}
+  {fusion, log} -> display
+}

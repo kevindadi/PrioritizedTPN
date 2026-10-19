@@ -1,0 +1,172 @@
+{
+  "configuration": {
+    "cores_per_cpu": 1,
+    "end": [
+      "display"
+    ],
+    "num_cpus": 4,
+    "periodic": [
+      {
+        "period": 100,
+        "task": "sensor"
+      }
+    ],
+    "policy": "fixed",
+    "shared_locks": [
+      "mutex1"
+    ],
+    "start": [
+      {
+        "task": "control",
+        "tokens": 1
+      },
+      {
+        "task": "sensor",
+        "tokens": 1
+      }
+    ],
+    "task_place_capacity": 1
+  },
+  "edges": [
+    {
+      "source": "__fork_sensor__fusion__log",
+      "target": "fusion"
+    },
+    {
+      "source": "__fork_sensor__fusion__log",
+      "target": "log"
+    },
+    {
+      "source": "__join_fusion__log__display",
+      "target": "display"
+    },
+    {
+      "source": "fusion",
+      "target": "__join_fusion__log__display"
+    },
+    {
+      "source": "log",
+      "target": "__join_fusion__log__display"
+    },
+    {
+      "source": "sensor",
+      "target": "__fork_sensor__fusion__log"
+    }
+  ],
+  "graph": {
+    "name": "G"
+  },
+  "nodes": [
+    {
+      "allowed_cores": [
+        0
+      ],
+      "core": 0,
+      "deadline": 0,
+      "id": "control",
+      "priority": 100,
+      "time": [
+        [
+          1,
+          1
+        ]
+      ],
+      "type": "task",
+      "wcet_kind": "estimated",
+      "wcet_method": "user estimate"
+    },
+    {
+      "allowed_cores": [
+        2
+      ],
+      "core": 2,
+      "deadline": 0,
+      "id": "display",
+      "priority": 100,
+      "time": [
+        [
+          1,
+          1
+        ]
+      ],
+      "type": "task",
+      "wcet_kind": "estimated",
+      "wcet_method": "user estimate"
+    },
+    {
+      "allowed_cores": [
+        1,
+        2,
+        3
+      ],
+      "core": 1,
+      "deadline": 0,
+      "id": "fusion",
+      "locks": [
+        "mutex1"
+      ],
+      "priority": 100,
+      "time": [
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "type": "task",
+      "wcet_kind": "measured",
+      "wcet_method": "wall-clock repeated runs (prototype; not certified)"
+    },
+    {
+      "allowed_cores": [
+        2
+      ],
+      "core": 2,
+      "deadline": 0,
+      "id": "log",
+      "priority": 100,
+      "time": [
+        [
+          1,
+          2
+        ]
+      ],
+      "type": "task",
+      "wcet_kind": "estimated",
+      "wcet_method": "user estimate"
+    },
+    {
+      "allowed_cores": [
+        0
+      ],
+      "core": 0,
+      "deadline": 100,
+      "id": "sensor",
+      "priority": 100,
+      "time": [
+        [
+          2,
+          3
+        ]
+      ],
+      "type": "task",
+      "wcet_kind": "estimated",
+      "wcet_method": "user spec sheet"
+    },
+    {
+      "id": "__fork_sensor__fusion__log",
+      "type": "fork"
+    },
+    {
+      "id": "__join_fusion__log__display",
+      "type": "join"
+    }
+  ]
+}

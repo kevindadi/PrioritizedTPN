@@ -1,0 +1,15 @@
+digraph G {
+    __fork_sensor__fusion__log [label = "__fork_sensor__fusion__log\nfork";];
+    __join_fusion__log__display [label = "__join_fusion__log__display\njoin";];
+    sensor [label = "sensor\ntask\nprio=100 core=0\n[Exec] [2, 3]\nlocks=none";];
+    log [label = "log\ntask\nprio=100 core=2\n[Exec] [1, 2]\nlocks=none";];
+    fusion [label = "fusion\ntask\nprio=100 core=1\n[Pre] [1, 2], [CS:mutex1] [3, 4], [Post] [1, 2]\nlocks=[M]mutex1";];
+    display [label = "display\ntask\nprio=100 core=2\n[Exec] [1, 1]\nlocks=none";];
+    control [label = "control\ntask\nprio=100 core=0\n[Exec] [1, 1]\nlocks=none";];
+    __fork_sensor__fusion__log -> fusion;
+    __fork_sensor__fusion__log -> log;
+    __join_fusion__log__display -> display;
+    fusion -> __join_fusion__log__display;
+    log -> __join_fusion__log__display;
+    sensor -> __fork_sensor__fusion__log;
+}

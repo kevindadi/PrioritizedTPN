@@ -37,6 +37,8 @@ add_executable(ptpn_test
   test_rtsl_lexer.cpp
   test_rtsl_parser.cpp
   test_rtsl_validation.cpp
+  test_rtsl_lowering.cpp
+  test_rtsl_pipeline.cpp
   test_rtsl_check_cli.cpp
   # Exposes write_wcet_json so the WCET export schema is covered directly.
   ${CMAKE_SOURCE_DIR}/src/app/pipeline.cpp
