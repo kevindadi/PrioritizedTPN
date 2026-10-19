@@ -73,7 +73,7 @@ A `StateClass` (`reachability/state_class.h`) is `(marking, DBM zone)` plus sche
 
 ### Scheduling policies (`reachability/scheduling_policy.h`)
 
-A `FiringRule` hierarchy computes the admissible selected active set per state class. The state-class graph **branches on scheduling decisions**: each admissible selected active set (and each tied ordering for EDF/FIFO/LLF) yields one branch — not per interleaving. Rules:
+`reachability/scheduling_policy.h` is an umbrella header. Implementations live under `reachability/scheduling/` (`firing_rule`, `task_lock_topology`, `policy_common`, one file per policy, and `policy_factory`). A `FiringRule` hierarchy computes the admissible selected active set per state class. The state-class graph **branches on scheduling decisions**: each admissible selected active set (and each tied ordering for EDF/FIFO/LLF) yields one branch — not per interleaving. Rules:
 
 - `StaticPriorityRule` — `fixed`, `fixed_prior_with_resume`, `fixed_prior_with_restart` (structural restart preemption), `rm`, `dm`, `pip`, `pcp`, `srp` (PIP/PCP/SRP require `task_place_capacity == 1`, one in-flight job; PCP/SRP use a global system ceiling)
 - `EdfFiringRule` / `FifoFiringRule` — per-job release clocks; statically partitioned multi-core

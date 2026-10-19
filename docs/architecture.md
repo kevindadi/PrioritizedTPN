@@ -31,7 +31,7 @@ code does not write the CLI diagnostics envelope.
 | `src/parse/` | TDG JSON parser/writer (nlohmann) and `.ptpn` source parser |
 | `src/lower/tdg2pn/` | TDG → PTPN lowering (chain construction, preemption, policy priorities) |
 | `src/analysis/dbm/` | Difference-bound matrices and clock layout |
-| `src/analysis/reachability/` | State classes, firing, canonicalization, scheduling policies, symmetry |
+| `src/analysis/reachability/` | State classes, firing, canonicalization, scheduling policies (`scheduling/`), symmetry |
 | `src/analysis/metrics/` | WCRT/schedulability/deadlock/utilisation metrics and metrics JSON |
 | `src/analysis/reductions/` | Per-task cone projection |
 | `src/analysis/allocation/` | Deterministic core-allocation search (evaluates candidates with the exact analysis) |
@@ -128,7 +128,7 @@ semantics to remove them:
 - `analysis/allocation/` is grouped under `analysis/` but depends on
   `lower/tdg2pn/` to evaluate candidates. It is orchestration above the
   analysis core.
-- `analysis/reachability/scheduling_policy.cpp` mirrors the task-chain layout
+- `analysis/reachability/scheduling/task_lock_topology.h` mirrors the task-chain layout
   constants defined by `lower/tdg2pn/tdg2pn_common.h`. The analysis layer
   deliberately does not include lowering headers, so the constants are
   duplicated with comments; a shared header would remove the silent-drift risk.

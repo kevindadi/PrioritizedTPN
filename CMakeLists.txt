@@ -262,7 +262,17 @@ add_library(ptpn_reachability STATIC
     src/analysis/reachability/state_class_firing.cpp
     src/analysis/reachability/canonicalization.cpp
     src/analysis/reachability/scheduling.cpp
-    src/analysis/reachability/scheduling_policy.cpp
+    src/analysis/reachability/scheduling/edf.cpp
+    src/analysis/reachability/scheduling/fifo.cpp
+    src/analysis/reachability/scheduling/firing_rule.cpp
+    src/analysis/reachability/scheduling/llf.cpp
+    src/analysis/reachability/scheduling/pcp.cpp
+    src/analysis/reachability/scheduling/pip.cpp
+    src/analysis/reachability/scheduling/policy_common.cpp
+    src/analysis/reachability/scheduling/policy_factory.cpp
+    src/analysis/reachability/scheduling/srp.cpp
+    src/analysis/reachability/scheduling/static_priority.cpp
+    src/analysis/reachability/scheduling/task_lock_topology.cpp
     src/analysis/reachability/symmetry.cpp
 )
 target_link_libraries(ptpn_reachability
