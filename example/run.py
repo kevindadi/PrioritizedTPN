@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Run all PTPN experiments: p/s/t-bench exports plus l-bench scaling.
 
-Benchmark suites (example/<suite>/*.json) run through the export profiles:
-  ptpn    -> example/ptpn/<suite>/<case>.{ptpn,scg}.dot
-  romeo   -> example/romeo/<suite>/<case>.cts
-  ptopner -> example/ptopner/<suite>/<case>.ppn   (s-bench skipped)
+Benchmark suites (example/<suite>/*.json) run through the ptpn profile:
+  ptpn -> example/ptpn/<suite>/<case>.{ptpn,scg}.dot
 Summary: example/bench-summary.json and .csv
 
 l-bench (example/l-bench/pipeline-*.json, ordered by manifest.json) runs PTPN
@@ -12,12 +10,12 @@ lowering plus SCG analysis and records scaling metrics.
 Summary: example/l-bench/bench-summary.json and .csv
 
 Examples:
-  python3 run.py                              # every suite + every l-bench case
-  python3 run.py --skip-lbench
-  python3 run.py --suites p-bench t-bench --profiles ptpn
-  python3 run.py --lbench-cases pipeline-40t-8c-5l -m 20000
-  python3 run.py --reviewer-case
-  python3 run.py --dry-run
+  python3 example/run.py                      # every suite + every l-bench case
+  python3 example/run.py --skip-lbench
+  python3 example/run.py --suites p-bench t-bench --profiles ptpn
+  python3 example/run.py --lbench-cases pipeline-40t-8c-5l -m 20000
+  python3 example/run.py --reviewer-case
+  python3 example/run.py --dry-run
 """
 
 from __future__ import annotations
@@ -32,14 +30,13 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BUILD_DIR = ROOT / "build"
 BUILD_DIR_MARKER = ROOT / ".ptpn-build-dir"
 PTPN_EXE = "ptpn.exe" if os.name == "nt" else "ptpn"
 
-EXAMPLE = ROOT / "example"
+EXAMPLE = Path(__file__).resolve().parent
 BENCH_SUITES = ("p-bench", "s-bench", "t-bench")
-SKIP_PTOPNER_SUITES = frozenset({"s-bench"})
 
 LBENCH_DIR = EXAMPLE / "l-bench"
 PIPELINE_GLOB = "pipeline-*.json"
@@ -102,7 +99,7 @@ def ensure_ptpn(ptpn_bin: Path) -> None:
     if ptpn_bin.is_file():
         return
     print(f"error: ptpn not found: {ptpn_bin}", file=sys.stderr)
-    print("build first: ./build.py", file=sys.stderr)
+    print("build first: example/build.py", file=sys.stderr)
     print("or set PTPN_BUILD_DIR / pass --ptpn PATH", file=sys.stderr)
     raise SystemExit(1)
 
@@ -129,8 +126,6 @@ class RunStats:
     ms_scg_build: int | None = None
     ms_scg_dot: int | None = None
     ms_total: int | None = None
-    ppn_exported: bool = False
-    ppn_error: str = ""
     outputs: list[str] = field(default_factory=list)
 
 
@@ -138,14 +133,6 @@ PROFILES: dict[str, dict] = {
     "ptpn": {
         "mode": "tdg_dots",
         "policy": None,
-    },
-    "romeo": {
-        "mode": "export_cts",
-        "format": "scheduling-net",
-    },
-    "ptopner": {
-        "mode": "export_ppn",
-        "policy": "fixed_prior_with_restart",
     },
 }
 
@@ -236,70 +223,6 @@ def run_suite_case(
             result.error = f"missing output: {', '.join(str(p) for p in missing)}"
             return result
 
-    elif cfg["mode"] == "export_cts":
-        cts_file = out_dir / f"{case}.cts"
-        cmd = [
-            str(ptpn_bin),
-            "export",
-            "romeo",
-            "-f",
-            str(input_path),
-            "-o",
-            str(cts_file),
-            "--format",
-            cfg["format"],
-        ]
-        try:
-            code, log = run_ptpn_capture(cmd)
-        except OSError as exc:
-            result.error = str(exc)
-            return result
-
-        for key, value in parse_suite_log(log).items():
-            setattr(result, key, value)
-        result.outputs = [str(cts_file)]
-
-        if code != 0:
-            result.error = log.strip()[:500]
-            return result
-        if not cts_file.exists():
-            result.error = f"missing output: {cts_file}"
-            return result
-
-    elif cfg["mode"] == "export_ppn":
-        ppn_file = out_dir / f"{case}.ppn"
-        cmd = [
-            str(ptpn_bin),
-            "export",
-            "ptopner",
-            "-f",
-            str(input_path),
-            "-o",
-            str(ppn_file),
-            "--policy",
-            cfg["policy"],
-        ]
-        try:
-            code, log = run_ptpn_capture(cmd)
-        except OSError as exc:
-            result.error = str(exc)
-            return result
-
-        for key, value in parse_suite_log(log).items():
-            setattr(result, key, value)
-        result.outputs = [str(ppn_file)]
-
-        if code != 0:
-            err = log.strip()
-            result.ppn_error = err.splitlines()[0][:200] if err else "export failed"
-            result.error = err[:500]
-            return result
-        if not ppn_file.exists():
-            result.error = f"missing output: {ppn_file}"
-            result.ppn_error = result.error
-            return result
-        result.ppn_exported = True
-
     else:
         result.error = f"unknown profile mode: {cfg['mode']}"
         return result
@@ -308,16 +231,11 @@ def run_suite_case(
     return result
 
 
-def should_run_profile(profile: str, suite: str) -> bool:
-    return not (profile == "ptopner" and suite in SKIP_PTOPNER_SUITES)
-
-
 def write_suite_summary(rows: list[RunStats], json_path: Path, csv_path: Path) -> None:
     json_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "profiles": list(PROFILES.keys()),
         "suites": list(BENCH_SUITES),
-        "skip_ptopner_suites": sorted(SKIP_PTOPNER_SUITES),
         "runs": [asdict(r) for r in rows],
     }
     json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -337,8 +255,6 @@ def write_suite_summary(rows: list[RunStats], json_path: Path, csv_path: Path) -
         "ms_scg_build",
         "ms_scg_dot",
         "ms_total",
-        "ppn_exported",
-        "ppn_error",
         "error",
     ]
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
@@ -387,20 +303,14 @@ def run_suites(ptpn_bin: Path, args: argparse.Namespace) -> int:
     if args.dry_run:
         for suite, input_path in cases:
             for profile in args.profiles:
-                if should_run_profile(profile, suite):
-                    print(f"[dry-run] suite {profile}/{suite}/{input_path.stem}")
+                print(f"[dry-run] suite {profile}/{suite}/{input_path.stem}")
         return 0
 
     rows: list[RunStats] = []
-    skipped = 0
 
     for suite, input_path in cases:
         case = input_path.stem
         for profile in args.profiles:
-            if not should_run_profile(profile, suite):
-                skipped += 1
-                continue
-
             out_dir = EXAMPLE / profile / suite
             print(f"[*] {profile}/{suite}/{case} ...", flush=True)
             row = run_suite_case(
@@ -418,13 +328,8 @@ def run_suites(ptpn_bin: Path, args: argparse.Namespace) -> int:
     print()
     print(f"summary: {summary_json}")
     print(f"summary: {summary_csv}")
-    if skipped:
-        print(f"note: skipped {skipped} ptopner run(s) for {sorted(SKIP_PTOPNER_SUITES)}")
 
     failed = sum(1 for r in rows if not r.ok)
-    ppn_failed = sum(1 for r in rows if r.profile == "ptopner" and not r.ppn_exported)
-    if ppn_failed:
-        print(f"note: {ppn_failed} ptopner run(s) failed to export .ppn")
     return 1 if failed else 0
 
 
@@ -888,7 +793,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         choices=list(PROFILES.keys()),
         default=list(PROFILES.keys()),
-        help="export profiles to run (default: ptpn romeo ptopner)",
+        help="profiles to run (default: ptpn)",
     )
     parser.add_argument(
         "--skip-suites",

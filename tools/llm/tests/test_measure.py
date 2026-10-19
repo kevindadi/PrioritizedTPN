@@ -329,7 +329,7 @@ class BinaryResolutionTests(unittest.TestCase):
                 ensure_ptpn_bin(Path(directory) / "missing-ptpn")
             message = str(raised.exception)
             self.assertIn("not found", message)
-            self.assertIn("./build.py", message)
+            self.assertIn("example/build.py", message)
 
 
 class ReplacementFormattingTests(unittest.TestCase):

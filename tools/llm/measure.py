@@ -77,7 +77,7 @@ def _is_int(value: Any) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Binary resolution (mirrors run.py: --ptpn, PTPN_BUILD_DIR, marker, build/)
+# Binary resolution (mirrors example/run.py: --ptpn, PTPN_BUILD_DIR, marker, build/)
 # ---------------------------------------------------------------------------
 
 
@@ -90,7 +90,7 @@ def resolve_ptpn_bin(
 
     Order: ``--ptpn`` -> ``$PTPN_BUILD_DIR`` -> ``<repo>/.ptpn-build-dir`` ->
     ``<repo>/build``.  Relative paths (explicit or environment) are resolved
-    against the repository root, matching ``run.py``.
+    against the repository root, matching ``example/run.py``.
     """
     root = Path(repo_root) if repo_root is not None else REPO_ROOT
     source = os.environ if env is None else env
@@ -126,7 +126,7 @@ def ensure_ptpn_bin(path: Path) -> None:
         return
     raise MeasureError(
         "ptpn binary not found: {}\n"
-        "build first: ./build.py\n"
+        "build first: example/build.py\n"
         "or set PTPN_BUILD_DIR / pass --ptpn PATH".format(path)
     )
 
