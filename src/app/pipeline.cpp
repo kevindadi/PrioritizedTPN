@@ -17,6 +17,8 @@
 #include <numeric>
 #include <set>
 #include <spdlog/spdlog.h>
+#include <stdexcept>
+#include <typeinfo>
 #include <variant>
 
 #include "analysis/allocation/allocation.h"
@@ -24,6 +26,7 @@
 #include "analysis/reachability/ptpn_analysis.h"
 #include "analysis/reductions/cone_projection.h"
 #include "app/pipeline.h"
+#include "common/diagnostics.h"
 #include "export/export_dot.h"
 #include "export/export_ptpn.h"
 #include "export/scg_dot.h"
@@ -121,13 +124,18 @@ bool should_run_analysis(const PipelineOptions& opts) {
 }
 
 #if !defined(PTPN_ENABLE_COMPAT)
-int reject_compat_exports(const ExportTargets& exports) {
+int reject_compat_exports(const ExportTargets& exports, ptpn::Diagnostics* diagnostics) {
   if (exports.romeo_file.empty() && exports.ppn_file.empty()) {
     return 0;
   }
-  cerr << "ERROR: Romeo/PToPNer export is not available: built without compat "
-          "support (rebuild with -DPTPN_ENABLE_COMPAT=ON)"
-       << endl;
+  const string message =
+      "Romeo/PToPNer export is not available: built without compat support "
+      "(rebuild with -DPTPN_ENABLE_COMPAT=ON)";
+  cerr << "ERROR: " << message << endl;
+  if (diagnostics != nullptr) {
+    diagnostics->add("E-UNS-002", message, "policy:compat", std::nullopt,
+                     "rebuild with -DPTPN_ENABLE_COMPAT=ON");
+  }
   return 1;
 }
 #endif
@@ -231,14 +239,21 @@ int export_ppn_from_ptpn(const petri::PTPN& ptpn, const string& output_path) {
 }
 #endif
 
-int load_tdg_from_json(const string& input_file, tdg::TDG& tdg, parse::Parser& parser) {
+int load_tdg_from_json(const string& input_file, tdg::TDG& tdg, parse::Parser& parser,
+                       ptpn::Diagnostics* diagnostics = nullptr) {
   const auto parse_result = parser.parse_file(input_file);
   if (!parse_result.success) {
     cerr << "ERROR: Failed to parse JSON file: " << parse_result.error_message << endl;
+    if (diagnostics != nullptr) {
+      diagnostics->append(parser.diagnostics());
+    }
     return 1;
   }
 
   const auto validation = parser.validate();
+  if (diagnostics != nullptr) {
+    diagnostics->append(parser.diagnostics());
+  }
   if (!validation.success) {
     cerr << "ERROR: Input validation failed:" << endl;
     for (const auto& err : validation.errors) {
@@ -259,12 +274,74 @@ int load_tdg_from_json(const string& input_file, tdg::TDG& tdg, parse::Parser& p
   return 0;
 }
 
-int build_ptpn_from_tdg(tdg::TDG& tdg, petri::PTPN& ptpn) {
+// The unsupported-class guards in the TDG lowering throw std::invalid_argument
+// with a message naming the offending policy/task/lock/edge. Recover a stable
+// structured subject for the diagnostic without changing the lowering layer.
+std::optional<string> unsupported_subject(const string& message, SchedulePolicy policy) {
+  const auto quoted_after = [&](const string& marker) -> optional<string> {
+    const auto pos = message.find(marker);
+    if (pos == string::npos) {
+      return nullopt;
+    }
+    const auto start = pos + marker.size();
+    const auto end = message.find('\'', start);
+    if (end == string::npos) {
+      return nullopt;
+    }
+    return message.substr(start, end - start);
+  };
+
+  if (auto task = quoted_after("task '"); task.has_value()) {
+    return "task:" + task.value();
+  }
+  if (auto task = quoted_after("start binding for '"); task.has_value()) {
+    return "task:" + task.value();
+  }
+
+  const string fork_marker = "fork/join nodes: ";
+  if (const auto pos = message.find(fork_marker); pos != string::npos) {
+    return "node:" + message.substr(pos + fork_marker.size());
+  }
+
+  const string edge_marker = "releases: edge ";
+  if (const auto pos = message.find(edge_marker); pos != string::npos) {
+    string edge = message.substr(pos + edge_marker.size());
+    const auto stop = edge.find(" connects");
+    if (stop != string::npos) {
+      edge = edge.substr(0, stop);
+    }
+    string compact;
+    for (const char c : edge) {
+      if (c != ' ') {
+        compact += c;
+      }
+    }
+    return "edge:" + compact;
+  }
+
+  return "policy:" + schedule_policy_to_string(policy);
+}
+
+int build_ptpn_from_tdg(tdg::TDG& tdg, petri::PTPN& ptpn,
+                        ptpn::Diagnostics* diagnostics = nullptr) {
   spdlog::info("\n[PTPN] Converting TDG to PTPN...");
   try {
     converter::TDG2PN::transform(tdg, ptpn);
   } catch (const std::exception& error) {
     spdlog::error("[PTPN] TDG to PTPN conversion failed: {}", error.what());
+    if (diagnostics != nullptr) {
+      // All std::invalid_argument throws from the lowering facade are
+      // supported-class guards (EDF/FIFO/LLF and PIP/PCP/SRP restrictions).
+      if (dynamic_cast<const std::invalid_argument*>(&error) != nullptr) {
+        diagnostics->add("E-UNS-001", error.what(), unsupported_subject(error.what(), tdg.policy),
+                         std::nullopt,
+                         "simplify the model or choose a supported scheduling policy");
+      } else {
+        diagnostics->add("E-INT-003", error.what(),
+                         "policy:" + schedule_policy_to_string(tdg.policy), std::nullopt,
+                         "this is an internal lowering failure; report it");
+      }
+    }
     return 1;
   }
   spdlog::info("[PTPN] PTPN conversion completed");
@@ -423,10 +500,109 @@ bool analyze_task_cones(const petri::PTPN& ptpn, const PipelineOptions& opts,
   return true;
 }
 
+// Translates the metrics layer's existing signals into the diagnostics
+// protocol. Analysis-phase rules (docs/diagnostics.md):
+//   - a decisive counterexample found in the explored prefix (deadlock,
+//     local deadlock, or wcrt_lb > deadline) is an analysis result (exit 6);
+//   - truncation without a counterexample is a performance warning (exit 5);
+//   - an upper-bound `wcrt` exceeding the deadline is never a counterexample.
+void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
+                                 const state_class::MetricsReport& report,
+                                 bool max_states_truncated, bool horizon_truncated,
+                                 size_t max_states) {
+  if (diagnostics == nullptr) {
+    return;
+  }
+
+  const bool deadlock = report.deadlock_analysis_certified && !report.deadlock_states.empty();
+  if (deadlock) {
+    diagnostics->add("R-ANA-001",
+                     "reachable deadlock: " + std::to_string(report.deadlock_states.size()) +
+                         " illegitimate sink state(s)",
+                     "system:deadlock", std::nullopt,
+                     "fix the dependency/lock structure or choose a different policy");
+  }
+
+  std::vector<std::string> local_deadlocks;
+  nlohmann::json deadline_misses = nlohmann::json::array();
+  for (const auto& task : report.tasks) {
+    if (report.deadlock_analysis_certified && task.local_deadlock) {
+      local_deadlocks.push_back(task.name);
+      diagnostics->add("R-ANA-003", "task '" + task.name + "' is in a periodic local deadlock",
+                       "task:" + task.name, std::nullopt,
+                       "change the task's period, priority, or core assignment so it can complete");
+    }
+    if (report.wcrt_lb_valid && task.observed && task.has_deadline && !task.wcrt_lb.infinite &&
+        task.wcrt_lb.value > task.deadline) {
+      deadline_misses.push_back(
+          {{"task", task.name}, {"wcrt_lb", task.wcrt_lb.value}, {"deadline", task.deadline}});
+      diagnostics->add("R-ANA-002",
+                       "task '" + task.name + "' has a certified response-time lower bound " +
+                           std::to_string(task.wcrt_lb.value) + " exceeding its deadline " +
+                           std::to_string(task.deadline),
+                       "task:" + task.name, std::nullopt,
+                       "adjust priorities, cores, or periods so the task can meet its deadline");
+    }
+  }
+
+  const bool counterexample = deadlock || !local_deadlocks.empty() || !deadline_misses.empty();
+  const bool truncated = max_states_truncated || horizon_truncated;
+  if (truncated) {
+    const std::string fix =
+        counterexample
+            ? "a counterexample was already found; raising -m cannot change the verdict; fix the "
+              "model design"
+            : "no counterexample found; raising -m may help";
+    if (max_states_truncated) {
+      diagnostics->add("E-PERF-001",
+                       "state-class graph truncated at the max-states bound (" +
+                           std::to_string(max_states) + ")",
+                       "system:max_states", std::nullopt, fix);
+    }
+    if (horizon_truncated) {
+      diagnostics->add("E-PERF-002",
+                       "state-class graph truncated by the time horizon; some expansions were "
+                       "pruned",
+                       "system:horizon", std::nullopt,
+                       counterexample
+                           ? "a counterexample was already found; raising -m cannot change the "
+                             "verdict; fix the model design"
+                           : "no counterexample found; raising -m may help, or increase/disable "
+                             "--horizon");
+    }
+  }
+
+  std::string counterexample_kind;
+  if (deadlock) {
+    counterexample_kind = "deadlock";
+  } else if (!local_deadlocks.empty()) {
+    counterexample_kind = "local-deadlock";
+  } else if (!deadline_misses.empty()) {
+    counterexample_kind = "deadline";
+  }
+
+  nlohmann::json analysis = nlohmann::json::object();
+  analysis["exact"] = report.exact;
+  analysis["truncated"] = truncated;
+  analysis["max_states"] = max_states;
+  analysis["horizon_truncated"] = horizon_truncated;
+  analysis["states"] = report.states;
+  analysis["transitions"] = report.transitions;
+  analysis["deadlock"] = deadlock;
+  analysis["deadlock_states"] = report.deadlock_states.size();
+  analysis["schedulable"] = report.deadlock_analysis_certified ? nlohmann::json(report.schedulable)
+                                                               : nlohmann::json(nullptr);
+  analysis["local_deadlocks"] = local_deadlocks;
+  analysis["deadline_misses"] = std::move(deadline_misses);
+  analysis["counterexample"] =
+      counterexample_kind.empty() ? nlohmann::json(nullptr) : nlohmann::json(counterexample_kind);
+  diagnostics->set_result(nlohmann::json{{"analysis", std::move(analysis)}});
+}
+
 int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
                          const PipelineOptions& opts,
                          const chrono::time_point<chrono::high_resolution_clock>& pipeline_start,
-                         size_t initial_memory) {
+                         size_t initial_memory, ptpn::Diagnostics* diagnostics = nullptr) {
   if (opts.debug_mode) {
     cout << ptpn.to_string();
   }
@@ -438,6 +614,11 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       spdlog::info("[OUTPUT] PTPN DOT exported to: {}", opts.exports.ptpn_dot);
     } else {
       spdlog::warn("[OUTPUT] Failed to export PTPN DOT");
+      if (diagnostics != nullptr) {
+        diagnostics->add("E-INT-002", "failed to write PTPN DOT export: " + opts.exports.ptpn_dot,
+                         "output:" + opts.exports.ptpn_dot, std::nullopt,
+                         "check that the output path is writable");
+      }
       return 1;
     }
   }
@@ -445,6 +626,11 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
 #if defined(PTPN_ENABLE_COMPAT)
   if (!opts.exports.ppn_file.empty()) {
     if (export_ppn_from_ptpn(ptpn, opts.exports.ppn_file) != 0) {
+      if (diagnostics != nullptr) {
+        diagnostics->add("E-INT-002", "failed to write PToPNer export: " + opts.exports.ppn_file,
+                         "output:" + opts.exports.ppn_file, std::nullopt,
+                         "check that the output path is writable");
+      }
       return 1;
     }
   }
@@ -467,12 +653,20 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       ConeAnalysisResult cone_result;
       if (analyze_task_cones(ptpn, opts, canonicalization, cone_result)) {
         const state_class::MetricsReport& report = cone_result.report;
+        record_analysis_diagnostics(diagnostics, report, report.truncated,
+                                    /*horizon_truncated=*/false, opts.max_states);
         log_step_timing("Cone analysis", cone_result.duration_ms,
                         "tasks=" + to_string(cone_result.tasks) + ", states=" +
                             to_string(report.states) + ", edges=" + to_string(report.transitions));
         if (!opts.exports.metrics_json.empty()) {
           if (!state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
             spdlog::warn("[OUTPUT] Failed to export metrics");
+            if (diagnostics != nullptr) {
+              diagnostics->add("E-INT-002",
+                               "failed to write metrics JSON: " + opts.exports.metrics_json,
+                               "output:" + opts.exports.metrics_json, std::nullopt,
+                               "check that the output path is writable");
+            }
             return 1;
           }
           spdlog::info("[OUTPUT] Metrics exported to: {}", opts.exports.metrics_json);
@@ -592,11 +786,20 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
         spdlog::info("[OUTPUT] State class graph exported to: {}", opts.exports.scg_dot);
       } else {
         spdlog::warn("[OUTPUT] Failed to export state class graph");
+        if (diagnostics != nullptr) {
+          diagnostics->add("E-INT-002",
+                           "failed to write state-class DOT export: " + opts.exports.scg_dot,
+                           "output:" + opts.exports.scg_dot, std::nullopt,
+                           "check that the output path is writable");
+        }
         return 1;
       }
     }
 
-    if (!opts.exports.metrics_json.empty()) {
+    // Metrics feed both the optional JSON export and the diagnostics analysis
+    // facts. They are computed when either consumer needs them.
+    const bool need_metrics = !opts.exports.metrics_json.empty() || diagnostics != nullptr;
+    if (need_metrics) {
       // Metrics are exact only for the complete, un-abstracted graph. Zone
       // extrapolation preserves reachable markings but relaxes timing bounds,
       // upper-bound zone merging over-approximates the zone space, truncation
@@ -611,7 +814,8 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       const bool exact = canonicalization == state_class::CanonicalizationMode::EQUALITY &&
                          !opts.extrapolation && !upper_bound_merging &&
                          !reachability_stats.truncated && !horizon_truncated && !symmetry_used;
-      if (!exact) {
+      const bool export_metrics = !opts.exports.metrics_json.empty();
+      if (export_metrics && !exact) {
         spdlog::warn(
             "[METRICS] Metrics are approximate (canonicalization='{}', "
             "extrapolation={}, reduction='{}', truncated={}, "
@@ -621,7 +825,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
             reachability_stats.truncated ? "true" : "false", horizon_truncated ? "true" : "false",
             symmetry_used ? "true" : "false");
       }
-      if (upper_bound_merging) {
+      if (export_metrics && upper_bound_merging) {
         spdlog::warn(
             "[METRICS] wcrt_lb is not certified on the merged graph and is "
             "reported as unavailable (null)");
@@ -640,21 +844,31 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const string& input_label,
       analyzer.set_horizon_info(horizon_info);
       analyzer.set_symmetry_task_groups(reachability_graph.symmetry_task_groups());
       const state_class::MetricsReport report = analyzer.analyze();
-      if (state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
-        log_step_timing("Metrics analysis", elapsed_ms(metrics_start));
-        spdlog::info("[OUTPUT] Metrics exported to: {}", opts.exports.metrics_json);
-        if (report.deadlock_analysis_certified) {
-          spdlog::info("[METRICS] schedulable={}, bounded={}, deadlocks={}",
-                       report.schedulable ? "true" : "false", report.bounded ? "true" : "false",
-                       report.deadlock_states.size());
+      record_analysis_diagnostics(diagnostics, report, reachability_stats.truncated,
+                                  horizon_truncated, opts.max_states);
+      if (export_metrics) {
+        if (state_class::MetricsAnalyzer::save_to_json(report, opts.exports.metrics_json)) {
+          log_step_timing("Metrics analysis", elapsed_ms(metrics_start));
+          spdlog::info("[OUTPUT] Metrics exported to: {}", opts.exports.metrics_json);
+          if (report.deadlock_analysis_certified) {
+            spdlog::info("[METRICS] schedulable={}, bounded={}, deadlocks={}",
+                         report.schedulable ? "true" : "false", report.bounded ? "true" : "false",
+                         report.deadlock_states.size());
+          } else {
+            spdlog::warn(
+                "[METRICS] deadlock/schedulability/SCC results are not certified "
+                "(time horizon truncated the state space); schedulability=unknown");
+          }
         } else {
-          spdlog::warn(
-              "[METRICS] deadlock/schedulability/SCC results are not certified "
-              "(time horizon truncated the state space); schedulability=unknown");
+          spdlog::warn("[OUTPUT] Failed to export metrics");
+          if (diagnostics != nullptr) {
+            diagnostics->add("E-INT-002",
+                             "failed to write metrics JSON: " + opts.exports.metrics_json,
+                             "output:" + opts.exports.metrics_json, std::nullopt,
+                             "check that the output path is writable");
+          }
+          return 1;
         }
-      } else {
-        spdlog::warn("[OUTPUT] Failed to export metrics");
-        return 1;
       }
     }
   } else {
@@ -745,9 +959,10 @@ size_t get_memory_usage() {
 #endif
 }
 
-int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t initial_memory) {
+int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t initial_memory,
+                     ptpn::Diagnostics* diagnostics) {
 #if !defined(PTPN_ENABLE_COMPAT)
-  if (reject_compat_exports(opts.exports) != 0) {
+  if (reject_compat_exports(opts.exports, diagnostics) != 0) {
     return 1;
   }
 #endif
@@ -757,7 +972,7 @@ int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t init
 
   parse::Parser parser;
   tdg::TDG tdg(1, 1);
-  if (load_tdg_from_json(input_file, tdg, parser) != 0) {
+  if (load_tdg_from_json(input_file, tdg, parser, diagnostics) != 0) {
     return 1;
   }
 
@@ -774,6 +989,11 @@ int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t init
   if (!opts.exports.wcet_json.empty()) {
     if (!write_wcet_json(tdg, opts.exports.wcet_json)) {
       spdlog::warn("[OUTPUT] Failed to save WCET JSON to: {}", opts.exports.wcet_json);
+      if (diagnostics != nullptr) {
+        diagnostics->add("E-INT-002", "failed to write WCET JSON: " + opts.exports.wcet_json,
+                         "output:" + opts.exports.wcet_json, std::nullopt,
+                         "check that the output path is writable");
+      }
       return 1;
     }
     spdlog::info("[OUTPUT] WCET JSON exported to: {}", opts.exports.wcet_json);
@@ -816,18 +1036,18 @@ int run_tdg_pipeline(const string& input_file, PipelineOptions opts, size_t init
 
   petri::PTPN ptpn;
   const auto lowering_start = PipelineClock::now();
-  if (build_ptpn_from_tdg(tdg, ptpn) != 0) {
+  if (build_ptpn_from_tdg(tdg, ptpn, diagnostics) != 0) {
     return 1;
   }
   log_step_timing("TDG2PN lowering", elapsed_ms(lowering_start));
 
-  return run_ptpn_postprocess(ptpn, "TDG", opts, pipeline_start, initial_memory);
+  return run_ptpn_postprocess(ptpn, "TDG", opts, pipeline_start, initial_memory, diagnostics);
 }
 
-int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts,
-                      size_t initial_memory) {
+int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts, size_t initial_memory,
+                      ptpn::Diagnostics* diagnostics) {
 #if !defined(PTPN_ENABLE_COMPAT)
-  if (reject_compat_exports(opts.exports) != 0) {
+  if (reject_compat_exports(opts.exports, diagnostics) != 0) {
     return 1;
   }
 #endif
@@ -835,7 +1055,9 @@ int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts,
   const auto parse_start = PipelineClock::now();
   spdlog::info("[PTPN] Loading source: {}", input_file);
 
-  const auto parse_result = parser::PTPNBuilder::parse_file(input_file);
+  const auto parse_result = diagnostics != nullptr
+                                ? parser::PTPNBuilder::parse_file(input_file, *diagnostics)
+                                : parser::PTPNBuilder::parse_file(input_file);
   if (!parse_result.ok()) {
     cerr << "ERROR: Failed to parse PTPN file: " << parse_result.error() << endl;
     return 1;
@@ -853,7 +1075,7 @@ int run_ptpn_pipeline(const string& input_file, const PipelineOptions& opts,
     return 0;
   }
 
-  return run_ptpn_postprocess(ptpn, "PTPN", opts, pipeline_start, initial_memory);
+  return run_ptpn_postprocess(ptpn, "PTPN", opts, pipeline_start, initial_memory, diagnostics);
 }
 
 #if defined(PTPN_ENABLE_COMPAT)
@@ -924,12 +1146,12 @@ int run_export_ptopner(const ExportCommandOptions& opts) {
 }
 #endif  // defined(PTPN_ENABLE_COMPAT)
 
-int run_allocation(const AllocationCommandOptions& opts) {
+int run_allocation(const AllocationCommandOptions& opts, ptpn::Diagnostics* diagnostics) {
   spdlog::info("[ALLOC] Loading TDG JSON: {}", opts.input_file);
 
   parse::Parser parser;
   tdg::TDG tdg(1, 1);
-  if (load_tdg_from_json(opts.input_file, tdg, parser) != 0) {
+  if (load_tdg_from_json(opts.input_file, tdg, parser, diagnostics) != 0) {
     return 1;
   }
   apply_policy_override(tdg, opts.policy_override);
@@ -954,6 +1176,11 @@ int run_allocation(const AllocationCommandOptions& opts) {
 
   if (!allocation::save_report_json(report, opts.output_file)) {
     cerr << "ERROR: Failed to write allocation report: " << opts.output_file << endl;
+    if (diagnostics != nullptr) {
+      diagnostics->add("E-INT-002", "failed to write allocation report: " + opts.output_file,
+                       "output:" + opts.output_file, std::nullopt,
+                       "check that the output path is writable");
+    }
     return 1;
   }
 
