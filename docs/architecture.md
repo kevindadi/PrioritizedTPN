@@ -28,14 +28,14 @@ code does not write the CLI diagnostics envelope.
 | `src/common/` | `Diagnostics` collector, envelope serialization, `Result<T>`, `UnsupportedClassError` |
 | `src/model/` | TDG and PTPN data structures plus `model/types.h` (task/policy types) |
 | `src/dsl/` | RTSL lexer, panic-mode parser, validator, in-process TDG lowering, `SourceMap` |
-| `src/parse/` | TDG JSON parser/writer (nlohmann) and `.ptpn` source parser |
+| `src/parse/` | TDG JSON parser (nlohmann) and `.ptpn` source parser |
 | `src/lower/tdg2pn/` | TDG → PTPN lowering (chain construction, preemption, policy priorities) |
 | `src/analysis/dbm/` | Difference-bound matrices and clock layout |
-| `src/analysis/reachability/` | State classes, firing, canonicalization, scheduling policies, symmetry |
-| `src/analysis/metrics/` | WCRT/schedulability/deadlock/utilisation metrics and metrics JSON |
+| `src/analysis/reachability/` | State classes, firing, canonicalization, scheduling policies (`scheduling/`), symmetry |
+| `src/analysis/metrics/` | WCRT/schedulability/deadlock/utilisation metrics computation |
 | `src/analysis/reductions/` | Per-task cone projection |
 | `src/analysis/allocation/` | Deterministic core-allocation search (evaluates candidates with the exact analysis) |
-| `src/export/` | PTPN DOT, TDG DOT and state-class DOT writers |
+| `src/export/` | All output writers: TDG DOT, PTPN DOT, state-class DOT, TDG JSON writer, metrics JSON |
 | `src/app/` | CLI-free pipelines, input loading, analysis orchestration, allocation driver, check command |
 | `src/cli/` | CLI11 option registration and dispatch; no domain logic |
 
@@ -46,25 +46,22 @@ links what it needs:
 
 | File | Responsibility | Library |
 |---|---|---|
-| `common.{h,cpp}` | `PipelineOptions`, `ExportTargets`, `DiagnosticsOptions`, legacy diagnostic rendering, process memory | `ptpn_app_common` |
-| `rtsl_input.{h,cpp}` | Read, lex, parse, validate and lower RTSL; returns the TDG with its `SourceMap` | `ptpn_app_input` |
-| `tdg_input.{h,cpp}` | TDG JSON loading and `--policy` override | `ptpn_app_input` |
+| `common.{h,cpp}` | `PipelineOptions`, `ExportTargets`, `DiagnosticsOptions`, legacy diagnostic rendering, process memory, timing/log helpers | `ptpn_app_support` |
+| `input.{h,cpp}` | Read, lex, parse, validate and lower RTSL; TDG JSON loading and `--policy` override | `ptpn_app_support` |
 | `check_cmd.{h,cpp}` | `ptpn check`: parse/validate only; never lowers | `ptpn_app_check` |
-| `lowering.{h,cpp}` | TDG→PTPN plus `E-UNS-001`/`E-INT-003` adaptation and SourceMap lookup | `ptpn_app_analysis` |
-| `analysis_diagnostics.{h,cpp}` | Translate metrics signals to `R-ANA-*` / `E-PERF-*` and `result.analysis` | `ptpn_app_analysis` |
-| `analysis.{h,cpp}` | Analysis orchestration: cone/full graph, metrics, SCG/PTPN DOT, total `[STATS]` | `ptpn_app_analysis` |
-| `exports.{h,cpp}` | WCET JSON and "any export requested" predicate | `ptpn_app_analysis` |
+| `lowering.{h,cpp}` | TDG→PTPN plus `E-UNS-001`/`E-INT-003` adaptation and SourceMap lookup | `ptpn_app_pipelines` |
+| `analysis.{h,cpp}` | Analysis orchestration (cone/full graph, metrics, DOT), result diagnostics, WCET export | `ptpn_app_pipelines` |
+| `pipelines.{h,cpp}` | `run_tdg_pipeline`, `run_rtsl_pipeline`, `run_ptpn_pipeline`; public facade | `ptpn_app_pipelines` |
 | `allocation_cmd.{h,cpp}` | `ptpn allocate`: input dispatch, search driver, report summary | `ptpn_app_allocation` |
-| `pipelines.{h,cpp}` via `pipeline.h` | `run_tdg_pipeline`, `run_rtsl_pipeline`, `run_ptpn_pipeline` | `ptpn_app` |
 
-`check_cmd` depends on `ptpn_app_input` and `ptpn_app_common` only; it does not
-link lowering, analysis, or allocation. `ptpn rtsl` and `ptpn tdg` share
-`run_tdg_analysis`, so their analysis and export semantics cannot diverge.
-`.ptpn` input shares `run_ptpn_postprocess` with them.
+`check_cmd` depends on `ptpn_app_support` only; it does not link lowering,
+analysis, or allocation. `ptpn rtsl` and `ptpn tdg` share `run_tdg_analysis`,
+so their analysis and export semantics cannot diverge. `.ptpn` input shares
+`run_ptpn_postprocess` with them.
 
 ### RTSL input contract
 
-`app/rtsl_input.h` exposes the boundary explicitly:
+`app/input.h` exposes the boundary explicitly:
 
 - `read_rtsl_source` — file read only, no diagnostics;
 - `parse_and_validate_rtsl` — lex/parse/validate and returns a `RtslDocument`
@@ -101,7 +98,7 @@ ptpn_dbm → ptpn_reachability → ptpn_metrics, ptpn_reductions
         │
 ptpn_export, ptpn_allocation
         │
-ptpn_app_common → ptpn_app_input → {ptpn_app_check, ptpn_app_analysis, ptpn_app_allocation, ptpn_app}
+ptpn_app_support → {ptpn_app_check, ptpn_app_pipelines, ptpn_app_allocation}
         │
 ptpn_cli → ptpn executable
 ```
@@ -124,14 +121,16 @@ are compared only on libstdc++ builds.
 These are recorded for future work; this repository does not change analysis
 semantics to remove them:
 
-- `model/tdg.cpp` implements JSON/DOT I/O and includes `parse/json.h`, while
-  `parse/json.cpp` includes `model/tdg.h`. The CMake graph still works because
-  the two libraries do not link each other in a cycle, but the responsibility
-  is inverted: TDG JSON I/O conceptually belongs to the parse/export layer.
+- `model/tdg.cpp` still implements TDG JSON *loading* and includes
+  `parse/json.h`, while `parse/json.cpp` includes `model/tdg.h`. The CMake graph
+  still works because the two libraries do not link each other in a cycle, but
+  the responsibility is inverted: TDG JSON loading conceptually belongs to the
+  parse layer. The writers have been moved out of `model/` and
+  `analysis/metrics/` into `src/export/`; loading remains for a follow-up.
 - `analysis/allocation/` is grouped under `analysis/` but depends on
   `lower/tdg2pn/` to evaluate candidates. It is orchestration above the
   analysis core.
-- `analysis/reachability/scheduling_policy.cpp` mirrors the task-chain layout
+- `analysis/reachability/scheduling/task_lock_topology.h` mirrors the task-chain layout
   constants defined by `lower/tdg2pn/tdg2pn_common.h`. The analysis layer
   deliberately does not include lowering headers, so the constants are
   duplicated with comments; a shared header would remove the silent-drift risk.

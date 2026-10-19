@@ -2,7 +2,7 @@
 #include <memory>
 #include <string>
 
-#include "app/pipeline.h"
+#include "app/pipelines.h"
 #include "cli/command.h"
 #include "cli/option_groups.h"
 

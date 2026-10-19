@@ -15,7 +15,8 @@
 #include "dsl/source_map.h"
 #include "dsl/validate.h"
 #include "model/tdg.h"
-#include "parse/json_writer.h"
+#include "export/tdg_dot.h"
+#include "export/tdg_json_writer.h"
 #include "test_rtsl_helpers.h"
 
 namespace {
@@ -426,13 +427,13 @@ TEST(RtslLowering, JsonExportIsDeterministicAndRoundTrips) {
       lower_with_mode(kAppendix, second_diagnostics, second_map, ValidationOptions::Mode::Rtsl);
   ASSERT_TRUE(second.has_value());
 
-  const std::string first_json = parse::tdg_to_json(*first).dump(2) + "\n";
-  const std::string second_json = parse::tdg_to_json(*second).dump(2) + "\n";
+  const std::string first_json = exporting::tdg_to_json(*first).dump(2) + "\n";
+  const std::string second_json = exporting::tdg_to_json(*second).dump(2) + "\n";
   EXPECT_EQ(first_json, second_json);
 
   tdg::TDG round_tripped;
   round_tripped.parse_json_string(first_json);
-  EXPECT_EQ(parse::tdg_to_json(round_tripped).dump(2) + "\n", first_json);
+  EXPECT_EQ(exporting::tdg_to_json(round_tripped).dump(2) + "\n", first_json);
 }
 
 TEST(RtslLowering, GoldenJsonAndDotAreByteStable) {
@@ -447,9 +448,9 @@ TEST(RtslLowering, GoldenJsonAndDotAreByteStable) {
       lower_with_mode(source, diagnostics, source_map, ValidationOptions::Mode::Rtsl);
   ASSERT_TRUE(lowered.has_value());
 
-  const std::string json = parse::tdg_to_json(*lowered).dump(2) + "\n";
+  const std::string json = exporting::tdg_to_json(*lowered).dump(2) + "\n";
   EXPECT_EQ(json, read_text("test/golden/rtsl/appendix.tdg.json"))
       << "regenerate test/golden/rtsl/appendix.tdg.json if the change is intentional";
-  EXPECT_EQ(lowered->to_dot_string(), read_text("test/golden/rtsl/appendix.tdg.dot"))
+  EXPECT_EQ(tdg::to_dot_string(*lowered), read_text("test/golden/rtsl/appendix.tdg.dot"))
       << "regenerate test/golden/rtsl/appendix.tdg.dot if the change is intentional";
 }

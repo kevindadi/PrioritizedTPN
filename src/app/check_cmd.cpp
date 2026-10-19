@@ -7,7 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "app/rtsl_input.h"
+#include "app/input.h"
 #include "common/diagnostics.h"
 #include "dsl/validate.h"
 

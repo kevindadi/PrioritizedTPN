@@ -1,4 +1,4 @@
-#include "app/pipeline.h"
+#include "app/pipelines.h"
 
 #include <iostream>
 #include <optional>
@@ -8,14 +8,12 @@
 #include <spdlog/spdlog.h>
 
 #include "app/analysis.h"
-#include "app/exports.h"
-#include "app/logging.h"
-#include "app/rtsl_input.h"
-#include "app/tdg_input.h"
+#include "app/input.h"
 #include "common/diagnostics.h"
+#include "export/tdg_dot.h"
 #include "model/tdg.h"
 #include "parse/json.h"
-#include "parse/json_writer.h"
+#include "export/tdg_json_writer.h"
 #include "parse/ptpn_parser.h"
 
 namespace app {
@@ -58,7 +56,7 @@ int run_tdg_pipeline(const std::string& input_file, PipelineOptions opts, size_t
                parser.get_cores_per_cpu(), schedule_policy_to_string(tdg.policy));
 
   if (!opts.exports.tdg_dot.empty()) {
-    if (!tdg.export_to_dot(opts.exports.tdg_dot)) {
+    if (!tdg::export_to_dot(tdg, opts.exports.tdg_dot)) {
       spdlog::warn("[OUTPUT] Failed to export TDG DOT to: {}", opts.exports.tdg_dot);
       if (diagnostics != nullptr) {
         diagnostics->add("E-INT-002", "failed to write TDG DOT: " + opts.exports.tdg_dot,
@@ -106,7 +104,7 @@ int run_rtsl_pipeline(const std::string& input_file, PipelineOptions opts, size_
                tdg.cores_per_cpu, schedule_policy_to_string(tdg.policy));
 
   if (!opts.exports.tdg_json.empty()) {
-    if (!parse::write_tdg_json(tdg, opts.exports.tdg_json)) {
+    if (!exporting::write_tdg_json(tdg, opts.exports.tdg_json)) {
       spdlog::warn("[OUTPUT] Failed to save TDG JSON to: {}", opts.exports.tdg_json);
       if (diagnostics != nullptr) {
         diagnostics->add("E-INT-002", "failed to write TDG JSON: " + opts.exports.tdg_json,

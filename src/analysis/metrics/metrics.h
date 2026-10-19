@@ -153,7 +153,6 @@ class MetricsAnalyzer {
 
   [[nodiscard]] MetricsReport analyze();
 
-  static bool save_to_json(const MetricsReport& report, const std::string& file_path);
 
  private:
   // Flattened view of one task's static topology in the net.

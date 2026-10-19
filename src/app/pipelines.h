@@ -1,11 +1,11 @@
-#ifndef APP_PIPELINE_H
-#define APP_PIPELINE_H
+#ifndef APP_PIPELINES_H
+#define APP_PIPELINES_H
 
 #include <cstddef>
 #include <string>
 
 #include "app/common.h"
-#include "app/exports.h"
+#include "app/analysis.h"
 
 namespace ptpn {
 class Diagnostics;
@@ -24,4 +24,4 @@ int run_ptpn_pipeline(const std::string& input_file, const PipelineOptions& opts
 
 }  // namespace app
 
-#endif  // APP_PIPELINE_H
+#endif  // APP_PIPELINES_H

@@ -1,4 +1,4 @@
-#include "parse/json_writer.h"
+#include "export/tdg_json_writer.h"
 
 #include <algorithm>
 #include <fstream>
@@ -7,7 +7,7 @@
 
 #include "model/types.h"
 
-namespace parse {
+namespace exporting {
 
 namespace {
 
@@ -156,4 +156,4 @@ bool write_tdg_json(const tdg::TDG& tdg, const std::string& output_path) {
   return static_cast<bool>(output);
 }
 
-}  // namespace parse
+}  // namespace exporting

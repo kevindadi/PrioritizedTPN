@@ -6,6 +6,7 @@
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "model/petri.h"
+#include "export/metrics_json.h"
 
 namespace {
 
@@ -179,7 +180,7 @@ TEST(TimeHorizonTest, SmallHorizonReportsTruncationInsteadOfExactness) {
   EXPECT_EQ(report.recurrent_scc_size, 0u);
 
   const std::string path = testing::TempDir() + "ptpn_test_horizon.metrics.json";
-  ASSERT_TRUE(MetricsAnalyzer::save_to_json(report, path));
+  ASSERT_TRUE(state_class::save_metrics_json(report, path));
   std::ifstream in(path);
   ASSERT_TRUE(in.is_open());
   const std::string json((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());

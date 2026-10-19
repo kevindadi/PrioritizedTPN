@@ -53,15 +53,15 @@ JSON TDG ─parse(ptpn_json)→ TDG(ptpn_tdg) ──tdg2pn(ptpn_lowering)──�
 .rtsl ─parse/validate/lower(ptpn_dsl)──► TDG (in process) ─────────────────────────────────┘
 .ptpn source ─parse(ptpn_parser)────────────────────────────────────► PTPN ────────────► analysis
 analysis = ptpn_dbm → ptpn_reachability → ptpn_metrics, + ptpn_reductions (cone), ptpn_allocation
-CLI = ptpn_cli (src/cli, CLI11 wiring) → {ptpn_app, ptpn_app_check, ptpn_app_allocation} → core libraries
+CLI = ptpn_cli (src/cli, CLI11 wiring) → {ptpn_app_pipelines, ptpn_app_check, ptpn_app_allocation} → core libraries
 ```
 
 The application layer is split so commands only pull what they need:
-`ptpn_app_common` (options, legacy rendering, memory), `ptpn_app_input`
-(RTSL/TDG loading), `ptpn_app_check` (parse+validate only), `ptpn_app_analysis`
-(lowering adaptation, analysis orchestration, WCET export),
-`ptpn_app_allocation` (search driver), and `ptpn_app` (pipeline entry points).
-`ptpn check` must not link lowering, analysis, or allocation.
+`ptpn_app_support` (options, legacy rendering, memory, RTSL/TDG loading),
+`ptpn_app_check` (parse+validate only), `ptpn_app_pipelines` (lowering
+adaptation, analysis orchestration, WCET export, pipeline entry points), and
+`ptpn_app_allocation` (search driver). `ptpn check` must not link lowering,
+analysis, or allocation.
 
 **RTSL front-end (`src/dsl/`):** `.rtsl` → lexer → panic-mode parser → semantic validation → in-process lowering to `model::TDG` → the shared `tdg2pn → analysis` path. No JSON text round-trip. `dsl::SourceMap` is a side table (structured subject → byte-accurate span) used to backfill `location` in diagnostics without polluting the TDG model. `ptpn check` stops after validation; lowering support-class guards (`E-UNS-001`) and missing measured intervals (`E-VAL-213`) are reported by `ptpn rtsl`/`ptpn allocate`. Pending `measured by llm` tasks are listed in `result.pending_measurements`; the user or Claude fills their `time` attribute directly in the `.rtsl` source.
 
@@ -73,7 +73,7 @@ A `StateClass` (`reachability/state_class.h`) is `(marking, DBM zone)` plus sche
 
 ### Scheduling policies (`reachability/scheduling_policy.h`)
 
-A `FiringRule` hierarchy computes the admissible selected active set per state class. The state-class graph **branches on scheduling decisions**: each admissible selected active set (and each tied ordering for EDF/FIFO/LLF) yields one branch — not per interleaving. Rules:
+`reachability/scheduling_policy.h` is an umbrella header. Implementations live under `reachability/scheduling/` (`firing_rule`, `task_lock_topology`, `policy_common`, one file per policy, and `policy_factory`). A `FiringRule` hierarchy computes the admissible selected active set per state class. The state-class graph **branches on scheduling decisions**: each admissible selected active set (and each tied ordering for EDF/FIFO/LLF) yields one branch — not per interleaving. Rules:
 
 - `StaticPriorityRule` — `fixed`, `fixed_prior_with_resume`, `fixed_prior_with_restart` (structural restart preemption), `rm`, `dm`, `pip`, `pcp`, `srp` (PIP/PCP/SRP require `task_place_capacity == 1`, one in-flight job; PCP/SRP use a global system ceiling)
 - `EdfFiringRule` / `FifoFiringRule` — per-job release clocks; statically partitioned multi-core
@@ -85,9 +85,11 @@ EDF/FIFO/LLF have an explicit **supported class**: static core partition, `cores
 
 - `src/model/tdg.h` — TDG (tasks, fork/join, locks, dependencies, periodic release, `allowed_cores`, WCET provenance); format in `docs/json_format.md`
 - `src/model/petri.h` — PTPN: `Transition` carries `TimeInterval`, `priority`, `core` (−1 = control), `suspendable`; `Marking` is `vector<int>`
+- `src/parse/` — TDG JSON parser and `.ptpn` source parser (input only)
+- `src/export/` — all output writers: TDG/PTPN/SCG DOT, the TDG JSON writer, and metrics JSON
 - `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is `docs/rtsl.md`, the workflow is in `docs/usage.md`, and `example/introduction/demo.rtsl` is the introductory model
 - `src/cli/` — CLI11 layer (namespace `cli`): `main.cpp` (envelope scaffolding + dispatch), `command.h`, `option_groups.{h,cpp}`, and one file per subcommand under `commands/` (`tdg`, `rtsl`, `check`, `ptpn`, `allocate`)
-- `src/app/` — application layer (namespace `app`, no CLI11): `common` (options, legacy rendering, memory), `rtsl_input`/`tdg_input` (shared loading), `check_cmd` (parse+validate only), `lowering`/`analysis_diagnostics`/`analysis`/`exports` (post-load pipeline), `allocation_cmd`, and `pipelines` (the `run_*_pipeline` entry points). `pipeline.h` is the public facade; `check_cmd.h` and `allocation_cmd.h` are the command-specific entry points.
+- `src/app/` — application layer (namespace `app`, no CLI11): `common` (options, legacy rendering, memory, timing/log helpers), `input` (RTSL + TDG loading), `check_cmd` (parse+validate only), `lowering` (TDG→PTPN adapter), `analysis` (orchestration, result diagnostics, WCET export), `pipelines` (the `run_*_pipeline` entry points, public `pipelines.h`), and `allocation_cmd`.
 
 User-facing docs live in `docs/` (`install.md`, `usage.md`, `rtsl.md`, `diagnostics.md`, `architecture.md`, `json_format.md`). The diagnostics code table is authoritative in `docs/diagnostics.md`; keep new codes and behavior changes in sync with it and with the rt-system skill.
 

@@ -8,6 +8,7 @@
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "model/petri.h"
+#include "export/metrics_json.h"
 
 namespace {
 
@@ -140,7 +141,7 @@ TEST(ZoneMergingTest, MetricsJsonNullsTheUncertifiedLowerBound) {
                                        /*wcrt_lb_valid=*/false);
 
   const std::string path = testing::TempDir() + "ptpn_zone_merging_metrics.json";
-  ASSERT_TRUE(MetricsAnalyzer::save_to_json(report, path));
+  ASSERT_TRUE(state_class::save_metrics_json(report, path));
 
   std::ifstream in(path);
   ASSERT_TRUE(in.is_open());

@@ -9,7 +9,7 @@
 
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
-#include "app/pipeline.h"
+#include "app/pipelines.h"
 #include "export/export_dot.h"
 #include "export/scg_dot.h"
 #include "lower/tdg2pn/tdg2pn.h"
@@ -17,6 +17,7 @@
 #include "model/tdg.h"
 #include "parse/json.h"
 #include "tdg_test_helpers.h"
+#include "export/metrics_json.h"
 
 namespace {
 
@@ -139,7 +140,7 @@ TEST(PipelineGolden, MetricsJsonMatchesGolden) {
                                           /*exact=*/true);
     const state_class::MetricsReport report = analyzer.analyze();
     const std::string out = testing::TempDir() + "ptpn_test_metrics.json";
-    ASSERT_TRUE(state_class::MetricsAnalyzer::save_to_json(report, out));
+    ASSERT_TRUE(state_class::save_metrics_json(report, out));
     expect_matches_golden(out, test_case.second);
   }
 }
