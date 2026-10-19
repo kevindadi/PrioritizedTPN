@@ -83,7 +83,7 @@ envelope `result` — not on the code prefix alone. The complete table is
 | `R-ANA-001` | Certified reachable deadlock. Fix dependency/lock structure or policy. |
 | `R-ANA-002` | Certified per-task lower-bound WCRT exceeds deadline. Change priorities, cores, or periods. |
 | `R-ANA-003` | Periodic local deadlock. Change period, priority, or core assignment. |
-| `E-INT-*` | Analyzer/internal failure or unwritable output. Report it; do not treat it as a model verdict. Analysis-time job-clock guard failures surface here rather than as `E-UNS-001`. |
+| `E-INT-*` | Typed supported-class rejections use `E-UNS-001`; unclassified internal failures use `E-INT-*`. |
 
 Use `code`, `category`, `severity`, `subject`, `location`, and `exit_code` for
 branching. `message` and `fix` are informational. Hints (for example
