@@ -13,6 +13,7 @@
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "common/checked_output.h"
+#include "common/unsupported_class.h"
 #include "lower/tdg2pn/tdg2pn.h"
 #include "model/petri.h"
 
@@ -266,8 +267,11 @@ CandidateSummary evaluate_candidate(const tdg::TDG& graph, const std::vector<Tas
     for (const long long load : load_by_core) {
       summary.max_core_load = std::max(summary.max_core_load, load);
     }
-  } catch (const std::exception& error) {
-    spdlog::debug("[ALLOC] candidate analysis failed: {}", error.what());
+  } catch (const ptpn::UnsupportedClassError& error) {
+    // Expected: this candidate's assignment is outside the analyzed supported
+    // class (for example a static-partition rule), so it is infeasible rather
+    // than a failure. Any other exception is an internal bug and must surface.
+    spdlog::debug("[ALLOC] candidate rejected by the supported class: {}", error.what());
     summary.feasible = false;
     summary.analysis_exact = false;
   }

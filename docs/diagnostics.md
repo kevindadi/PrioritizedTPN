@@ -338,13 +338,11 @@ are zero) even when a file name is present.
   `std::runtime_error` / `std::logic_error` and surface as internal
   (`E-INT-003` in lowering, `E-INT-001` from the CLI top-level handler). Do not
   broaden the mapping to all `invalid_argument`.
-- **Allocation swallows candidate exceptions.** `allocation.cpp` catches every
-  `std::exception` per candidate, marks it infeasible, and continues; this
-  preserves the existing candidate-level rejection protocol, including for the
-  typed unsupported class. Unknown internal exceptions are therefore also
-  reported only as an infeasible candidate. Separating "expected unsupported"
-  from "candidate-internal failure" is a future change with its own scope; it
-  is not claimed resolved here.
+- **Allocation only catches the typed unsupported class.** `allocation.cpp`
+  marks a candidate infeasible when lowering or analysis throws
+  `ptpn::UnsupportedClassError` (an expected, per-candidate rejection). Any
+  other exception propagates and surfaces as `E-INT-001`, because it is an
+  internal failure rather than a property of the assignment.
 
 ## 6. Interpreting analysis results
 
