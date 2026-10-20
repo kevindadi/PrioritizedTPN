@@ -367,6 +367,28 @@ TEST(DiagnosticsCliTest, TruncationWithoutCounterexampleIsPerformance) {
             diagnostic->value("fix", "").find("no counterexample found; raising -m may help"));
 }
 
+TEST(DiagnosticsCliTest, UnreleasedTaskIsHinted) {
+  const std::string path = write_temp_file(".rtsl", R"(system s {
+  cpus 1
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+  task a: periodic { period 10ms deadline 10ms core 0 time [1, 1] estimated }
+  task orphan: aperiodic { core 0 time [1, 1] estimated }
+  start a
+}
+)");
+  const CliResult result = run_cli({"rtsl", "-f", path, "--diagnostics", "json"});
+  EXPECT_EQ(0, result.exit_code);
+
+  const nlohmann::json envelope = parse_envelope(result.stdout_text);
+  const nlohmann::json* diagnostic = find_diagnostic(envelope, "R-ANA-004");
+  ASSERT_NE(nullptr, diagnostic);
+  EXPECT_EQ("hint", diagnostic->value("severity", ""));
+  EXPECT_EQ("task:orphan", diagnostic->value("subject", ""));
+  EXPECT_EQ("schedulable", envelope.at("result").at("analysis").value("schedulability", ""));
+}
+
 TEST(DiagnosticsCliTest, CounterexampleDominatesTruncation) {
   // A proven deadline miss (R-ANA-002) inside the explored prefix still wins
   // over the truncation warning (E-PERF-001): exit 6, not 5. A max-states cut

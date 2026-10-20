@@ -407,7 +407,9 @@ TEST(RtslValidation, CheckModeHintsDoNotAffectTheExitCode) {
   dsl::SourceMap source_map;
   rtsl_test::check_source(source, diagnostics, source_map);
 
-  ASSERT_EQ(diagnostics.size(), 2U);
+  // E-UNS-005 (interrupt), E-VAL-218 (core any) and E-VAL-223 (both tasks are
+  // on core 0 with the default priority 100).
+  ASSERT_EQ(diagnostics.size(), 3U);
   const auto interrupt = rtsl_test::diagnostics_with_code(diagnostics, "E-UNS-005");
   ASSERT_EQ(interrupt.size(), 1U);
   EXPECT_EQ(interrupt[0]->severity, "hint");
@@ -415,6 +417,9 @@ TEST(RtslValidation, CheckModeHintsDoNotAffectTheExitCode) {
   ASSERT_EQ(allocate.size(), 1U);
   EXPECT_EQ(allocate[0]->severity, "hint");
   EXPECT_NE(allocate[0]->message.find("ptpn allocate"), std::string::npos);
+  const auto tie_hint = rtsl_test::diagnostics_with_code(diagnostics, "E-VAL-223");
+  ASSERT_EQ(tie_hint.size(), 1U);
+  EXPECT_EQ(tie_hint[0]->severity, "hint");
   EXPECT_EQ(diagnostics.exit_code(), 0);
 }
 
@@ -458,6 +463,78 @@ TEST(RtslValidation, CoreSetIsHintedInCheckAndWarnedInRtsl) {
     rtsl_test::check_source(single, diagnostics, source_map);
     EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-218"), 0U);
   }
+}
+
+TEST(RtslValidation, ScheduleHintsAreNonBlocking) {
+  // deadline > period (warning), same core + priority (hint), and utilisation
+  // above 1 (warning) all leave the exit code at 0.
+  const std::string source =
+      "system demo {\n"
+      "  cpus 1\n"
+      "  cores_per_cpu 1\n"
+      "  time_unit ms\n"
+      "  task a: periodic { period 10ms deadline 20ms core 0 time [6, 7] estimated }\n"
+      "  task b: periodic { period 10ms deadline 10ms core 0 time [6, 7] estimated }\n"
+      "}\n";
+  ptpn::Diagnostics diagnostics;
+  dsl::SourceMap source_map;
+  rtsl_test::check_source(source, diagnostics, source_map);
+
+  const auto deadline_hint = rtsl_test::diagnostics_with_code(diagnostics, "E-VAL-222");
+  ASSERT_EQ(deadline_hint.size(), 1U);
+  EXPECT_EQ(deadline_hint[0]->severity, "warning");
+  EXPECT_NE(deadline_hint[0]->message.find("exceeds the period"), std::string::npos);
+
+  const auto tie_hint = rtsl_test::diagnostics_with_code(diagnostics, "E-VAL-223");
+  ASSERT_EQ(tie_hint.size(), 1U);
+  EXPECT_EQ(tie_hint[0]->severity, "hint");
+
+  const auto utilisation = rtsl_test::diagnostics_with_code(diagnostics, "E-VAL-224");
+  ASSERT_EQ(utilisation.size(), 1U);
+  EXPECT_EQ(utilisation[0]->severity, "warning");
+  EXPECT_EQ(utilisation[0]->subject.value(), "system:core0");
+  EXPECT_NE(utilisation[0]->message.find("best-case execution times"), std::string::npos);
+  EXPECT_EQ(diagnostics.exit_code(), 0);
+}
+
+TEST(RtslValidation, SeparateEdgeStatementsAreHintedAsAlternatives) {
+  const std::string source = rtsl_test::system_block(
+      "  task a: normal { core 0 time [1, 1] estimated }\n"
+      "  task b: normal { core 0 time [1, 1] estimated }\n"
+      "  task c: normal { core 0 time [1, 1] estimated }\n"
+      "  start a\n"
+      "  a -> b\n"
+      "  a -> c\n"
+      "  b -> c");
+  ptpn::Diagnostics diagnostics;
+  dsl::SourceMap source_map;
+  rtsl_test::check_source(source, diagnostics, source_map);
+
+  const auto hints = rtsl_test::diagnostics_with_code(diagnostics, "E-VAL-225");
+  ASSERT_EQ(hints.size(), 2U);
+  for (const ptpn::Diagnostic* hint : hints) {
+    EXPECT_EQ(hint->severity, "hint");
+    EXPECT_NE(hint->message.find("whichever"), std::string::npos);
+  }
+  const std::set<std::string> subjects = subjects_for(diagnostics, "E-VAL-225");
+  EXPECT_TRUE(subjects.count("task:a") == 1U);  // two outgoing statements
+  EXPECT_TRUE(subjects.count("task:c") == 1U);  // two incoming statements
+  EXPECT_EQ(diagnostics.exit_code(), 0);
+}
+
+TEST(RtslValidation, ExplicitForkAndJoinStatementsStaySilent) {
+  const std::string source = rtsl_test::system_block(
+      "  task a: normal { core 0 time [1, 1] estimated }\n"
+      "  task b: normal { core 0 time [1, 1] estimated }\n"
+      "  task c: normal { core 0 time [1, 1] estimated }\n"
+      "  start a\n"
+      "  a -> {b, c}\n"
+      "  {b, c} -> c");
+  ptpn::Diagnostics diagnostics;
+  dsl::SourceMap source_map;
+  rtsl_test::check_source(source, diagnostics, source_map);
+
+  EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-225"), 0U);
 }
 
 TEST(RtslValidation, MeasuredMissingIntervalsAreAcceptedByCheck) {
@@ -515,7 +592,7 @@ TEST(RtslValidation, SourceMapBindsEverySubjectFamily) {
   policy rm
   task a: periodic {
     period 10ms
-    deadline 20ms
+    deadline 5ms
     priority 5
     core 0
     locks mutex1
@@ -531,7 +608,14 @@ TEST(RtslValidation, SourceMapBindsEverySubjectFamily) {
   ptpn::Diagnostics diagnostics;
   dsl::SourceMap source_map;
   rtsl_test::check_source(source, diagnostics, source_map);
-  ASSERT_TRUE(diagnostics.empty());
+  // The model deliberately declares two outgoing edge statements from `a` and
+  // two incoming into `b` (to bind both the edge and the join subject); those
+  // produce non-blocking E-VAL-225 hints.
+  EXPECT_EQ(diagnostics.exit_code(), 0);
+  for (const ptpn::Diagnostic& diagnostic : diagnostics.entries()) {
+    EXPECT_EQ(diagnostic.code, "E-VAL-225");
+    EXPECT_EQ(diagnostic.severity, "hint");
+  }
 
   const std::vector<std::string> keys = {
       "task:a",           "task:a:core",     "task:a:time",

@@ -615,8 +615,22 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
 
     // Compact per-task result so consumers do not have to parse the metrics
     // JSON for the verdict and the WCRT.
-    if (task.observed) {
-      nlohmann::json entry;
+    if (!task.observed) {
+      // The task never executes in any reachable state: usually a missing
+      // `start` binding or dependency edge, not a deliberate choice.
+      ptpn::Diagnostic orphan;
+      orphan.code = "R-ANA-004";
+      orphan.message = "task '" + task.name +
+                       "' is never released in the reachable state space (no `start` binding "
+                       "and no incoming dependency edge), so it never executes";
+      orphan.subject = "task:" + task.name;
+      orphan.severity = "hint";
+      orphan.fix =
+          "add a `start` binding or an incoming dependency edge, or remove the task";
+      diagnostics->add(std::move(orphan));
+      continue;
+    }
+    if (task.observed) {      nlohmann::json entry;
       entry["task"] = task.name;
       entry["wcrt"] = task.wcrt.infinite ? nlohmann::json(nullptr) : nlohmann::json(task.wcrt.value);
       if (report.wcrt_lb_valid && !task.wcrt_lb.infinite) {

@@ -147,8 +147,8 @@ Stage coverage by command:
 
 | Command | Parse/validate | Lowering | Analysis | Codes that can appear |
 |---|---|---|---|---|
-| `ptpn check` | RTSL | no | no | `E-SYN-002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..221` (not `E-VAL-213`), CLI `E-INT-001/002` |
-| `ptpn rtsl` | RTSL | yes | yes | `check` codes and `E-VAL-213`, lowering `E-VAL-011/014/015`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-001/002/003`, `E-PERF-001/002`, `E-INT-002` |
+| `ptpn check` | RTSL | no | no | `E-SYN-002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..225` (not `E-VAL-213`), CLI `E-INT-001/002` |
+| `ptpn rtsl` | RTSL | yes | yes | `check` codes and `E-VAL-213`, lowering `E-VAL-011/014/015`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-001/002/003/004`, `E-PERF-001/002`, `E-INT-002` |
 | `ptpn allocate` | RTSL or JSON | via TDG2PN per candidate | no protocol diagnostics | input codes, RTSL lowering `E-VAL-011/014/015`; **not** `E-UNS-001`/`E-INT-003`/`R-ANA-*`/`E-PERF-*`; `E-INT-002` for the report |
 | `ptpn tdg` | TDG JSON | yes | yes | `E-SYN-001/002`, `E-VAL-001..033`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
 | `ptpn ptpn` | PTPN source | no | yes | `E-SYN-002`, `E-VAL-101..113`, parser `E-INT-001`, `E-UNS-001` (analysis), `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
@@ -183,6 +183,7 @@ user ran.
 | `R-ANA-001` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`; not cone) | a certified reachable deadlock exists | `system:deadlock` / none | fix dependency/lock structure or policy |
 | `R-ANA-002` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`) | the task is observed and its verdict is `misses`: a certified lower bound above the deadline, an observed response that reached the deadline cap, or a complete graph with no completion edge (starvation) | `task:<name>` / none | adjust priorities, cores, or periods |
 | `R-ANA-003` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`) | certified periodic local deadlock | `task:<name>` / none | change period, priority, or core assignment |
+| `R-ANA-004` | **hint** | analysis result (`tdg`, `rtsl`, `ptpn`) | the task is never released in the reachable state space (no `start` binding and no incoming dependency edge), so it never executes | `task:<name>` / none | add a `start` binding or an incoming edge, or remove the task |
 | `E-SYN-002` | syntax/error | input open: JSON, PTPN, RTSL, check | input file cannot be opened | none / file only | `check that the input path exists and is readable` |
 | `E-SYN-001` | syntax/error | TDG JSON parse | nlohmann parse error | none / precise file:line:column | fix JSON syntax near the reported position |
 | `E-VAL-033` | validation/error | TDG JSON parse/type conversion | non-parse exception, usually a field type/shape mismatch | none / file only for file input | check every JSON field's type and shape |
@@ -285,6 +286,10 @@ are zero) even when a file name is present.
 | `E-VAL-219` | error | validator | an attribute is declared more than once | `system:*`, `policy`, or `task:<id>:<attr>`; duplicate token span | remove the duplicate declaration |
 | `E-VAL-220` | error | validator | measured-block `runs` or `timeout <= 0` | `task:<id>:time`; value span | use a positive integer |
 | `E-VAL-221` | error | validator | a numeric value does not fit the engine's signed 32-bit range: a time value (after unit normalization) reaches `INT_MAX` ms or above, `priority`, `cpus`, or `cores_per_cpu` exceeds `int` | the same subject as the offending attribute (`task:<id>:period`/`:deadline`/`:time`/`:priority`, `system:cpus`/`system:cores_per_cpu`); value span | reduce the value (time values: at most 2147483646 ms; priorities: -2147483648..2147483647) |
+| `E-VAL-222` | **warning** | validator | a periodic task's relative deadline exceeds its period (the release merges into a still-pending job) | `task:<id>:deadline`; deadline span | make the deadline <= the period, or model the queue explicitly |
+| `E-VAL-223` | **hint** | validator | two or more tasks share a core and a priority (including the default `100`) | `system:priority`; system span | give the tasks distinct priorities, or run with `--tie arbitrary` |
+| `E-VAL-224` | **warning** | validator | the periodic tasks on one core have `sum C/T > 1` (worst-case execution times; the message notes when even the best case exceeds 1) | `system:core<N>`; system span | reduce execution times, lengthen periods, or move a task |
+| `E-VAL-225` | **hint** | validator | several separate edge statements share a source or target: the exit token is consumed by whichever bridge fires first (targets are alternatives), or the target is released by whichever source completes first | `task:<id>`; first edge span | merge them into one `a -> {b, c}` / `{a, b} -> c` statement |
 | `E-VAL-011` | error | RTSL lowering | resolved core not in the allowed domain (defensive invariant) | `task:<id>`; task span | include the core in the domain |
 | `E-VAL-014` | error | RTSL validator and lowering | lock name lacks `mutex`/`spin` | `lock:<name>`; lock token span | rename the lock |
 | `E-VAL-015` | error | RTSL lowering (`rtsl`, `allocate`) | interval count != `2*locks+1` | `task:<id>`; task span | provide `2*lock_count+1` intervals |
