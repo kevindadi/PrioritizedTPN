@@ -150,9 +150,6 @@ class Parser {
   mutable ptpn::Diagnostics diagnostics_;
 };
 
-enum class LockType { MUTEX, SPIN, UNKNOWN };
-LockType get_lock_type(const std::string& lock_name);
-
 // 时间区间计算
 int calculate_time_interval_count(int lock_count);
 

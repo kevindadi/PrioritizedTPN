@@ -11,7 +11,7 @@ PlaceKind detect_place_kind(const std::string& name) {
   if (name.rfind("core", 0) == 0) {
     return PlaceKind::CPU_RESOURCE;
   }
-  if (name.rfind("mutex", 0) == 0 || name.rfind("spin", 0) == 0) {
+  if (get_lock_type(name) != LockType::UNKNOWN) {
     return PlaceKind::LOCK_RESOURCE;
   }
   return PlaceKind::NORMAL;

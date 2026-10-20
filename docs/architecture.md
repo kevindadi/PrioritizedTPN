@@ -35,7 +35,7 @@ code does not write the CLI diagnostics envelope.
 | `src/analysis/metrics/` | WCRT/schedulability/deadlock/utilisation metrics computation |
 | `src/analysis/reductions/` | Per-task cone projection |
 | `src/analysis/allocation/` | Deterministic core-allocation search (evaluates candidates with the exact analysis) |
-| `src/export/` | Output writers: TDG DOT, PTPN DOT, state-class DOT, TDG JSON, WCET JSON. Metrics JSON lives next to the metrics library in `src/analysis/metrics/`, so export does not depend on the analysis stack |
+| `src/export/` | Output writers: TDG DOT, PTPN DOT, state-class DOT, TDG JSON, WCET JSON. Metrics JSON lives next to the metrics library in `src/analysis/metrics/`, so export does not depend on `ptpn_metrics` (the SCG writer still depends on `ptpn_reachability`) |
 | `src/app/` | CLI-free pipelines, input loading, analysis orchestration, allocation driver, check command |
 | `src/cli/` | CLI11 option registration and dispatch; no domain logic |
 
@@ -128,7 +128,8 @@ semantics to remove them:
   no cycle, but the responsibility is inverted: TDG JSON loading conceptually
   belongs to the parse layer. The TDG/PTPN/SCG DOT, TDG JSON and WCET JSON
   writers live in `src/export/`; metrics JSON stays with the metrics library so
-  export does not depend on the analysis stack. Loading remains for a follow-up.
+  export does not depend on `ptpn_metrics` (the SCG writer still depends on
+  `ptpn_reachability`). Loading remains for a follow-up.
 - `analysis/allocation/` is grouped under `analysis/` but depends on
   `lower/tdg2pn/` to evaluate candidates. It is orchestration above the
   analysis core.

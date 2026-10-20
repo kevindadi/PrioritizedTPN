@@ -2,7 +2,6 @@
 
 #include <fstream>
 #include <string>
-#include <variant>
 
 #include <nlohmann/json.hpp>
 
@@ -17,20 +16,22 @@ bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path) {
   bool all_certified = true;
   size_t task_id = 0;
   for (const auto& node : graph.all_task) {
-    if (!std::holds_alternative<TaskNode>(node)) {
+    const TaskNode* task = as_task_node(node);
+    if (task == nullptr) {
       continue;
     }
 
-    const auto& task = std::get<TaskNode>(node);
-    int wcet_lo = 0;
-    int wcet_hi = 0;
-    for (const auto& interval : task.time) {
+    // Use 64-bit accumulators: a legal interval sum can exceed INT_MAX even
+    // though each segment fits in an int.
+    long long wcet_lo = 0;
+    long long wcet_hi = 0;
+    for (const auto& interval : task->time) {
       wcet_lo += interval.first;
       wcet_hi += interval.second;
     }
 
     tdg::WcetProvenance provenance;
-    if (const auto it = graph.task_wcet_provenance.find(task.name);
+    if (const auto it = graph.task_wcet_provenance.find(task->name);
         it != graph.task_wcet_provenance.end()) {
       provenance = it->second;
     }
@@ -38,10 +39,10 @@ bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path) {
 
     wcet["tasks"].push_back({
         {"id", task_id++},
-        {"name", task.name},
+        {"name", task->name},
         {"wcet", wcet_hi},
         {"interval", nlohmann::json::array({wcet_lo, wcet_hi})},
-        {"segments", task.time.size()},
+        {"segments", task->time.size()},
         {"wcet_kind", provenance.kind},
         {"wcet_method", provenance.method},
         {"wcet_artifact", provenance.artifact},

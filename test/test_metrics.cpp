@@ -1,19 +1,25 @@
 #include <cstddef>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <iterator>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "analysis/metrics/metrics.h"
+#include "analysis/metrics/metrics_json.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "model/petri.h"
 
 namespace {
 
+using state_class::LockMetrics;
 using state_class::MetricsAnalyzer;
 using state_class::MetricsReport;
 using state_class::StateClassReachabilityGraph;
+using state_class::TaskMetrics;
 
 // Single task T on core 0: entry -(get_core,[0,0])-> ready -(exec,[3,5])-> exit
 // -(consume,[0,0])-> done. exec is the only timed segment, so the response time
@@ -111,6 +117,31 @@ TEST(MetricsTest, StuckTaskIsReportedAsDeadlock) {
 
   const MetricsReport report = analyze(net);
   EXPECT_FALSE(report.deadlock_states.empty());
+}
+
+TEST(MetricsTest, JsonEscapesTaskAndLockNames) {
+  MetricsReport report;
+  TaskMetrics task;
+  task.name = "ta\"sk\\name\nline\x01" "end";
+  report.tasks.push_back(task);
+  LockMetrics lock;
+  lock.name = "lo\"ck\\name\ttab";
+  report.locks.push_back(lock);
+
+  const std::string path = ::testing::TempDir() + "ptpn_test_metrics_escape.json";
+  ASSERT_TRUE(state_class::save_metrics_json(report, path));
+
+  std::ifstream in(path, std::ios::binary);
+  ASSERT_TRUE(in.is_open());
+  const std::string text((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+  const nlohmann::json parsed = nlohmann::json::parse(text, nullptr, false);
+  ASSERT_FALSE(parsed.is_discarded());
+
+  ASSERT_EQ(parsed["tasks"].size(), 1u);
+  EXPECT_EQ(parsed["tasks"][0]["name"].get<std::string>(), task.name);
+  ASSERT_EQ(parsed["locks"].size(), 1u);
+  EXPECT_EQ(parsed["locks"][0]["name"].get<std::string>(), lock.name);
 }
 
 TEST(MetricsTest, NetWithoutTaskInfoYieldsStructuralOnly) {

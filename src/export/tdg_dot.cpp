@@ -14,10 +14,6 @@
 
 namespace {
 
-std::string format_range(const std::pair<int, int>& range) {
-  return "[" + std::to_string(range.first) + ", " + std::to_string(range.second) + "]";
-}
-
 // Each lock adds a pre-CS, CS, and post-CS segment: total = 2 * locks + 1.
 std::string get_time_interval_label(int index, const std::vector<std::string>& locks) {
   const int lock_count = static_cast<int>(locks.size());
@@ -49,18 +45,19 @@ std::string get_time_interval_label(int index, const std::vector<std::string>& l
   }
 
   const int post_index = index - lock_count;
-  return post_index == 0 ? "[Post:" + locks[lock_count - 1] + "]"
-                         : "[Post" + std::to_string(post_index) + "]";
+  return "[Post" + std::to_string(post_index) + "]";
 }
 
 std::string get_lock_type_short(const std::string& lock_name) {
-  if (lock_name.rfind("mutex", 0) == 0) {
-    return "[M]";
+  switch (get_lock_type(lock_name)) {
+    case LockType::MUTEX:
+      return "[M]";
+    case LockType::SPIN:
+      return "[S]";
+    case LockType::UNKNOWN:
+    default:
+      return "[?]";
   }
-  if (lock_name.rfind("spin", 0) == 0) {
-    return "[S]";
-  }
-  return "[?]";
 }
 
 std::string format_locks_with_type(const std::vector<std::string>& locks) {
@@ -94,7 +91,7 @@ std::string node_to_dot_label(const NodeType& node) {
           oss << ", ";
         }
         oss << get_time_interval_label(static_cast<int>(i), typed_node.lock) << " "
-            << format_range(typed_node.time[i]);
+            << format_time_range(typed_node.time[i]);
       }
 
       oss << "\\nlocks=" << format_locks_with_type(typed_node.lock);

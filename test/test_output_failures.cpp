@@ -15,7 +15,8 @@ std::string missing_parent_path(const std::string& suffix) {
 
 bool mentions_success_log(const std::string& stderr_text, const std::string& kind) {
   return stderr_text.find(kind + " exported to") != std::string::npos ||
-         stderr_text.find("[DOT] Exported") != std::string::npos;
+         stderr_text.find("[DOT] Exported") != std::string::npos ||
+         stderr_text.find("[PETRI_EXPORT] DOT file saved to:") != std::string::npos;
 }
 
 }  // namespace
@@ -73,6 +74,33 @@ TEST(OutputFailures, WcetMissingParentLegacyMode) {
   EXPECT_EQ(result.exit_code, 1);
   EXPECT_EQ(result.stdout_text.find("\"protocol\""), std::string::npos);
   EXPECT_FALSE(mentions_success_log(result.stderr_text, "WCET JSON"));
+}
+
+TEST(OutputFailures, PtpnDotMissingParentDiagnosticsMode) {
+  const std::string path = missing_parent_path(".dot");
+  const ptpn_test::CliResult result =
+      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+                          "--export-ptpn", path, "--diagnostics", "json"});
+
+  ASSERT_EQ(result.exit_code, 1) << result.stderr_text;
+  const nlohmann::json envelope = ptpn_test::parse_envelope(result.stdout_text);
+  EXPECT_EQ(envelope.at("exit_code"), 1);
+  const nlohmann::json* diagnostic = ptpn_test::find_diagnostic(envelope, "E-INT-002");
+  ASSERT_NE(diagnostic, nullptr);
+  EXPECT_EQ(diagnostic->at("subject"), "output:" + path);
+  EXPECT_EQ(ptpn_test::find_diagnostic(envelope, "E-INT-001"), nullptr);
+  EXPECT_FALSE(mentions_success_log(result.stderr_text, "PTPN DOT"));
+}
+
+TEST(OutputFailures, PtpnDotMissingParentLegacyMode) {
+  const std::string path = missing_parent_path(".dot");
+  const ptpn_test::CliResult result =
+      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+                          "--export-ptpn", path});
+
+  EXPECT_EQ(result.exit_code, 1);
+  EXPECT_EQ(result.stdout_text.find("\"protocol\""), std::string::npos);
+  EXPECT_FALSE(mentions_success_log(result.stderr_text, "PTPN DOT"));
 }
 
 TEST(OutputFailures, SuccessfulExportsKeepTheirContent) {
@@ -172,6 +200,28 @@ TEST(OutputFailures, DevFullReportsDelayedWriteFailures) {
   ASSERT_NE(scg_dot_diagnostic, nullptr);
   EXPECT_EQ(scg_dot_diagnostic->at("subject"), "output:/dev/full");
   EXPECT_FALSE(mentions_success_log(scg_dot.stderr_text, "State class graph"));
+#else
+  GTEST_SKIP() << "/dev/full is a Linux-only test";
+#endif
+}
+
+TEST(OutputFailures, DiagnosticsFileDevFullIsReportedInStdoutEnvelope) {
+#if defined(__linux__)
+  if (!std::filesystem::exists("/dev/full")) {
+    GTEST_SKIP() << "/dev/full is not available";
+  }
+
+  const ptpn_test::CliResult result =
+      ptpn_test::run_cli({"check", "-f", "example/introduction/locked.rtsl", "--diagnostics",
+                          "json", "--diagnostics-file", "/dev/full"});
+
+  ASSERT_EQ(result.exit_code, 1) << result.stderr_text;
+  EXPECT_NE(result.stderr_text.find("Failed to write diagnostics file"), std::string::npos);
+  const nlohmann::json envelope = ptpn_test::parse_envelope(result.stdout_text);
+  EXPECT_EQ(envelope.at("exit_code"), 1);
+  const nlohmann::json* diagnostic = ptpn_test::find_diagnostic(envelope, "E-INT-002");
+  ASSERT_NE(diagnostic, nullptr);
+  EXPECT_EQ(diagnostic->at("subject"), "output:/dev/full");
 #else
   GTEST_SKIP() << "/dev/full is a Linux-only test";
 #endif

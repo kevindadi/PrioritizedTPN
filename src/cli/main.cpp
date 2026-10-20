@@ -10,6 +10,7 @@
 
 #include "app/common.h"
 #include "cli/command.h"
+#include "common/checked_output.h"
 #include "common/diagnostics.h"
 
 namespace {
@@ -142,12 +143,22 @@ int main(int argc, char* argv[]) {
   }
 
   int code = diagnostics.exit_code();
-  const nlohmann::json envelope = diagnostics.to_json();
-  if (diagnostics_stdout) {
-    std::cout << envelope.dump(2) << std::endl;
+  // is_open(), not operator bool: a default-constructed ofstream may still
+  // report good() before a file has been attached.
+  if (envelope_file.is_open()) {
+    envelope_file << diagnostics.to_json().dump(2) << std::endl;
+    // A full device or a failing stream reports the error only at flush/close.
+    // Surface it as a diagnostic in the stdout envelope as well.
+    if (!ptpn::finish_output(envelope_file)) {
+      std::cerr << "ERROR: Failed to write diagnostics file: " << diagnostics_file << std::endl;
+      diagnostics.add("E-INT-002", "failed to write diagnostics file: " + diagnostics_file,
+                      "output:" + diagnostics_file, std::nullopt,
+                      "check that the output path is writable");
+      code = diagnostics.exit_code();
+    }
   }
-  if (envelope_file) {
-    envelope_file << envelope.dump(2) << std::endl;
+  if (diagnostics_stdout) {
+    std::cout << diagnostics.to_json().dump(2) << std::endl;
   }
   return code;
 }

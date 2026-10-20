@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -307,4 +308,20 @@ TEST(AllocationTest, ReportWriteFailsForMissingDirectory) {
 
   EXPECT_FALSE(
       allocation::save_report_json(report, "/nonexistent-ptpn-allocation-dir/report.json"));
+}
+
+TEST(AllocationTest, ReportWriteFailsOnFullDevice) {
+#if defined(__linux__)
+  if (!std::filesystem::exists("/dev/full")) {
+    GTEST_SKIP() << "/dev/full is not available";
+  }
+
+  const tdg::TDG graph = parse_tdg(kFixedGraph);
+  allocation::Options options;
+  const allocation::SearchReport report = allocation::search_allocations(graph, options);
+
+  EXPECT_FALSE(allocation::save_report_json(report, "/dev/full"));
+#else
+  GTEST_SKIP() << "/dev/full is a Linux-only test";
+#endif
 }

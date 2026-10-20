@@ -180,11 +180,8 @@ std::string render_dot(const PetriExportModel& model) {
 bool save_to_dot(const PetriExportModel& model, const std::string& file_path) {
   try {
     boost::filesystem::path dot_filename(file_path);
-    if (!dot_filename.parent_path().empty() &&
-        !boost::filesystem::exists(dot_filename.parent_path())) {
-      boost::filesystem::create_directories(dot_filename.parent_path());
-    }
-
+    // Parent directories are never created: an unwritable path fails the open
+    // and surfaces as E-INT-002 in the caller, like the other output writers.
     std::ofstream ofs(dot_filename.string());
     if (!ofs) {
       spdlog::error("[PETRI_EXPORT] Cannot open DOT file: {}", dot_filename.string());

@@ -1,3 +1,4 @@
+#include <climits>
 #include <cstddef>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -144,6 +145,24 @@ TEST(PipelineGolden, MetricsJsonMatchesGolden) {
     ASSERT_TRUE(state_class::save_metrics_json(report, out));
     expect_matches_golden(out, test_case.second);
   }
+}
+
+TEST(PipelineGolden, WcetJsonSumsLargeIntervalsWithoutOverflow) {
+  tdg::TDG tdg(1, 1);
+  TaskNode big;
+  big.name = "Big";
+  big.time = {{INT_MAX, INT_MAX}, {INT_MAX, INT_MAX}};
+  tdg.all_task.emplace_back(big);
+
+  const std::string out = testing::TempDir() + "ptpn_test_wcet_overflow.json";
+  ASSERT_TRUE(exporting::write_wcet_json(tdg, out));
+
+  nlohmann::json exported = nlohmann::json::parse(read_text(out), nullptr, false);
+  ASSERT_FALSE(exported.is_discarded());
+  ASSERT_EQ(exported["tasks"].size(), 1);
+  EXPECT_EQ(exported["tasks"][0]["wcet"].get<long long>(), 2LL * INT_MAX);
+  EXPECT_EQ(exported["tasks"][0]["interval"],
+            nlohmann::json::array({2LL * INT_MAX, 2LL * INT_MAX}));
 }
 
 TEST(PipelineGolden, WcetJsonReportsIntervalsProvenanceAndCertification) {
