@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "analysis/reachability/canonicalization.h"
-#include "analysis/reachability/scheduling_policy.h"
+#include "analysis/reachability/scheduling/firing_rule.h"
 #include "analysis/reachability/state_class.h"
 #include "analysis/reachability/symmetry.h"
 #include "model/petri.h"

@@ -23,7 +23,7 @@ void LlfFiringRule::ensure_index(const petri::PTPN& net) const {
     return;
   }
 
-  ReleaseClassOptions options;
+  detail::ReleaseClassOptions options;
   options.label = "LLF";
   options.require_deadline = true;
   // LLF is a resume policy, so the lowerer installs no structural CPU place;
@@ -31,7 +31,7 @@ void LlfFiringRule::ensure_index(const petri::PTPN& net) const {
   // cores. Each core is scheduled independently below.
   options.use_cpu_places = false;
   options.require_deterministic_segments = true;
-  ReleaseTaskIndex index = build_release_task_index(net, options);
+  detail::ReleaseTaskIndex index = detail::build_release_task_index(net, options);
   tasks_ = std::move(index.tasks);
   task_of_transition_ = std::move(index.task_of_transition);
   task_of_periodic_transition_ = std::move(index.task_of_periodic_transition);
@@ -139,7 +139,7 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
       const int candidate_clock = state.laxity_index(candidate);
       if (candidate_clock <= 0) {
         throw std::invalid_argument("LLF state is missing the laxity clock of in-flight task '" +
-                                    task_name_or_ordinal(tasks_, candidate) + "'");
+                                    detail::task_name_or_ordinal(tasks_, candidate) + "'");
       }
 
       // Candidate i is feasible when the zone admits a valuation in which its
@@ -156,7 +156,7 @@ std::vector<PolicyBranch> LlfFiringRule::branches(const TransitionSet& struct_en
         const int other_clock = state.laxity_index(other);
         if (other_clock <= 0) {
           throw std::invalid_argument("LLF state is missing the laxity clock of in-flight task '" +
-                                      task_name_or_ordinal(tasks_, other) + "'");
+                                      detail::task_name_or_ordinal(tasks_, other) + "'");
         }
         if (!trial.tighten(static_cast<size_t>(other_clock), static_cast<size_t>(candidate_clock),
                            0)) {

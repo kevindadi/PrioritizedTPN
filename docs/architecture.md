@@ -35,7 +35,7 @@ code does not write the CLI diagnostics envelope.
 | `src/analysis/metrics/` | WCRT/schedulability/deadlock/utilisation metrics computation |
 | `src/analysis/reductions/` | Per-task cone projection |
 | `src/analysis/allocation/` | Deterministic core-allocation search (evaluates candidates with the exact analysis) |
-| `src/export/` | All output writers: TDG DOT, PTPN DOT, state-class DOT, TDG JSON writer, metrics JSON |
+| `src/export/` | Output writers: TDG DOT, PTPN DOT, state-class DOT, TDG JSON, WCET JSON. Metrics JSON lives next to the metrics library in `src/analysis/metrics/`, so export does not depend on the analysis stack |
 | `src/app/` | CLI-free pipelines, input loading, analysis orchestration, allocation driver, check command |
 | `src/cli/` | CLI11 option registration and dispatch; no domain logic |
 
@@ -46,11 +46,12 @@ links what it needs:
 
 | File | Responsibility | Library |
 |---|---|---|
-| `common.{h,cpp}` | `PipelineOptions`, `ExportTargets`, `DiagnosticsOptions`, legacy diagnostic rendering, process memory, timing/log helpers | `ptpn_app_support` |
+| `common.{h,cpp}` | `PipelineOptions`, `ExportTargets`, `DiagnosticsOptions`, legacy diagnostic rendering, process memory, pipeline clock | `ptpn_app_support` |
+| `logging.h` | spdlog-backed `[STATS]` timing helper and scoped log-level guard | `ptpn_app_support` |
 | `input.{h,cpp}` | Read, lex, parse, validate and lower RTSL; TDG JSON loading and `--policy` override | `ptpn_app_support` |
 | `check_cmd.{h,cpp}` | `ptpn check`: parse/validate only; never lowers | `ptpn_app_check` |
 | `lowering.{h,cpp}` | TDG→PTPN plus `E-UNS-001`/`E-INT-003` adaptation and SourceMap lookup | `ptpn_app_pipelines` |
-| `analysis.{h,cpp}` | Analysis orchestration (cone/full graph, metrics, DOT), result diagnostics, WCET export | `ptpn_app_pipelines` |
+| `analysis.{h,cpp}` | Analysis orchestration (cone/full graph, metrics, DOT), result diagnostics | `ptpn_app_pipelines` |
 | `pipelines.{h,cpp}` | `run_tdg_pipeline`, `run_rtsl_pipeline`, `run_ptpn_pipeline`; public facade | `ptpn_app_pipelines` |
 | `allocation_cmd.{h,cpp}` | `ptpn allocate`: input dispatch, search driver, report summary | `ptpn_app_allocation` |
 
@@ -122,11 +123,12 @@ These are recorded for future work; this repository does not change analysis
 semantics to remove them:
 
 - `model/tdg.cpp` still implements TDG JSON *loading* and includes
-  `parse/json.h`, while `parse/json.cpp` includes `model/tdg.h`. The CMake graph
-  still works because the two libraries do not link each other in a cycle, but
-  the responsibility is inverted: TDG JSON loading conceptually belongs to the
-  parse layer. The writers have been moved out of `model/` and
-  `analysis/metrics/` into `src/export/`; loading remains for a follow-up.
+  `parse/json.h` (which includes `model/types.h`), so the include and link
+  dependency runs one way: `ptpn_tdg` privately depends on `ptpn_json`. There is
+  no cycle, but the responsibility is inverted: TDG JSON loading conceptually
+  belongs to the parse layer. The TDG/PTPN/SCG DOT, TDG JSON and WCET JSON
+  writers live in `src/export/`; metrics JSON stays with the metrics library so
+  export does not depend on the analysis stack. Loading remains for a follow-up.
 - `analysis/allocation/` is grouped under `analysis/` but depends on
   `lower/tdg2pn/` to evaluate candidates. It is orchestration above the
   analysis core.

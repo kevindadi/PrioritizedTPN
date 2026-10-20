@@ -23,12 +23,12 @@ void EdfFiringRule::ensure_index(const petri::PTPN& net) const {
     return;
   }
 
-  ReleaseClassOptions options;
+  detail::ReleaseClassOptions options;
   options.label = "EDF";
   options.require_deadline = true;
   // Multi-core EDF is statically partitioned: the supported core range comes
   // from the TaskInfo cores and each core is scheduled independently below.
-  ReleaseTaskIndex index = build_release_task_index(net, options);
+  detail::ReleaseTaskIndex index = detail::build_release_task_index(net, options);
   tasks_ = std::move(index.tasks);
   task_of_transition_ = std::move(index.task_of_transition);
   task_of_periodic_transition_ = std::move(index.task_of_periodic_transition);
@@ -146,7 +146,7 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
       const int candidate_clock = state.release_index(candidate);
       if (candidate_clock <= 0) {
         throw std::invalid_argument("EDF state is missing the release clock of in-flight task '" +
-                                    task_name_or_ordinal(tasks_, candidate) + "'");
+                                    detail::task_name_or_ordinal(tasks_, candidate) + "'");
       }
 
       // A candidate is feasible when the zone admits a valuation in which its
@@ -163,7 +163,7 @@ std::vector<PolicyBranch> EdfFiringRule::branches(const TransitionSet& struct_en
         const int other_clock = state.release_index(other);
         if (other_clock <= 0) {
           throw std::invalid_argument("EDF state is missing the release clock of in-flight task '" +
-                                      task_name_or_ordinal(tasks_, other) + "'");
+                                      detail::task_name_or_ordinal(tasks_, other) + "'");
         }
         const long long bound = static_cast<long long>(tasks_[other].deadline) -
                                 static_cast<long long>(tasks_[candidate].deadline);

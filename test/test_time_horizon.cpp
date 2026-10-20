@@ -4,9 +4,9 @@
 #include <string>
 
 #include "analysis/metrics/metrics.h"
+#include "analysis/metrics/metrics_json.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "model/petri.h"
-#include "export/metrics_json.h"
 
 namespace {
 

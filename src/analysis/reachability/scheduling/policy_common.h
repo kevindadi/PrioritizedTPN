@@ -10,6 +10,7 @@
 #include "model/petri.h"
 
 namespace state_class {
+namespace detail {
 
 // Least fixpoint of eff[holder] = max(eff[holder], eff[waiter]) over the wait
 // edges. Shared by PIP, PCP and SRP inheritance.
@@ -36,6 +37,7 @@ struct ReleaseTaskIndex {
 ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
                                           const ReleaseClassOptions& options);
 
+}  // namespace detail
 }  // namespace state_class
 
 #endif  // ANALYSIS_REACHABILITY_SCHEDULING_POLICY_COMMON_H

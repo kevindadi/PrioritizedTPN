@@ -11,6 +11,7 @@
 
 #include "app/common.h"
 #include "app/input.h"
+#include "app/logging.h"
 #include "common/diagnostics.h"
 #include "model/tdg.h"
 #include "parse/json.h"

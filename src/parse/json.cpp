@@ -160,63 +160,9 @@ LockType get_lock_type(const std::string& lock_name) {
   return LockType::UNKNOWN;
 }
 
-std::string get_lock_type_short(const std::string& lock_name) {
-  switch (get_lock_type(lock_name)) {
-    case LockType::MUTEX:
-      return "[M]";
-    case LockType::SPIN:
-      return "[S]";
-    default:
-      return "[?]";
-  }
-}
-
-std::string format_locks_with_type(const std::vector<std::string>& locks) {
-  if (locks.empty()) {
-    return "none";
-  }
-
-  return join(locks, " ",
-              [&](const std::string& lock) { return get_lock_type_short(lock) + lock; });
-}
-
 // Each lock adds a pre-CS, CS, and post-CS segment: total = 2 * locks + 1.
 int calculate_time_interval_count(int lock_count) {
   return 2 * lock_count + 1;
-}
-
-std::string get_time_interval_label(int index, const std::vector<std::string>& locks) {
-  const int lock_count = static_cast<int>(locks.size());
-
-  if (lock_count == 0) {
-    return "[Exec]";
-  }
-
-  if (lock_count == 1) {
-    switch (index) {
-      case 0:
-        return "[Pre]";
-      case 1:
-        return "[CS:" + locks[0] + "]";
-      case 2:
-        return "[Post]";
-      default:
-        return "[?]";
-    }
-  }
-
-  // Nested locking: lock1 -> lock2 -> ... -> lockN -> unlockN -> ... ->
-  // unlock1.
-  if (index < lock_count) {
-    return index == 0 ? "[Pre:" + locks[0] + "]" : "[CS:" + locks[index - 1] + "]";
-  }
-  if (index == lock_count) {
-    return "[CS:" + locks[lock_count - 1] + "]";
-  }
-
-  const int post_index = index - lock_count;
-  return post_index == 0 ? "[Post:" + locks[lock_count - 1] + "]"
-                         : "[Post" + std::to_string(post_index) + "]";
 }
 
 ParseResult Parser::parse_file(const std::string& file_path) {
@@ -701,37 +647,6 @@ NodeType JsonNode::to_node_type() const {
     return join;
   }
   return EmptyTask{id};
-}
-
-std::string node_to_dot_label(const NodeType& node) {
-  return visit_node(node, [](const auto& typed_node) -> std::string {
-    using Node = std::decay_t<decltype(typed_node)>;
-
-    if constexpr (std::is_same_v<Node, TaskNode>) {
-      std::ostringstream oss;
-      oss << typed_node.name << "\\ntask\\nprio=" << typed_node.priority
-          << " core=" << typed_node.core << "\\n";
-
-      for (size_t i = 0; i < typed_node.time.size(); ++i) {
-        if (i > 0) {
-          oss << ", ";
-        }
-        oss << get_time_interval_label(static_cast<int>(i), typed_node.lock) << " "
-            << format_range(typed_node.time[i]);
-      }
-
-      oss << "\\nlocks=" << format_locks_with_type(typed_node.lock);
-      return oss.str();
-    }
-
-    if constexpr (std::is_same_v<Node, ForkTask>) {
-      return typed_node.name + "\\nfork";
-    }
-    if constexpr (std::is_same_v<Node, JoinTask>) {
-      return typed_node.name + "\\njoin";
-    }
-    return typed_node.name + "\\nempty";
-  });
 }
 
 }  // namespace parse

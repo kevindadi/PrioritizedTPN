@@ -1,9 +1,10 @@
 #include <fstream>
 #include <string>
 
-#include "export/metrics_json.h"
+#include "analysis/metrics/metrics_json.h"
 
 #include "analysis/metrics/metrics.h"
+#include "common/checked_output.h"
 
 namespace state_class {
 
@@ -118,7 +119,7 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
   }
   out << "  ]\n";
   out << "}\n";
-  return true;
+  return ptpn::finish_output(out);
 }
 
 }  // namespace state_class

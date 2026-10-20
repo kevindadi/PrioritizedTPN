@@ -98,7 +98,7 @@ const PcpFiringRule::DynamicState& PcpFiringRule::dynamic_state(
     }
   }
 
-  inherit_priorities(state.effective, wait_edges, task_count);
+  detail::inherit_priorities(state.effective, wait_edges, task_count);
 
   cached_dynamic_ = std::move(state);
   cached_marking_ = marking;

@@ -23,7 +23,7 @@ void FifoFiringRule::ensure_index(const petri::PTPN& net) const {
     return;
   }
 
-  ReleaseClassOptions options;
+  detail::ReleaseClassOptions options;
   options.label = "FIFO";
   options.require_deadline = false;
   // FIFO is not a resume policy, so the lowerer must install the structural
@@ -32,7 +32,7 @@ void FifoFiringRule::ensure_index(const petri::PTPN& net) const {
   // defines the supported core range; a hand-built net without a CPU place is
   // still accepted and derives the per-core running set from the marking.
   options.use_cpu_places = true;
-  ReleaseTaskIndex index = build_release_task_index(net, options);
+  detail::ReleaseTaskIndex index = detail::build_release_task_index(net, options);
   tasks_ = std::move(index.tasks);
   task_of_transition_ = std::move(index.task_of_transition);
   task_of_periodic_transition_ = std::move(index.task_of_periodic_transition);
@@ -200,7 +200,7 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
       const int candidate_clock = state.release_index(candidate);
       if (candidate_clock <= 0) {
         throw std::invalid_argument("FIFO state is missing the release clock of pending task '" +
-                                    task_name_or_ordinal(tasks_, candidate) + "'");
+                                    detail::task_name_or_ordinal(tasks_, candidate) + "'");
       }
 
       DBM trial = state.zone;
@@ -213,7 +213,7 @@ std::vector<PolicyBranch> FifoFiringRule::branches(const TransitionSet& struct_e
         const int other_clock = state.release_index(other);
         if (other_clock <= 0) {
           throw std::invalid_argument("FIFO state is missing the release clock of pending task '" +
-                                      task_name_or_ordinal(tasks_, other) + "'");
+                                      detail::task_name_or_ordinal(tasks_, other) + "'");
         }
         if (!trial.tighten(static_cast<size_t>(other_clock), static_cast<size_t>(candidate_clock),
                            0)) {

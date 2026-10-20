@@ -9,8 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include "analysis/reachability/scheduling/policy_common.h"
-
 namespace state_class {
 
 namespace {
