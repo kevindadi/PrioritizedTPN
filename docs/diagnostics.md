@@ -146,7 +146,7 @@ Stage coverage by command:
 
 | Command | Parse/validate | Lowering | Analysis | Codes that can appear |
 |---|---|---|---|---|
-| `ptpn check` | RTSL | no | no | `E-SYN-002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..220` (not `E-VAL-213`), CLI `E-INT-001/002` |
+| `ptpn check` | RTSL | no | no | `E-SYN-002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..221` (not `E-VAL-213`), CLI `E-INT-001/002` |
 | `ptpn rtsl` | RTSL | yes | yes | `check` codes and `E-VAL-213`, lowering `E-VAL-011/014/015`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-001/002/003`, `E-PERF-001/002`, `E-INT-002` |
 | `ptpn allocate` | RTSL or JSON | via TDG2PN per candidate | no protocol diagnostics | input codes, RTSL lowering `E-VAL-011/014/015`; **not** `E-UNS-001`/`E-INT-003`/`R-ANA-*`/`E-PERF-*`; `E-INT-002` for the report |
 | `ptpn tdg` | TDG JSON | yes | yes | `E-SYN-001/002`, `E-VAL-001..033`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
@@ -283,6 +283,7 @@ are zero) even when a file name is present.
 | `E-VAL-218` | **hint in `check`; error in `rtsl`** | validator | task uses `core any`; `allocate` expands it instead | `task:<id>:core`; core spec span | use `ptpn allocate`, or give an explicit core |
 | `E-VAL-219` | error | validator | an attribute is declared more than once | `system:*`, `policy`, or `task:<id>:<attr>`; duplicate token span | remove the duplicate declaration |
 | `E-VAL-220` | error | validator | measured-block `runs` or `timeout <= 0` | `task:<id>:time`; value span | use a positive integer |
+| `E-VAL-221` | error | validator | a numeric value does not fit the engine's signed 32-bit range: a time value (after unit normalization) reaches `INT_MAX` ms or above, `priority`, `cpus`, or `cores_per_cpu` exceeds `int` | the same subject as the offending attribute (`task:<id>:period`/`:deadline`/`:time`/`:priority`, `system:cpus`/`system:cores_per_cpu`); value span | reduce the value (time values: at most 2147483646 ms; priorities: -2147483648..2147483647) |
 | `E-VAL-011` | error | RTSL lowering | resolved core not in the allowed domain (defensive invariant) | `task:<id>`; task span | include the core in the domain |
 | `E-VAL-014` | error | RTSL validator and lowering | lock name lacks `mutex`/`spin` | `lock:<name>`; lock token span | rename the lock |
 | `E-VAL-015` | error | RTSL lowering (`rtsl`, `allocate`) | interval count != `2*locks+1` | `task:<id>`; task span | provide `2*lock_count+1` intervals |

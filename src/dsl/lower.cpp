@@ -4,8 +4,10 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,6 +30,11 @@ std::string default_time_unit(const ast::Program& program) {
 }
 
 int to_engine_ticks(const ast::TimeValue& value, const std::string& default_unit) {
+  // Validation rejects out-of-range values with E-VAL-221 before lowering is
+  // reached; this guard keeps a direct lower() call from silently wrapping.
+  if (ast::exceeds_engine_tick_range(value, default_unit)) {
+    throw std::invalid_argument("time value exceeds the engine's 32-bit millisecond range");
+  }
   return static_cast<int>(value.normalized_ms(default_unit));
 }
 
@@ -191,7 +198,17 @@ std::optional<tdg::TDG> lower(const ast::Program& program, SourceMap& source_map
     TaskNode node;
     node.name = id;
     node.core = core.core;
-    node.priority = task.priority.empty() ? 100 : static_cast<int>(task.priority.front().value);
+    if (task.priority.empty()) {
+      node.priority = 100;
+    } else {
+      const std::int64_t priority = task.priority.front().value;
+      if (priority < std::numeric_limits<int>::min() ||
+          priority > std::numeric_limits<int>::max()) {
+        // Validation rejects this with E-VAL-221 before lowering is reached.
+        throw std::invalid_argument("priority exceeds the engine's 32-bit range");
+      }
+      node.priority = static_cast<int>(priority);
+    }
     node.deadline =
         task.deadline.empty() ? 0 : to_engine_ticks(task.deadline.front().value, time_unit);
     node.time.reserve(time.intervals.size());

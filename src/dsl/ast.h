@@ -199,6 +199,20 @@ inline std::int64_t TimeValue::normalized_ms(std::string_view default_unit) cons
   return raw_int;
 }
 
+// Largest number of engine ticks (milliseconds) a time value may normalize to.
+// The engine stores ticks in a signed 32-bit int and reserves INT_MAX as the
+// +infinity sentinel, so finite values must stay strictly below it.
+inline constexpr std::int64_t kMaxEngineTicks =
+    static_cast<std::int64_t>(std::numeric_limits<int>::max()) - 1;
+
+// True when the value normalizes to a number of engine ticks the signed 32-bit
+// engine cannot represent. Validation reports E-VAL-221 and refuses to lower;
+// without this check the cast in the lowering stage would silently wrap.
+inline bool exceeds_engine_tick_range(const TimeValue& value, std::string_view default_unit) {
+  const std::int64_t ticks = value.normalized_ms(default_unit);
+  return ticks < 0 || ticks > kMaxEngineTicks;
+}
+
 inline std::vector<std::string> TaskDecl::lock_names() const {
   std::vector<std::string> names;
   for (const LocksDecl& declaration : locks) {

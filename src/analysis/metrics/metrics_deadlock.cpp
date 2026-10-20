@@ -15,8 +15,10 @@ bool has_suffix(const std::string& value, const std::string& suffix) {
          value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-// Iterative Tarjan SCC over a masked subgraph. Returns the component id of
-// every vertex (-1 when the vertex is outside the subgraph).
+}  // namespace
+
+// Iterative Tarjan SCC over a masked subgraph (declared in metrics_internal.h
+// and shared with the steady-cycle analysis).
 std::vector<long long> tarjan_components(const std::vector<std::vector<size_t>>& adjacency,
                                          const std::vector<char>& in_subgraph) {
   const size_t n = adjacency.size();
@@ -84,8 +86,6 @@ std::vector<long long> tarjan_components(const std::vector<std::vector<size_t>>&
 
   return component;
 }
-
-}  // namespace
 
 void MetricsAnalyzer::compute_local_deadlocks(MetricsReport& report) {
   // Periodic-release transitions. TDG lowering records them explicitly; a

@@ -1,5 +1,7 @@
 #include "dsl/validate.h"
 
+#include <cstdint>
+#include <limits>
 #include <map>
 #include <optional>
 #include <set>
@@ -125,6 +127,10 @@ void Validator::validate_system() {
       if (system_.cpus < 1) {
         report(diagnostics_, "E-VAL-217", "system:cpus", system.cpus.front().span,
                "cpus must be at least 1", "set cpus to a positive core count");
+      } else if (system_.cpus > std::numeric_limits<int>::max()) {
+        report(diagnostics_, "E-VAL-221", "system:cpus", system.cpus.front().span,
+               "cpus does not fit the engine's 32-bit core range",
+               "use at most 2147483647 cores");
       } else {
         system_.cpus_known = true;
       }
@@ -135,6 +141,11 @@ void Validator::validate_system() {
     if (system.cores_per_cpu.front().value < 1) {
       report(diagnostics_, "E-VAL-217", "system:cores_per_cpu", system.cores_per_cpu.front().span,
              "cores_per_cpu must be at least 1", "set cores_per_cpu to a positive value");
+    } else if (system.cores_per_cpu.front().value > std::numeric_limits<int>::max()) {
+      report(diagnostics_, "E-VAL-221", "system:cores_per_cpu",
+             system.cores_per_cpu.front().span,
+             "cores_per_cpu does not fit the engine's 32-bit core range",
+             "use at most 2147483647 cores per CPU");
     }
   }
 
@@ -191,6 +202,15 @@ void Validator::validate_time_value(const ast::TimeValue& value, const std::stri
     report(diagnostics_, "E-SYN-101", subject, value.span,
            "unknown time unit suffix '" + value.unit + "' (expected 'ms' or 's')", kUnitFix);
   }
+
+  // The engine stores time as signed 32-bit millisecond ticks. Without this
+  // check the lowering cast silently wraps (for example 3000000s becomes a
+  // negative interval) and only surfaces later as an internal error.
+  if (ast::exceeds_engine_tick_range(value, system_.time_unit)) {
+    report(diagnostics_, "E-VAL-221", subject, value.span,
+           "time value does not fit the engine's 32-bit millisecond range",
+           "reduce the value to at most 2147483646 ms");
+  }
 }
 
 void Validator::validate_task(const ast::TaskDecl& task) {
@@ -211,6 +231,17 @@ void Validator::validate_task(const ast::TaskDecl& task) {
   report_duplicate_attributes(diagnostics_, task.time, base + ":time", "time");
 
   const ast::TaskKind kind = task.effective_kind();
+
+  // Priorities are compared as signed 32-bit ints by the engine; a larger
+  // literal would silently wrap during lowering.
+  for (const ast::Spanned<std::int64_t>& priority : task.priority) {
+    if (priority.value < std::numeric_limits<int>::min() ||
+        priority.value > std::numeric_limits<int>::max()) {
+      report(diagnostics_, "E-VAL-221", base + ":priority", priority.span,
+             "priority does not fit the engine's 32-bit priority range",
+             "use a priority between -2147483648 and 2147483647");
+    }
+  }
 
   if (!task.period.empty() && kind != ast::TaskKind::Periodic) {
     report(diagnostics_, "E-VAL-205", base + ":period", task.period.front().span,

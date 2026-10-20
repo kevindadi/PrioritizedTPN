@@ -275,6 +275,54 @@ TEST(RtslValidation, MeasurementConfigurationMustBePositive) {
   EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-220"), 2U);
 }
 
+TEST(RtslValidation, OutOfRangeNumbersAreRejectedBeforeLowering) {
+  {
+    // 3000000 s = 3e9 ms: overflows the signed 32-bit tick range.
+    const std::string source = rtsl_test::system_block(
+        "  task a: periodic { period 3000000s deadline 3000000s core 0 time [1, 1] estimated }");
+    ptpn::Diagnostics diagnostics;
+    dsl::SourceMap source_map;
+    rtsl_test::check_source(source, diagnostics, source_map);
+
+    EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-221"), 2U);
+    const std::set<std::string> subjects = subjects_for(diagnostics, "E-VAL-221");
+    EXPECT_TRUE(subjects.count("task:a:period") == 1U);
+    EXPECT_TRUE(subjects.count("task:a:deadline") == 1U);
+  }
+  {
+    // 4294967297 wraps to 1 in a 32-bit priority.
+    const std::string source =
+        rtsl_test::system_block("  task a: normal { priority 4294967297 time [1, 1] estimated }");
+    ptpn::Diagnostics diagnostics;
+    dsl::SourceMap source_map;
+    rtsl_test::check_source(source, diagnostics, source_map);
+
+    EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-221"), 1U);
+    EXPECT_EQ(subjects_for(diagnostics, "E-VAL-221").count("task:a:priority"), 1U);
+  }
+  {
+    // Interval endpoints are checked too; INT_MAX is the +infinity sentinel.
+    const std::string source =
+        rtsl_test::system_block("  task a: normal { time [1, 2147483647] estimated }");
+    ptpn::Diagnostics diagnostics;
+    dsl::SourceMap source_map;
+    rtsl_test::check_source(source, diagnostics, source_map);
+
+    EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-221"), 1U);
+    EXPECT_EQ(subjects_for(diagnostics, "E-VAL-221").count("task:a:time"), 1U);
+  }
+  {
+    // The largest representable finite tick is accepted.
+    const std::string source = rtsl_test::system_block(
+        "  task a: periodic { period 2147483646ms core 0 time [1, 1] estimated }");
+    ptpn::Diagnostics diagnostics;
+    dsl::SourceMap source_map;
+    rtsl_test::check_source(source, diagnostics, source_map);
+
+    EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-221"), 0U);
+  }
+}
+
 TEST(RtslValidation, InvalidLockPrefixReusesJsonSemantics) {
   const std::string source =
       rtsl_test::system_block("  task a: normal { locks foo time [1, 2] estimated }");

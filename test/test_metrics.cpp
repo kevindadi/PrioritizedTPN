@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "analysis/metrics/metrics.h"
+#include "analysis/metrics/metrics_internal.h"
 #include "analysis/metrics/metrics_json.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "model/petri.h"
@@ -447,6 +448,26 @@ TEST(MetricsTest, ResponseTimeTakesMaximumOverInitialClasses) {
   // Starting from the first class alone reproduces the under-reporting bug.
   MetricsAnalyzer first_only(graph, net, short_start, /*exact=*/true);
   EXPECT_EQ(first_only.analyze().tasks.front().wcrt.value, 1);
+}
+
+// The SCC helper is iterative so that deep state-class graphs cannot overflow
+// the call stack (the 128k-state benchmark used to crash here). A chain of
+// 400k vertices would recurse 400k frames in a recursive implementation.
+TEST(MetricsTest, TarjanComponentsHandlesDeepGraphs) {
+  const size_t depth = 400000;
+  std::vector<std::vector<size_t>> adjacency(depth);
+  for (size_t v = 0; v + 1 < depth; ++v) {
+    adjacency[v].push_back(v + 1);
+  }
+  const std::vector<char> in_subgraph(depth, 1);
+
+  const std::vector<long long> component =
+      state_class::tarjan_components(adjacency, in_subgraph);
+  ASSERT_EQ(component.size(), depth);
+  // A chain has no cycles: every vertex is its own SCC.
+  std::set<long long> distinct(component.begin(), component.end());
+  EXPECT_EQ(distinct.size(), depth);
+  EXPECT_NE(component.front(), component.back());
 }
 
 }  // namespace

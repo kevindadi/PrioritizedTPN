@@ -70,45 +70,20 @@ void MetricsAnalyzer::compute_utilisation(MetricsReport& report) {
   }
 
   // Tarjan SCC to find the recurrent steady region reachable from initial.
-  std::vector<long long> index(num_vertices_, -1);
-  std::vector<long long> lowlink(num_vertices_, 0);
-  std::vector<char> on_stack(num_vertices_, 0);
-  std::vector<long long> scc_id(num_vertices_, -1);
-  std::vector<size_t> stack;
-  long long next_index = 0;
-  long long scc_count = 0;
-
-  std::function<void(size_t)> strongconnect = [&](size_t v) {
-    index[v] = next_index;
-    lowlink[v] = next_index;
-    ++next_index;
-    stack.push_back(v);
-    on_stack[v] = 1;
-    for (const Edge& e : out_edges_[v]) {
-      if (index[e.target] < 0) {
-        strongconnect(e.target);
-        lowlink[v] = std::min(lowlink[v], lowlink[e.target]);
-      } else if (on_stack[e.target]) {
-        lowlink[v] = std::min(lowlink[v], index[e.target]);
-      }
-    }
-    if (lowlink[v] == index[v]) {
-      while (true) {
-        const size_t w = stack.back();
-        stack.pop_back();
-        on_stack[w] = 0;
-        scc_id[w] = scc_count;
-        if (w == v) {
-          break;
-        }
-      }
-      ++scc_count;
-    }
-  };
+  // Iterative (shared with the local-deadlock analysis): deep state-class
+  // graphs must not overflow the call stack.
+  std::vector<std::vector<size_t>> adjacency(num_vertices_);
   for (size_t v = 0; v < num_vertices_; ++v) {
-    if (index[v] < 0) {
-      strongconnect(v);
+    adjacency[v].reserve(out_edges_[v].size());
+    for (const Edge& e : out_edges_[v]) {
+      adjacency[v].push_back(e.target);
     }
+  }
+  const std::vector<char> all_vertices(num_vertices_, 1);
+  const std::vector<long long> scc_id = tarjan_components(adjacency, all_vertices);
+  long long scc_count = 0;
+  for (long long component : scc_id) {
+    scc_count = std::max(scc_count, component + 1);
   }
 
   // A recurrent SCC has a cycle (size > 1, or a self-loop). Pick the largest.

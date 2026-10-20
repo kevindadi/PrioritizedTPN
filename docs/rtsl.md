@@ -97,7 +97,7 @@ task NAME: KIND {
 | `period TIME` | `periodic` only | required for periodic; raw value `> 0` (`E-VAL-206`) | — |
 | `deadline TIME` | any task | raw value `> 0` (`E-VAL-208`); absolute deadline | `0` = implicit deadline (the period) for periodic tasks |
 | `mit TIME` | `sporadic` only | required for sporadic; raw value `> 0` (`E-VAL-207`) | — |
-| `priority N` | any task | non-negative integer | `100` |
+| `priority N` | any task | integer in `[-2147483648, 2147483647]` (`E-VAL-221` outside it); **higher value = higher scheduling priority** | `100` |
 | `core ...` | any task | single id, set `{...}`, or `any`; range `0..cpus-1` | core `0` |
 | `locks ...` | any task | one or more identifiers, comma-separated | no locks |
 | `time ...` | any task | required; intervals plus provenance | — |
@@ -139,6 +139,10 @@ Rules:
   multiplied by 1000.
 - `us` is rejected with `E-UNS-004`, both as `time_unit us` and as a value
   suffix. Unknown suffixes are `E-SYN-101`.
+- A value that normalizes to `INT_MAX` ms or more does not fit the engine's
+  signed 32-bit tick range and is rejected with `E-VAL-221` (the same applies to
+  `priority`, `cpus`, and `cores_per_cpu`). `INT_MAX` itself is reserved as the
+  +infinity sentinel.
 - The engine tick is **1 ms** for RTSL input. TDG JSON integers remain
   unit-agnostic engine ticks.
 - After normalization, each interval must satisfy `min <= max`
