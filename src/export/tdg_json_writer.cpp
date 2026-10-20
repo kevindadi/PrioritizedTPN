@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "common/checked_output.h"
 #include "model/types.h"
 
 namespace exporting {
@@ -153,7 +154,7 @@ bool write_tdg_json(const tdg::TDG& tdg, const std::string& output_path) {
     return false;
   }
   output << tdg_to_json(tdg).dump(2) << '\n';
-  return static_cast<bool>(output);
+  return ptpn::finish_output(output);
 }
 
 }  // namespace exporting

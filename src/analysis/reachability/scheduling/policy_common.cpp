@@ -7,9 +7,8 @@
 #include <utility>
 #include <vector>
 
-#include "common/unsupported_class.h"
-
 namespace state_class {
+namespace detail {
 
 // Least fixpoint of eff[holder] = max(eff[holder], eff[waiter]) over the wait
 // edges. The update is monotone and bounded by the largest base priority, so at
@@ -331,4 +330,5 @@ ReleaseTaskIndex build_release_task_index(const petri::PTPN& net,
   return index;
 }
 
+}  // namespace detail
 }  // namespace state_class

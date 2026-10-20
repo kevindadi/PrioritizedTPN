@@ -6,6 +6,8 @@
 #include <spdlog/spdlog.h>
 #include <sstream>
 
+#include "common/checked_output.h"
+
 namespace petri::exporting {
 
 namespace {
@@ -190,7 +192,10 @@ bool save_to_dot(const PetriExportModel& model, const std::string& file_path) {
     }
 
     ofs << render_dot(model);
-    ofs.close();
+    if (!ptpn::finish_output(ofs)) {
+      spdlog::error("[PETRI_EXPORT] Failed to write DOT file: {}", dot_filename.string());
+      return false;
+    }
 
     spdlog::info("[PETRI_EXPORT] DOT file saved to: {}",
                  boost::filesystem::absolute(dot_filename).string());

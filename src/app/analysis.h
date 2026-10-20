@@ -53,12 +53,6 @@ inline bool has_any_export(const ExportTargets& exports) {
          !exports.ptpn_dot.empty() || !exports.scg_dot.empty() || !exports.metrics_json.empty();
 }
 
-// Writes the per-task WCET summary JSON (interval, segment count, and WCET
-// provenance) for `graph` to `output_path`. The top-level `all_certified` flag
-// is true only when every task's provenance kind is "certified". Returns false
-// if the file cannot be opened, written, flushed or closed.
-bool write_wcet_json(const tdg::TDG& graph, const std::string& output_path);
-
 // Translates the metrics layer's signals into the diagnostics protocol:
 // - a decisive counterexample found in the explored prefix (deadlock, local
 //   deadlock, or wcrt_lb > deadline) is an analysis result (exit 6);

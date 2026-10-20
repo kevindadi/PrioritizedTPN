@@ -9,11 +9,13 @@
 
 #include "app/analysis.h"
 #include "app/input.h"
+#include "app/logging.h"
 #include "common/diagnostics.h"
 #include "export/tdg_dot.h"
+#include "export/tdg_json_writer.h"
+#include "export/wcet_json.h"
 #include "model/tdg.h"
 #include "parse/json.h"
-#include "export/tdg_json_writer.h"
 #include "parse/ptpn_parser.h"
 
 namespace app {
@@ -23,7 +25,7 @@ namespace {
 // Shared `--export-wcet` failure handling for the TDG and RTSL paths.
 int write_wcet_export(const tdg::TDG& tdg, const std::string& output_path,
                       ptpn::Diagnostics* diagnostics) {
-  if (write_wcet_json(tdg, output_path)) {
+  if (exporting::write_wcet_json(tdg, output_path)) {
     spdlog::info("[OUTPUT] WCET JSON exported to: {}", output_path);
     return 0;
   }

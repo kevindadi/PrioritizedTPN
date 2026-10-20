@@ -15,8 +15,8 @@ namespace exporting {
 // changing analysis results.
 nlohmann::json tdg_to_json(const tdg::TDG& tdg);
 
-// Writes tdg_to_json(tdg) as pretty-printed JSON. Returns false when the output
-// path cannot be opened.
+// Writes tdg_to_json(tdg) as pretty-printed JSON. Returns false when opening,
+// writing, flushing or closing the output fails.
 bool write_tdg_json(const tdg::TDG& tdg, const std::string& output_path);
 
 }  // namespace exporting

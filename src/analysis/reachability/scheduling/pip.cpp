@@ -51,7 +51,7 @@ const std::vector<int>& PipFiringRule::effective_priorities(const petri::PTPN& n
     }
     wait_edges.emplace_back(waiter, holder_it->second);
   }
-  inherit_priorities(effective, wait_edges, task_count);
+  detail::inherit_priorities(effective, wait_edges, task_count);
 
   cached_effective_ = std::move(effective);
   cached_marking_ = marking;

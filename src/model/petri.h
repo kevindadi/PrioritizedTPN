@@ -2,10 +2,8 @@
 #define PETRI_H
 
 #include <climits>
-#include <iostream>
 #include <limits>
 #include <map>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -168,17 +166,7 @@ struct TimeInterval {
            (effective_latest() == INF || time <= effective_latest());
   }
 
-  [[nodiscard]] std::string to_string() const {
-    std::ostringstream oss;
-    oss << (left_open ? "(" : "[") << earliest << ", ";
-    if (latest == INF) {
-      oss << "∞";
-    } else {
-      oss << latest;
-    }
-    oss << (right_open ? ")" : "]");
-    return oss.str();
-  }
+  [[nodiscard]] std::string to_string() const;
 };
 
 struct Place {
@@ -516,46 +504,7 @@ class PTPN {
     return new_marking;
   }
 
-  [[nodiscard]] std::string to_string() const {
-    std::ostringstream oss;
-    oss << "=== PTPN ===\n";
-    oss << "Places (" << places_.size() << "):\n";
-    for (size_t i = 0; i < places_.size(); ++i) {
-      oss << "  P" << i << ": " << places_[i].name << " [capacity="
-          << (places_[i].capacity == INF ? "∞" : std::to_string(places_[i].capacity))
-          << ", tokens=" << m0_[i] << "]\n";
-    }
-
-    oss << "\nTransitions (" << transitions_.size() << "):\n";
-    for (size_t i = 0; i < transitions_.size(); ++i) {
-      oss << "  T" << i << ": " << transitions_[i].name
-          << " [time=" << transitions_[i].time_interval.to_string()
-          << ", priority=" << transitions_[i].priority << ", core=" << transitions_[i].core
-          << ", suspendable=" << (transitions_[i].suspendable ? "yes" : "no") << "]\n";
-    }
-
-    oss << "\nPre Matrix (" << pre_matrix_.size() << "x"
-        << (pre_matrix_.empty() ? 0 : pre_matrix_[0].size()) << "):\n";
-    for (size_t p = 0; p < pre_matrix_.size(); ++p) {
-      oss << "  P" << p << ": ";
-      for (size_t t = 0; t < pre_matrix_[p].size(); ++t) {
-        oss << pre_matrix_[p][t] << " ";
-      }
-      oss << "\n";
-    }
-
-    oss << "\nPost Matrix (" << post_matrix_.size() << "x"
-        << (post_matrix_.empty() ? 0 : post_matrix_[0].size()) << "):\n";
-    for (size_t t = 0; t < post_matrix_.size(); ++t) {
-      oss << "  T" << t << ": ";
-      for (size_t p = 0; p < post_matrix_[t].size(); ++p) {
-        oss << post_matrix_[t][p] << " ";
-      }
-      oss << "\n";
-    }
-
-    return oss.str();
-  }
+  [[nodiscard]] std::string to_string() const;
 
   [[nodiscard]] bool verify_structure() const;
 

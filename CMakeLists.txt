@@ -206,10 +206,10 @@ target_link_libraries(ptpn_petri
 add_library(ptpn_export STATIC
     src/export/export_ptpn.cpp
     src/export/export_dot.cpp
-    src/export/metrics_json.cpp
     src/export/scg_dot.cpp
     src/export/tdg_dot.cpp
     src/export/tdg_json_writer.cpp
+    src/export/wcet_json.cpp
 )
 target_link_libraries(ptpn_export
     PUBLIC
@@ -219,8 +219,6 @@ target_link_libraries(ptpn_export
     ptpn_tdg
     PRIVATE
     Boost::filesystem
-    ptpn_json
-    ptpn_metrics
     spdlog::spdlog
 )
 
@@ -292,6 +290,7 @@ target_link_libraries(ptpn_reachability
 
 add_library(ptpn_metrics STATIC
     src/analysis/metrics/metrics.cpp
+    src/analysis/metrics/metrics_json.cpp
     src/analysis/metrics/metrics_structural.cpp
     src/analysis/metrics/metrics_timing.cpp
     src/analysis/metrics/metrics_deadlock.cpp
@@ -344,9 +343,9 @@ target_link_libraries(ptpn_app_support
     ptpn_dsl
     ptpn_tdg
     ptpn_types
-    spdlog::spdlog
     PRIVATE
     ptpn_json
+    spdlog::spdlog
 )
 
 # `ptpn check`: parse and validate only; deliberately independent of lowering,
@@ -361,13 +360,65 @@ target_link_libraries(ptpn_app_check
     nlohmann_json::nlohmann_json
 )
 # The check path must stay independent of lowering, analysis and allocation.
-get_target_property(_ptpn_app_check_interface ptpn_app_check INTERFACE_LINK_LIBRARIES)
-if(_ptpn_app_check_interface MATCHES "ptpn_(allocation|lowering|metrics|reachability)")
-    message(FATAL_ERROR "ptpn_app_check must not pull analysis/allocation dependencies")
-endif()
+# Walk the transitive INTERFACE_LINK_LIBRARIES closure: a static library's
+# PRIVATE dependencies are propagated to consumers as $<LINK_ONLY:...> and
+# therefore still end up on the check link line. Imported targets (containing
+# "::") and generator expressions that cannot be resolved at configure time are
+# skipped; a visited list guards against cycles.
+set(_ptpn_app_check_queue ptpn_app_check)
+set(_ptpn_app_check_visited)
+set(_ptpn_app_check_forbidden
+    ptpn_allocation
+    ptpn_lowering
+    ptpn_metrics
+    ptpn_reachability
+)
+while(_ptpn_app_check_queue)
+    list(POP_FRONT _ptpn_app_check_queue _ptpn_target)
+    if(_ptpn_target IN_LIST _ptpn_app_check_visited)
+        continue()
+    endif()
+    list(APPEND _ptpn_app_check_visited "${_ptpn_target}")
+    if(_ptpn_target IN_LIST _ptpn_app_check_forbidden)
+        message(FATAL_ERROR
+            "ptpn_app_check must not pull analysis/allocation dependencies "
+            "(transitive dependency: ${_ptpn_target})")
+    endif()
+    if(_ptpn_target MATCHES "::")
+        continue()
+    endif()
+    if(NOT TARGET "${_ptpn_target}")
+        continue()
+    endif()
+    get_target_property(_ptpn_app_check_deps "${_ptpn_target}" INTERFACE_LINK_LIBRARIES)
+    if(NOT _ptpn_app_check_deps)
+        continue()
+    endif()
+    foreach(_ptpn_dep IN LISTS _ptpn_app_check_deps)
+        if(_ptpn_dep MATCHES "^\\$<LINK_ONLY:(.+)>$")
+            set(_ptpn_dep "${CMAKE_MATCH_1}")
+        endif()
+        if(_ptpn_dep MATCHES "^\\$<")
+            continue()  # generator expression: not resolvable at configure time
+        endif()
+        if(_ptpn_dep MATCHES "::")
+            continue()  # imported target
+        endif()
+        if(NOT TARGET "${_ptpn_dep}")
+            continue()
+        endif()
+        list(APPEND _ptpn_app_check_queue "${_ptpn_dep}")
+    endforeach()
+endwhile()
+unset(_ptpn_app_check_queue)
+unset(_ptpn_app_check_visited)
+unset(_ptpn_app_check_forbidden)
+unset(_ptpn_app_check_deps)
+unset(_ptpn_dep)
+unset(_ptpn_target)
 
-# Lowering adaptation, analysis orchestration/result diagnostics, WCET export
-# and the TDG/RTSL/PTPN pipeline entry points.
+# Lowering adaptation, analysis orchestration/result diagnostics and the
+# TDG/RTSL/PTPN pipeline entry points.
 add_library(ptpn_app_pipelines STATIC
     src/app/analysis.cpp
     src/app/lowering.cpp
@@ -432,7 +483,8 @@ target_link_libraries(PTPN_core
 )
 
 # CLI layer: CLI11 option registration and dispatch for the `ptpn`
-# subcommands. It maps CLI strings into the option structs from app/pipeline.h.
+# subcommands. It maps CLI strings into the option structs from app/common.h;
+# the pipeline entry points live in app/pipelines.h.
 add_library(ptpn_cli STATIC
     src/cli/option_groups.cpp
     src/cli/commands/tdg_cmd.cpp

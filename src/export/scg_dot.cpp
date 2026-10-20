@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include "analysis/dbm/clock_state.h"
+#include "common/checked_output.h"
 
 namespace scg_export {
 
@@ -351,7 +352,7 @@ bool ScgFormatter::save_to_dot(const std::string& file_path) const {
     return false;
   }
   out << render_dot();
-  return true;
+  return ptpn::finish_output(out);
 }
 
 }  // namespace scg_export

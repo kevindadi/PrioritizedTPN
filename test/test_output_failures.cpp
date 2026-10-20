@@ -128,6 +128,50 @@ TEST(OutputFailures, DevFullReportsDelayedWriteFailures) {
   ASSERT_NE(wcet_diagnostic, nullptr);
   EXPECT_EQ(wcet_diagnostic->at("subject"), "output:/dev/full");
   EXPECT_FALSE(mentions_success_log(wcet.stderr_text, "WCET JSON"));
+
+  const ptpn_test::CliResult tdg_json = ptpn_test::run_cli(
+      {"rtsl", "-f", "example/introduction/locked.rtsl", "--export-tdg", "/dev/full",
+       "--no-analysis", "--diagnostics", "json"});
+  ASSERT_EQ(tdg_json.exit_code, 1) << tdg_json.stderr_text;
+  const nlohmann::json tdg_json_envelope = ptpn_test::parse_envelope(tdg_json.stdout_text);
+  const nlohmann::json* tdg_json_diagnostic =
+      ptpn_test::find_diagnostic(tdg_json_envelope, "E-INT-002");
+  ASSERT_NE(tdg_json_diagnostic, nullptr);
+  EXPECT_EQ(tdg_json_diagnostic->at("subject"), "output:/dev/full");
+  EXPECT_FALSE(mentions_success_log(tdg_json.stderr_text, "TDG JSON"));
+
+  const ptpn_test::CliResult metrics =
+      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--max-states", "1000",
+                          "--export-metrics", "/dev/full", "--diagnostics", "json"});
+  ASSERT_EQ(metrics.exit_code, 1) << metrics.stderr_text;
+  const nlohmann::json metrics_envelope = ptpn_test::parse_envelope(metrics.stdout_text);
+  const nlohmann::json* metrics_diagnostic =
+      ptpn_test::find_diagnostic(metrics_envelope, "E-INT-002");
+  ASSERT_NE(metrics_diagnostic, nullptr);
+  EXPECT_EQ(metrics_diagnostic->at("subject"), "output:/dev/full");
+  EXPECT_FALSE(mentions_success_log(metrics.stderr_text, "Metrics"));
+
+  const ptpn_test::CliResult ptpn_dot =
+      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+                          "--export-ptpn", "/dev/full", "--diagnostics", "json"});
+  ASSERT_EQ(ptpn_dot.exit_code, 1) << ptpn_dot.stderr_text;
+  const nlohmann::json ptpn_dot_envelope = ptpn_test::parse_envelope(ptpn_dot.stdout_text);
+  const nlohmann::json* ptpn_dot_diagnostic =
+      ptpn_test::find_diagnostic(ptpn_dot_envelope, "E-INT-002");
+  ASSERT_NE(ptpn_dot_diagnostic, nullptr);
+  EXPECT_EQ(ptpn_dot_diagnostic->at("subject"), "output:/dev/full");
+  EXPECT_FALSE(mentions_success_log(ptpn_dot.stderr_text, "PTPN DOT"));
+
+  const ptpn_test::CliResult scg_dot =
+      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--max-states", "1000",
+                          "--export-scg", "/dev/full", "--diagnostics", "json"});
+  ASSERT_EQ(scg_dot.exit_code, 1) << scg_dot.stderr_text;
+  const nlohmann::json scg_dot_envelope = ptpn_test::parse_envelope(scg_dot.stdout_text);
+  const nlohmann::json* scg_dot_diagnostic =
+      ptpn_test::find_diagnostic(scg_dot_envelope, "E-INT-002");
+  ASSERT_NE(scg_dot_diagnostic, nullptr);
+  EXPECT_EQ(scg_dot_diagnostic->at("subject"), "output:/dev/full");
+  EXPECT_FALSE(mentions_success_log(scg_dot.stderr_text, "State class graph"));
 #else
   GTEST_SKIP() << "/dev/full is a Linux-only test";
 #endif

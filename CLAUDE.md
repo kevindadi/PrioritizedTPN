@@ -59,7 +59,7 @@ CLI = ptpn_cli (src/cli, CLI11 wiring) → {ptpn_app_pipelines, ptpn_app_check, 
 The application layer is split so commands only pull what they need:
 `ptpn_app_support` (options, legacy rendering, memory, RTSL/TDG loading),
 `ptpn_app_check` (parse+validate only), `ptpn_app_pipelines` (lowering
-adaptation, analysis orchestration, WCET export, pipeline entry points), and
+adaptation, analysis orchestration, pipeline entry points), and
 `ptpn_app_allocation` (search driver). `ptpn check` must not link lowering,
 analysis, or allocation.
 
@@ -86,10 +86,10 @@ EDF/FIFO/LLF have an explicit **supported class**: static core partition, `cores
 - `src/model/tdg.h` — TDG (tasks, fork/join, locks, dependencies, periodic release, `allowed_cores`, WCET provenance); format in `docs/json_format.md`
 - `src/model/petri.h` — PTPN: `Transition` carries `TimeInterval`, `priority`, `core` (−1 = control), `suspendable`; `Marking` is `vector<int>`
 - `src/parse/` — TDG JSON parser and `.ptpn` source parser (input only)
-- `src/export/` — all output writers: TDG/PTPN/SCG DOT, the TDG JSON writer, and metrics JSON
+- `src/export/` — output writers: TDG/PTPN/SCG DOT, the TDG JSON writer, and the WCET JSON writer; metrics JSON lives with the metrics library in `src/analysis/metrics/metrics_json.{h,cpp}`
 - `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is `docs/rtsl.md`, the workflow is in `docs/usage.md`, and `example/introduction/demo.rtsl` is the introductory model
 - `src/cli/` — CLI11 layer (namespace `cli`): `main.cpp` (envelope scaffolding + dispatch), `command.h`, `option_groups.{h,cpp}`, and one file per subcommand under `commands/` (`tdg`, `rtsl`, `check`, `ptpn`, `allocate`)
-- `src/app/` — application layer (namespace `app`, no CLI11): `common` (options, legacy rendering, memory, timing/log helpers), `input` (RTSL + TDG loading), `check_cmd` (parse+validate only), `lowering` (TDG→PTPN adapter), `analysis` (orchestration, result diagnostics, WCET export), `pipelines` (the `run_*_pipeline` entry points, public `pipelines.h`), and `allocation_cmd`.
+- `src/app/` — application layer (namespace `app`, no CLI11): `common` (options, legacy rendering, memory, timing helpers), `logging` (spdlog-backed timing/log helpers), `input` (RTSL + TDG loading), `check_cmd` (parse+validate only), `lowering` (TDG→PTPN adapter), `analysis` (orchestration, result diagnostics), `pipelines` (the `run_*_pipeline` entry points, public `pipelines.h`), and `allocation_cmd`.
 
 User-facing docs live in `docs/` (`install.md`, `usage.md`, `rtsl.md`, `diagnostics.md`, `architecture.md`, `json_format.md`). The diagnostics code table is authoritative in `docs/diagnostics.md`; keep new codes and behavior changes in sync with it and with the rt-system skill.
 

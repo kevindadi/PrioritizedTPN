@@ -8,16 +8,17 @@
 #include <vector>
 
 #include "analysis/metrics/metrics.h"
+#include "analysis/metrics/metrics_json.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "app/pipelines.h"
 #include "export/export_dot.h"
 #include "export/scg_dot.h"
+#include "export/wcet_json.h"
 #include "lower/tdg2pn/tdg2pn.h"
 #include "model/petri.h"
 #include "model/tdg.h"
 #include "parse/json.h"
 #include "tdg_test_helpers.h"
-#include "export/metrics_json.h"
 
 namespace {
 
@@ -161,7 +162,7 @@ TEST(PipelineGolden, WcetJsonReportsIntervalsProvenanceAndCertification) {
   tdg.all_task.emplace_back(modeled);
 
   const std::string out = testing::TempDir() + "ptpn_test_wcet.json";
-  ASSERT_TRUE(app::write_wcet_json(tdg, out));
+  ASSERT_TRUE(exporting::write_wcet_json(tdg, out));
 
   nlohmann::json exported;
   {
@@ -194,7 +195,7 @@ TEST(PipelineGolden, WcetJsonReportsIntervalsProvenanceAndCertification) {
   // All tasks certified is the only case that sets the top-level flag.
   tdg.task_wcet_provenance["Modeled"] = {"certified", "OTAWA", "sha256:def"};
   const std::string all_certified_path = testing::TempDir() + "ptpn_test_wcet_certified.json";
-  ASSERT_TRUE(app::write_wcet_json(tdg, all_certified_path));
+  ASSERT_TRUE(exporting::write_wcet_json(tdg, all_certified_path));
   std::ifstream in(all_certified_path);
   ASSERT_TRUE(in.is_open());
   nlohmann::json all_certified;

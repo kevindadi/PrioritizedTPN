@@ -143,6 +143,10 @@ class FiringRule {
 //   SRP                                   -> SrpFiringRule, RESUME
 //   FIXED_PRIOR_WITH_RESTART              -> static priorities, RESTART
 //   UNKNOWN                               -> static priorities, NON_PREEMPTIVE
+//
+// The policy-only overload cannot precompute the dynamic protocols' task-chain
+// index; it returns a rule that lazily indexes `PolicyContext::net` on first
+// use. Use the net-aware overload when the net is available.
 std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy);
 std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy, const petri::PTPN& net);
 
