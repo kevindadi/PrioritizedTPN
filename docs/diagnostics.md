@@ -152,7 +152,7 @@ Stage coverage by command:
 | `ptpn fill` | RTSL + values JSON | no | no | `E-SYN-001/002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..226` (not `E-VAL-213`), `E-INT-001/002` |
 | `ptpn explain` | none | no | no | `E-SYN-003`, CLI `E-INT-001/002` |
 | `ptpn rtsl` | RTSL | yes | yes | `check` codes and `E-VAL-213`, lowering `E-VAL-011/014/015`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-001/002/003/004`, `E-PERF-001/002/003/004`, `E-INT-002` |
-| `ptpn allocate` | RTSL or JSON | via TDG2PN per candidate | no protocol diagnostics | input codes, RTSL lowering `E-VAL-011/014/015`; **not** `E-UNS-001`/`E-INT-003`/`R-ANA-*`/`E-PERF-*`; `E-INT-002` for the report |
+| `ptpn allocate` | RTSL or JSON | via TDG2PN per candidate | no candidate-level diagnostics (the envelope carries `result.allocation`) | input codes, RTSL lowering `E-VAL-011/014/015`; **not** `E-UNS-001`/`E-INT-003`/`R-ANA-*`/`E-PERF-*`; `E-INT-002` for the report |
 | `ptpn tdg` | TDG JSON | yes | yes | `E-SYN-001/002`, `E-VAL-001..033`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
 | `ptpn ptpn` | PTPN source | no | yes | `E-SYN-002`, `E-VAL-101..113`, parser `E-INT-001`, `E-UNS-001` (analysis), `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
 

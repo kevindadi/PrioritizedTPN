@@ -77,7 +77,7 @@ TEST(McpTest, ToolsListDescribesEveryTool) {
   FakeCli cli;
   const json listed = response_of(mcp::handle_message(request("tools/list").dump(), cli.runner()));
   const json& tools = listed.at("result").at("tools");
-  ASSERT_EQ(5u, tools.size());
+  ASSERT_EQ(6u, tools.size());
   std::vector<std::string> names;
   for (const json& tool : tools) {
     names.push_back(tool.at("name").get<std::string>());
@@ -85,7 +85,7 @@ TEST(McpTest, ToolsListDescribesEveryTool) {
     EXPECT_EQ("object", tool.at("inputSchema").at("type").get<std::string>());
   }
   EXPECT_EQ((std::vector<std::string>{"ptpn_check", "ptpn_analyze", "ptpn_describe", "ptpn_fill",
-                                      "ptpn_explain"}),
+                                      "ptpn_allocate", "ptpn_explain"}),
             names);
 }
 
@@ -173,6 +173,24 @@ TEST(McpTest, FillUsesTheInlineFormAndReportsToolErrors) {
       request("tools/call", {{"name", "nope"}, {"arguments", json::object()}}).dump(),
       cli.runner()));
   EXPECT_TRUE(unknown.at("result").at("isError").get<bool>());
+}
+
+TEST(McpTest, AllocateWritesATemporaryReportAndKeepsTheEnvelope) {
+  FakeCli cli;
+  response_of(mcp::handle_message(
+      request("tools/call",
+              {{"name", "ptpn_allocate"},
+               {"arguments", {{"file", "m.rtsl"}, {"objective", "max-utilization"},
+                              {"max_candidates", 50}}}})
+          .dump(),
+      cli.runner()));
+  ASSERT_EQ(1u, cli.calls.size());
+  const std::vector<std::string>& args = cli.calls.front();
+  EXPECT_EQ("allocate", args.front());
+  EXPECT_NE(std::find(args.begin(), args.end(), "--objective"), args.end());
+  EXPECT_NE(std::find(args.begin(), args.end(), "max-utilization"), args.end());
+  EXPECT_NE(std::find(args.begin(), args.end(), "--max-candidates"), args.end());
+  EXPECT_NE(std::find(args.begin(), args.end(), "-o"), args.end());
 }
 
 TEST(McpTest, InternalExitCodeIsAToolErrorButAnalysisResultsAreNot) {

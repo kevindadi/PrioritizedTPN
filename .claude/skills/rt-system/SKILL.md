@@ -110,7 +110,7 @@ envelope `result` — not on the code prefix alone. The complete table is
 | `E-PERF-001` | `-m` max-states truncation. If a counterexample is already reported, **do not raise `-m`** - fix the design. Otherwise raising `-m` may help; the result is partial either way. |
 | `E-PERF-002` | `--horizon` truncation. Same rule: with a counterexample, change the design; without one, raise/disable the horizon. |
 | `E-PERF-003/004` | The `--timeout` / `--max-memory` budget stopped the exploration. Results are partial (exit 5); raise the budget or simplify the model. |
-| MCP clients | `ptpn mcp` serves `ptpn_check`, `ptpn_analyze`, `ptpn_describe`, `ptpn_fill` and `ptpn_explain` over MCP (stdio JSON-RPC); each returns the diagnostics envelope. |
+| MCP clients | `ptpn mcp` serves `ptpn_check`, `ptpn_analyze`, `ptpn_describe`, `ptpn_fill`, `ptpn_allocate` and `ptpn_explain` over MCP (stdio JSON-RPC); each returns the diagnostics envelope. |
 | any other code | `build/ptpn explain CODE` prints the documented trigger, subject and fix (the catalog is generated from `docs/diagnostics.md`, so it cannot go stale). |
 | `R-ANA-001` | Certified reachable deadlock. Fix dependency/lock structure or policy. |
 | `R-ANA-002` | A proven deadline miss (verdict `misses`): the certified lower bound exceeds the deadline, the observed response reached the deadline cap (`wcrt_capped`), or a complete graph shows the job never completes. Change priorities, cores, or periods; `result.analysis.tasks[].witness` shows the worst-case path. |

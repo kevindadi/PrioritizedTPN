@@ -219,6 +219,20 @@ json tool_definitions() {
         "(milliseconds). The patched source is returned as result.source unless in_place is true."},
        {"inputSchema", object_schema(fill_properties, {"file"})}});
   tools.push_back(
+      {{"name", "ptpn_allocate"},
+       {"description",
+        "Search core assignments (expanding `core any` / core sets) and return the allocation "
+        "report as result.allocation: the best assignment, the Pareto front and the search "
+        "status. Exit 0 means the search completed."},
+       {"inputSchema",
+        object_schema({{"file", file_property},
+                       {"objective", {{"type", "string"}}},
+                       {"max_candidates", {{"type", "integer"}}},
+                       {"candidate_max_states", {{"type", "integer"}}},
+                       {"policy", {{"type", "string"}}},
+                       {"require_certified_wcet", {{"type", "boolean"}}}},
+                      {"file"})}});
+  tools.push_back(
       {{"name", "ptpn_explain"},
        {"description",
         "Explain one diagnostic code (or list the whole catalog when `code` is omitted). The "
@@ -313,6 +327,24 @@ ToolResult call_tool(const std::string& name, const json& arguments, const CliRu
     add_flag(arguments, "in_place", "--in-place", args);
     add_flag(arguments, "overwrite", "--overwrite", args);
     return run_envelope(runner, args, values_file);
+  }
+  if (name == "ptpn_allocate") {
+    std::string file;
+    if (!file_argument(file)) {
+      return missing_argument("file");
+    }
+    // allocate always writes its report file; the envelope carries the same
+    // report as result.allocation, so the temporary copy is removed.
+    const std::string report_path =
+        std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/tmp") +
+        "/ptpn-mcp-alloc-" + std::to_string(std::rand()) + ".json";
+    std::vector<std::string> args{"allocate", "-f", file, "-o", report_path};
+    add_number(arguments, "objective", "--objective", args);
+    add_number(arguments, "max_candidates", "--max-candidates", args);
+    add_number(arguments, "candidate_max_states", "--candidate-max-states", args);
+    add_number(arguments, "policy", "--policy", args);
+    add_flag(arguments, "require_certified_wcet", "--require-certified-wcet", args);
+    return run_envelope(runner, args, report_path);
   }
   if (name == "ptpn_explain") {
     std::vector<std::string> args{"explain"};

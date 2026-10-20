@@ -98,6 +98,7 @@ tools instead of shelling out:
 | `ptpn_analyze` | `file`, optional `max_states`, `horizon`, `timeout`, `max_memory`, `no_exact_wcrt`, `tie`, `policy`, `command` | the analysis envelope (`result.analysis`: WCRT, verdicts, schedulability) |
 | `ptpn_describe` | `file` | the description text (`result.description`) |
 | `ptpn_fill` | `file`, then `values` or `task`+`intervals`, optional `in_place`, `overwrite` | `result.source` (or the written file) plus `filled`/`remaining_pending` |
+| `ptpn_allocate` | `file`, optional `objective`, `max_candidates`, `candidate_max_states`, `policy`, `require_certified_wcet` | the allocation report (`result.allocation`: best assignment, Pareto front, search status) |
 | `ptpn_explain` | optional `code` | the catalog or one code's details (`result.codes`) |
 
 Each tool shells out to the same binary with `--diagnostics json`, so the tool

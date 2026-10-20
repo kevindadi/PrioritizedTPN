@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <utility>
 #include <vector>
@@ -95,6 +96,10 @@ SearchReport search_allocations(const tdg::TDG& graph, const Options& options);
 
 // Writes the report as deterministic JSON. Returns false when the file cannot
 // be opened, written, flushed or closed.
+// The report as the JSON written by save_report_json; also the payload of the
+// CLI envelope's result.allocation.
+nlohmann::json report_to_json(const SearchReport& report);
+
 bool save_report_json(const SearchReport& report, const std::string& path);
 
 }  // namespace allocation

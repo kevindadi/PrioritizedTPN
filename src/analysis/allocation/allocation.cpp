@@ -641,7 +641,7 @@ SearchReport search_allocations(const tdg::TDG& graph, const Options& options) {
   return report;
 }
 
-bool save_report_json(const SearchReport& report, const std::string& path) {
+nlohmann::json report_to_json(const SearchReport& report) {
   nlohmann::json json;
 
   nlohmann::json search;
@@ -680,12 +680,15 @@ bool save_report_json(const SearchReport& report, const std::string& path) {
     pareto.push_back(candidate_to_json(candidate));
   }
   json["pareto"] = std::move(pareto);
+  return json;
+}
 
+bool save_report_json(const SearchReport& report, const std::string& path) {
   std::ofstream out(path);
   if (!out.is_open()) {
     return false;
   }
-  out << json.dump(2) << '\n';
+  out << report_to_json(report).dump(2) << '\n';
   return ptpn::finish_output(out);
 }
 

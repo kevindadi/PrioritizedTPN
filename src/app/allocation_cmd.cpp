@@ -1,6 +1,7 @@
 #include "app/allocation_cmd.h"
 
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -90,6 +91,10 @@ int run_allocation(const AllocationCommandOptions& opts, ptpn::Diagnostics* diag
       quiet.emplace(spdlog::level::warn);
     }
     report = allocation::search_allocations(tdg, search_options);
+  }
+
+  if (diagnostics != nullptr) {
+    diagnostics->set_result(nlohmann::json{{"allocation", allocation::report_to_json(report)}});
   }
 
   if (!allocation::save_report_json(report, opts.output_file)) {
