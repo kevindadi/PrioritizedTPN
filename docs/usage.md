@@ -29,6 +29,7 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 | `ptpn rtsl` | Load RTSL source, lower in process to TDG, then run the TDG analysis pipeline |
 | `ptpn check` | Lex, parse, and validate RTSL (no lowering or analysis) |
 | `ptpn describe` | Restate an RTSL model's actual analysis semantics in plain text |
+| `ptpn fill` | Fill pending `measured by llm` timing into the RTSL source |
 | `ptpn ptpn` | Load `.ptpn` source, analyze and/or export |
 | `ptpn allocate` | Search core allocations from TDG JSON or RTSL (`core any` is expanded) |
 
@@ -52,6 +53,26 @@ what the source might look like:
 With `--diagnostics json` the same text is available as
 `result.description`. A model whose `measured by llm` timing is still pending
 gets the pending list instead of a description.
+
+### `ptpn fill`
+
+`ptpn fill -f model.rtsl --values times.json [--in-place | -o out.rtsl]` writes
+measured intervals into the pending `time measured by llm { ... }` declarations
+found by `ptpn check`:
+
+- `--values` is a JSON object mapping task names to interval lists
+  (`{"fusion": [[1, 2], [3, 4], [1, 2]]}`); the single-task form is
+  `--task fusion --intervals "[1,2],[3,4],[1,2]"`.
+- Values are engine ticks (milliseconds). In a `time_unit s` model they are
+  written as `1500ms` so the meaning never depends on `time_unit`.
+- Each task needs exactly `2*lock_count+1` intervals; a mismatch, an unknown
+  task, or a task that already has intervals (without `--overwrite`) is
+  `E-VAL-226`.
+- The provenance clause (`runs`, `timeout`, `artifact`) is preserved, and the
+  patched source is re-parsed and re-validated before it is written.
+- Without `--in-place`/`--output` the patched source goes to stdout; with
+  `--diagnostics json` it is `result.source` instead, and `result` also
+  carries `filled` and `remaining_pending`.
 
 ## Common options (`tdg` / `rtsl` / `ptpn`)
 

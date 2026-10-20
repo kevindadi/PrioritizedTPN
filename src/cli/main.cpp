@@ -44,6 +44,7 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
   commands.push_back(cli::make_allocate_command());
   commands.push_back(cli::make_check_command());
   commands.push_back(cli::make_describe_command());
+  commands.push_back(cli::make_fill_command());
   for (const auto& command : commands) {
     command->add_to(app);
   }
@@ -64,11 +65,14 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
   diagnostics_engaged = selected->diagnostics_engaged();
   diagnostics_stdout = selected->diagnostics_stdout();
   diagnostics_file = selected->diagnostics_file();
-  if (diagnostics_engaged) {
-    // Keep stdout reserved for the envelope; logs (including [STATS]) and any
-    // stray direct stdout writes are redirected to stderr.
+  if (diagnostics_engaged || selected->logs_to_stderr()) {
+    // Keep stdout reserved for the envelope (or the command's machine-readable
+    // output); logs (including [STATS]) and any stray direct stdout writes are
+    // redirected to stderr.
     redirect_logs_to_stderr();
-    saved_cout = std::cout.rdbuf(std::cerr.rdbuf());
+    if (diagnostics_engaged) {
+      saved_cout = std::cout.rdbuf(std::cerr.rdbuf());
+    }
   }
 
   if (selected->debug_mode()) {

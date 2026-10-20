@@ -362,6 +362,7 @@ target_link_libraries(ptpn_app_support
 # analysis and allocation.
 add_library(ptpn_app_describe STATIC
     src/app/describe.cpp
+    src/app/fill.cpp
 )
 target_include_directories(ptpn_app_describe PUBLIC src)
 target_link_libraries(ptpn_app_describe
@@ -542,6 +543,7 @@ add_library(ptpn_cli STATIC
     src/cli/commands/ptpn_cmd.cpp
     src/cli/commands/check_cmd.cpp
     src/cli/commands/describe_cmd.cpp
+    src/cli/commands/fill_cmd.cpp
     src/cli/commands/allocate_cmd.cpp
 )
 target_include_directories(ptpn_cli PUBLIC src)

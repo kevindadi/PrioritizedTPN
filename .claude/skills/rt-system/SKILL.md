@@ -41,19 +41,33 @@ Reference docs (use these instead of guessing syntax or codes):
    envelope's `result.pending_measurements` lists tasks still needing timing.
    `check` stops after parse+validate: it does **not** report lowering or
    analysis `E-UNS-001`, `E-VAL-015`, or the defensive `E-VAL-011`.
-4. **Fill pending timing.** If `result.pending_measurements` is non-empty, fill
-   each listed task directly in the `.rtsl` source: replace
-   `time measured by llm { ... }` with an interval such as
-   `time [2, 4] estimated by "llm"`. A pending entry's `expected_segments`
-   says how many intervals are required — locked tasks need
-   `2 * lock_count + 1` segments, written as a nested list:
-   `time [ [1, 1], [1, 2], [1, 1] ] estimated by "llm"` (a wrong segment
-   count is `E-VAL-015`; bare adjacent intervals are `E-SYN-102`). Estimated
-   values must never be presented as a certified bound; if the user supplies
-   a real bound, write `certified by "<tool>"` instead. Re-run
+4. **Fill pending timing.** If `result.pending_measurements` is non-empty,
+   measure the code and write the intervals with `ptpn fill` instead of editing
+   the file by hand:
+
+   ```bash
+   cat > times.json <<'EOF'
+   {"fusion": [[1, 2], [3, 4], [1, 2]]}
+   EOF
+   build/ptpn fill -f model.rtsl --values times.json --in-place
+   # single task: --task fusion --intervals "[1,2],[3,4],[1,2]"
+   ```
+
+   Values are engine ticks (milliseconds); `fill` adds `ms` suffixes itself in
+   a `time_unit s` model, preserves the `measured by llm { ... }` provenance
+   clause, checks the interval count against the task's lock structure
+   (`2 * lock_count + 1`), and re-validates the patched source before writing
+   it. Errors are `E-VAL-226` (unknown task, wrong count, already filled —
+   pass `--overwrite` to re-measure). Re-run
    `build/ptpn check -f model.rtsl --diagnostics json` until
    `result.pending_measurements` is empty. While tasks remain pending,
    `ptpn rtsl` and `ptpn allocate` reject the model with `E-VAL-213`.
+
+   If you must hand-edit, keep the same shape:
+   `time [ [1, 1], [1, 2], [1, 1] ] measured by llm { runs 10 }` (a wrong
+   segment count is `E-VAL-015`; bare adjacent intervals are `E-SYN-102`).
+   Estimated/measured values must never be presented as a certified bound; if
+   the user supplies a real bound, write `certified by "<tool>"` instead.
 5. **Verify the semantics (recommended before reporting).** Run
    `build/ptpn describe -f model.rtsl`: it restates the effective policy,
    priorities (including `rm`/`dm` recomputation), core mapping, lock nesting,
@@ -85,7 +99,7 @@ envelope `result` — not on the code prefix alone. The complete table is
 | Signal | Action |
 |---|---|
 | `E-SYN-1xx` | Syntax/lexing error. Rewrite the reported line using the expected tokens; check units (`ms`, `s`) and string escapes. `E-SYN-002` is an unreadable input file, not grammar. |
-| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-015` means a locked task's segment count is wrong. `E-VAL-218` means `core any` (hint in `check`, error in `rtsl`) or a multi-element core set (hint in `check`, warning in `rtsl`, which pins the task to the smallest id): use `ptpn allocate` or an explicit single core. Non-blocking schedule hints: `E-VAL-222` (deadline > period), `E-VAL-223` (same core and priority), `E-VAL-224` (single-core utilisation > 1), `E-VAL-225` (several separate edge statements sharing a source or target: the targets are alternatives / the target is released by whichever source completes first). |
+| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-226` comes from `fill`: the values do not match the model (unknown task, wrong interval count, or already filled - pass `--overwrite`). `E-VAL-015` means a locked task's segment count is wrong. `E-VAL-218` means `core any` (hint in `check`, error in `rtsl`) or a multi-element core set (hint in `check`, warning in `rtsl`, which pins the task to the smallest id): use `ptpn allocate` or an explicit single core. Non-blocking schedule hints: `E-VAL-222` (deadline > period), `E-VAL-223` (same core and priority), `E-VAL-224` (single-core utilisation > 1), `E-VAL-225` (several separate edge statements sharing a source or target: the targets are alternatives / the target is released by whichever source completes first). |
 | `E-UNS-001` | Supported-class guard from lowering **or analysis** (not emitted by `check`). EDF/FIFO/LLF require a static partition, `cores_per_cpu 1`, one in-flight job per task, no locks, no fork/join, and no dependency-driven releases; PIP/PCP/SRP require `task_place_capacity 1`. Analysis also rejects job-clock overlapping releases (period shorter than execution) and job-clock + extrapolation/symmetry. Subjects are `task:`, `node:`, `edge:`, `policy:`, `option:extrapolation`, or `option:symmetry`. Simplify the model or change the policy/option. |
 | `E-UNS-003` | Sporadic arrivals are not implemented and stay rejected. With the user's explicit agreement, you may model a **periodic reference scenario** with an explicit period such as `period 10ms`. That changes the model and does not certify the original sporadic system; never auto-change the task kind, delete `mit`, or rewrite the period to clear the diagnostic. |
 | `E-UNS-004` | Sub-millisecond (`us`) timing is unsupported. Use `ms` and adjust precision. |

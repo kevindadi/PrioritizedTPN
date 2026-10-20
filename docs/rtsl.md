@@ -261,20 +261,36 @@ A `measured by llm` declaration **without intervals** is pending:
 ```
 
 `expected_segments` is `2*lock_count+1`; `inject` is the byte span of the whole
-`time` attribute, which is the exact slice a repair tool should replace. Fill
-the attribute in the source and rerun `ptpn check` until the list is empty:
+`time` attribute. `ptpn fill` uses that span to rewrite the source for you:
+
+```bash
+cat > times.json <<'EOF'
+{"fusion": [[1, 2], [3, 4], [1, 2]]}
+EOF
+./build/ptpn fill -f model.rtsl --values times.json --in-place
+# or: --task fusion --intervals "[1,2],[3,4],[1,2]"
+# or: -o filled.rtsl / plain stdout when neither is given
+```
+
+`fill` values are engine ticks (milliseconds); in a `time_unit s` model they
+are written with explicit `ms` suffixes. The provenance clause (`runs`,
+`timeout`, `artifact`) is preserved verbatim, the interval count is checked
+against the task's lock structure, and the patched source is re-validated
+before it is written, so `fill` never produces an invalid model. `--overwrite`
+replaces intervals that are already present; without it, filling a task twice
+is `E-VAL-226`.
 
 ```rtsl
 // before
 time measured by llm { runs 10, timeout 2 }
 // after (one lock -> three segments)
-time [ [1, 1], [1, 2], [1, 1] ] estimated by "llm"
+time [ [1, 1], [1, 2], [1, 1] ] measured by llm { runs 10, timeout 2 }
 ```
 
-Use `certified by "<tool>"` only for a real bound. **Estimated and measured
-values are not certified WCET bounds.** While a task is pending,
-`ptpn check` succeeds but `ptpn rtsl` and `ptpn allocate` reject the model with
-`E-VAL-213`.
+Hand-editing works too (that is the form above). Use `certified by "<tool>"`
+only for a real bound. **Estimated and measured values are not certified WCET
+bounds.** While a task is pending, `ptpn check` succeeds but `ptpn rtsl` and
+`ptpn allocate` reject the model with `E-VAL-213`.
 
 ## 9. Start/end bindings, dependencies, fork/join
 

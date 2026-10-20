@@ -35,6 +35,7 @@ add_executable(ptpn_test
   test_allocation.cpp
   test_diagnostics.cpp
   test_describe.cpp
+  test_fill.cpp
   test_rtsl_lexer.cpp
   test_rtsl_parser.cpp
   test_rtsl_validation.cpp
