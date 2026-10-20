@@ -303,11 +303,12 @@ are zero) even when a file name is present.
 - **Defensive/unreachable branches** include `E-INT-000` (empty-code fallback),
   the lowering branches of `E-VAL-213`/`E-VAL-011`, PTPN `E-VAL-101/103/104/113`,
   and the negative half of `E-VAL-106`. They are kept for library callers.
-- **Output-writer coverage is not uniform.** TDG DOT and WCET JSON now check
-  open, write, flush and close; the TDG-JSON, PTPN/SCG DOT, metrics and
-  allocation writers have their own checks, and not every delayed-write failure
-  class is covered by a regression test. Parent directories are never created
-  automatically.
+- **Output-writer coverage is uniform.** Every CLI-visible writer uses
+  `common/checked_output.h` and checks open, write, flush and close: TDG DOT,
+  TDG JSON, PTPN DOT, SCG DOT, WCET JSON, metrics JSON, the allocation report
+  and the diagnostics envelope file. The `/dev/full` regression covers the
+  export writers, the allocation report and the diagnostics file. Parent
+  directories are never created automatically.
 - **Typed supported-class boundary.** `ptpn::UnsupportedClassError` (derives
   from `std::invalid_argument`) is the only type mapped to `E-UNS-001`.
   Lowering guards and the verified analysis guards (job-clock overlapping

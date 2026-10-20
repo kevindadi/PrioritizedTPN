@@ -2,10 +2,31 @@
 #define TYPES_H
 
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
 enum class TaskType { NORMAL, PERIOD, APERIOD, INTERRUPT };
+
+// Lock flavour inferred from the resource name prefix. Lock resources are
+// named "mutex..." or "spin..." by the TDG lowering.
+enum class LockType { MUTEX, SPIN, UNKNOWN };
+
+inline LockType get_lock_type(const std::string& lock_name) {
+  if (lock_name.rfind("mutex", 0) == 0) {
+    return LockType::MUTEX;
+  }
+  if (lock_name.rfind("spin", 0) == 0) {
+    return LockType::SPIN;
+  }
+  return LockType::UNKNOWN;
+}
+
+// Human-readable closed interval, shared by the JSON parser diagnostics and
+// the TDG DOT labels.
+inline std::string format_time_range(const std::pair<int, int>& range) {
+  return "[" + std::to_string(range.first) + ", " + std::to_string(range.second) + "]";
+}
 
 // 实时系统调度策略
 enum class SchedulePolicy {

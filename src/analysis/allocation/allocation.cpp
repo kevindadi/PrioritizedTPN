@@ -12,6 +12,7 @@
 
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
+#include "common/checked_output.h"
 #include "lower/tdg2pn/tdg2pn.h"
 #include "model/petri.h"
 
@@ -681,7 +682,7 @@ bool save_report_json(const SearchReport& report, const std::string& path) {
     return false;
   }
   out << json.dump(2) << '\n';
-  return true;
+  return ptpn::finish_output(out);
 }
 
 }  // namespace allocation

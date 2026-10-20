@@ -335,6 +335,7 @@ target_link_libraries(ptpn_allocation
 add_library(ptpn_app_support STATIC
     src/app/common.cpp
     src/app/input.cpp
+    src/app/logging.cpp
 )
 target_include_directories(ptpn_app_support PUBLIC src)
 target_link_libraries(ptpn_app_support
@@ -359,63 +360,6 @@ target_link_libraries(ptpn_app_check
     PRIVATE
     nlohmann_json::nlohmann_json
 )
-# The check path must stay independent of lowering, analysis and allocation.
-# Walk the transitive INTERFACE_LINK_LIBRARIES closure: a static library's
-# PRIVATE dependencies are propagated to consumers as $<LINK_ONLY:...> and
-# therefore still end up on the check link line. Imported targets (containing
-# "::") and generator expressions that cannot be resolved at configure time are
-# skipped; a visited list guards against cycles.
-set(_ptpn_app_check_queue ptpn_app_check)
-set(_ptpn_app_check_visited)
-set(_ptpn_app_check_forbidden
-    ptpn_allocation
-    ptpn_lowering
-    ptpn_metrics
-    ptpn_reachability
-)
-while(_ptpn_app_check_queue)
-    list(POP_FRONT _ptpn_app_check_queue _ptpn_target)
-    if(_ptpn_target IN_LIST _ptpn_app_check_visited)
-        continue()
-    endif()
-    list(APPEND _ptpn_app_check_visited "${_ptpn_target}")
-    if(_ptpn_target IN_LIST _ptpn_app_check_forbidden)
-        message(FATAL_ERROR
-            "ptpn_app_check must not pull analysis/allocation dependencies "
-            "(transitive dependency: ${_ptpn_target})")
-    endif()
-    if(_ptpn_target MATCHES "::")
-        continue()
-    endif()
-    if(NOT TARGET "${_ptpn_target}")
-        continue()
-    endif()
-    get_target_property(_ptpn_app_check_deps "${_ptpn_target}" INTERFACE_LINK_LIBRARIES)
-    if(NOT _ptpn_app_check_deps)
-        continue()
-    endif()
-    foreach(_ptpn_dep IN LISTS _ptpn_app_check_deps)
-        if(_ptpn_dep MATCHES "^\\$<LINK_ONLY:(.+)>$")
-            set(_ptpn_dep "${CMAKE_MATCH_1}")
-        endif()
-        if(_ptpn_dep MATCHES "^\\$<")
-            continue()  # generator expression: not resolvable at configure time
-        endif()
-        if(_ptpn_dep MATCHES "::")
-            continue()  # imported target
-        endif()
-        if(NOT TARGET "${_ptpn_dep}")
-            continue()
-        endif()
-        list(APPEND _ptpn_app_check_queue "${_ptpn_dep}")
-    endforeach()
-endwhile()
-unset(_ptpn_app_check_queue)
-unset(_ptpn_app_check_visited)
-unset(_ptpn_app_check_forbidden)
-unset(_ptpn_app_check_deps)
-unset(_ptpn_dep)
-unset(_ptpn_target)
 
 # Lowering adaptation, analysis orchestration/result diagnostics and the
 # TDG/RTSL/PTPN pipeline entry points.
@@ -456,6 +400,90 @@ target_link_libraries(ptpn_app_allocation
     ptpn_tdg
     spdlog::spdlog
 )
+
+# The check path must stay independent of lowering, analysis and allocation.
+# This runs after every library target is defined so none can be skipped merely
+# because it did not exist yet.
+#
+# Walk the transitive INTERFACE_LINK_LIBRARIES closure: a static library's
+# PRIVATE dependencies are propagated to consumers as $<LINK_ONLY:...> and
+# therefore still end up on the check link line. Every raw dependency entry is
+# first matched against the forbidden names, so generator expressions and
+# aliases cannot hide one. Aliases are then resolved and checked under their
+# real target name. Imported targets (containing "::") and generator
+# expressions that cannot be resolved at configure time are skipped only after
+# that boundary check; a visited list guards against cycles.
+set(_ptpn_app_check_forbidden
+    ptpn_allocation
+    ptpn_dbm
+    ptpn_lowering
+    ptpn_metrics
+    ptpn_reachability
+    ptpn_reductions
+)
+set(_ptpn_app_check_forbidden_regex
+    "(^|[^A-Za-z0-9_])ptpn_(allocation|dbm|lowering|metrics|reachability|reductions)([^A-Za-z0-9_]|$)"
+)
+set(_ptpn_app_check_queue ptpn_app_check)
+set(_ptpn_app_check_visited)
+while(_ptpn_app_check_queue)
+    list(POP_FRONT _ptpn_app_check_queue _ptpn_target)
+    if(_ptpn_target MATCHES "${_ptpn_app_check_forbidden_regex}")
+        message(FATAL_ERROR
+            "ptpn_app_check must not pull analysis/allocation dependencies "
+            "(transitive dependency: ${_ptpn_target})")
+    endif()
+    if(NOT TARGET "${_ptpn_target}")
+        continue()
+    endif()
+    get_target_property(_ptpn_app_check_alias "${_ptpn_target}" ALIASED_TARGET)
+    if(NOT _ptpn_app_check_alias STREQUAL "_ptpn_app_check_alias-NOTFOUND")
+        set(_ptpn_target "${_ptpn_app_check_alias}")
+        if(_ptpn_target MATCHES "${_ptpn_app_check_forbidden_regex}")
+            message(FATAL_ERROR
+                "ptpn_app_check must not pull analysis/allocation dependencies "
+                "(transitive dependency: ${_ptpn_target})")
+        endif()
+    endif()
+    if(_ptpn_target IN_LIST _ptpn_app_check_visited)
+        continue()
+    endif()
+    list(APPEND _ptpn_app_check_visited "${_ptpn_target}")
+    get_target_property(_ptpn_app_check_deps "${_ptpn_target}" INTERFACE_LINK_LIBRARIES)
+    if(NOT _ptpn_app_check_deps)
+        continue()
+    endif()
+    foreach(_ptpn_dep IN LISTS _ptpn_app_check_deps)
+        if(_ptpn_dep MATCHES "^\\$<LINK_ONLY:(.+)>$")
+            set(_ptpn_dep "${CMAKE_MATCH_1}")
+        endif()
+        # Check the raw entry (including any unresolved generator-expression
+        # text) before any entry is skipped.
+        if(_ptpn_dep MATCHES "${_ptpn_app_check_forbidden_regex}")
+            message(FATAL_ERROR
+                "ptpn_app_check must not pull analysis/allocation dependencies "
+                "(transitive dependency: ${_ptpn_dep})")
+        endif()
+        if(_ptpn_dep MATCHES "^\\$<")
+            continue()  # generator expression: not resolvable at configure time
+        endif()
+        if(_ptpn_dep MATCHES "::")
+            continue()  # imported target
+        endif()
+        if(NOT TARGET "${_ptpn_dep}")
+            continue()
+        endif()
+        list(APPEND _ptpn_app_check_queue "${_ptpn_dep}")
+    endforeach()
+endwhile()
+unset(_ptpn_app_check_queue)
+unset(_ptpn_app_check_visited)
+unset(_ptpn_app_check_forbidden)
+unset(_ptpn_app_check_forbidden_regex)
+unset(_ptpn_app_check_alias)
+unset(_ptpn_app_check_deps)
+unset(_ptpn_dep)
+unset(_ptpn_target)
 
 # Aggregate facade kept for the executables and tests.
 add_library(PTPN_core INTERFACE)

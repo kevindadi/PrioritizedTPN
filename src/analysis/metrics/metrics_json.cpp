@@ -14,6 +14,49 @@ std::string time_json(const TimeValue& t) {
   return t.infinite ? std::string("null") : std::to_string(t.value);
 }
 
+// Escapes a string for the hand-written JSON below. Identifiers pass through
+// byte-for-byte; only the characters JSON requires are rewritten.
+std::string json_escape(const std::string& value) {
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string escaped;
+  escaped.reserve(value.size());
+  for (unsigned char ch : value) {
+    switch (ch) {
+      case '"':
+        escaped += "\\\"";
+        break;
+      case '\\':
+        escaped += "\\\\";
+        break;
+      case '\b':
+        escaped += "\\b";
+        break;
+      case '\f':
+        escaped += "\\f";
+        break;
+      case '\n':
+        escaped += "\\n";
+        break;
+      case '\r':
+        escaped += "\\r";
+        break;
+      case '\t':
+        escaped += "\\t";
+        break;
+      default:
+        if (ch < 0x20) {
+          escaped += "\\u00";
+          escaped += kHex[ch >> 4];
+          escaped += kHex[ch & 0x0f];
+        } else {
+          escaped += static_cast<char>(ch);
+        }
+        break;
+    }
+  }
+  return escaped;
+}
+
 }  // namespace
 
 bool save_metrics_json(const MetricsReport& report, const std::string& file_path) {
@@ -65,7 +108,7 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
   for (size_t i = 0; i < report.tasks.size(); ++i) {
     const TaskMetrics& t = report.tasks[i];
     out << "    {\n";
-    out << "      \"name\": \"" << t.name << "\",\n";
+    out << "      \"name\": \"" << json_escape(t.name) << "\",\n";
     out << "      \"core\": " << t.core << ",\n";
     out << "      \"priority\": " << t.priority << ",\n";
     out << "      \"wcet\": " << t.wcet << ",\n";
@@ -99,7 +142,7 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
   for (size_t i = 0; i < report.locks.size(); ++i) {
     const LockMetrics& l = report.locks[i];
     out << "    {\n";
-    out << "      \"name\": \"" << l.name << "\",\n";
+    out << "      \"name\": \"" << json_escape(l.name) << "\",\n";
     out << "      \"worst_hold\": " << time_json(l.worst_hold) << ",\n";
     out << "      \"total_hold\": " << time_json(l.total_hold) << ",\n";
     out << "      \"total_wait\": " << time_json(l.total_wait) << "\n";

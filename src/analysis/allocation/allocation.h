@@ -94,7 +94,7 @@ struct SearchReport {
 SearchReport search_allocations(const tdg::TDG& graph, const Options& options);
 
 // Writes the report as deterministic JSON. Returns false when the file cannot
-// be opened.
+// be opened, written, flushed or closed.
 bool save_report_json(const SearchReport& report, const std::string& path);
 
 }  // namespace allocation

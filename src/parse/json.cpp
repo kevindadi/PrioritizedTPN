@@ -38,12 +38,8 @@ std::string join(const Range& values, std::string_view delimiter, Formatter form
   return oss.str();
 }
 
-std::string format_range(const std::pair<int, int>& range) {
-  return "[" + std::to_string(range.first) + ", " + std::to_string(range.second) + "]";
-}
-
 std::string format_time_ranges(const std::vector<std::pair<int, int>>& time_ranges) {
-  return join(time_ranges, ", ", format_range);
+  return join(time_ranges, ", ", format_time_range);
 }
 
 std::string format_locks(const std::vector<std::string>& locks) {
@@ -149,16 +145,6 @@ std::optional<std::pair<int, int>> parse_time_interval(const json& time_range) {
 }  // namespace
 
 namespace parse {
-
-LockType get_lock_type(const std::string& lock_name) {
-  if (lock_name.rfind("mutex", 0) == 0) {
-    return LockType::MUTEX;
-  }
-  if (lock_name.rfind("spin", 0) == 0) {
-    return LockType::SPIN;
-  }
-  return LockType::UNKNOWN;
-}
 
 // Each lock adds a pre-CS, CS, and post-CS segment: total = 2 * locks + 1.
 int calculate_time_interval_count(int lock_count) {
@@ -473,7 +459,8 @@ ValidationResult Parser::validate() const {
     for (const auto& time_range : node.time) {
       if (time_range.first > time_range.second) {
         add_error("E-VAL-016",
-                  "Invalid time interval for node " + node.id + ": " + format_range(time_range),
+                  "Invalid time interval for node " + node.id + ": " +
+                      format_time_range(time_range),
                   "task:" + node.id, "ensure each interval is [min, max] with min <= max");
       }
     }
