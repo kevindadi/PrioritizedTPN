@@ -52,6 +52,32 @@ source.
 - **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, and
   metrics JSON
 
+## Webapp
+
+![PTPN Chronograph webapp](webapp/screenshot-overview.png)
+
+A zero-dependency local workbench lives in [`webapp/`](webapp/README.md). It
+wraps `build/ptpn` in a small Python HTTP server and provides:
+
+- an RTSL/TDG editor with validation, line diagnostics, and pending
+  `measured by llm` measurement filling;
+- interactive TDG, PTPN, and state-class graphs (pan/zoom, inspectors);
+- WCRT/WCET envelopes, per-core utilization, a response-ratio dial, lock
+  contention, and the full metrics table;
+- a bottom run log with the analyzer's `[STATS]` timing lines.
+
+```bash
+./example/build.py                  # build the analyzer first
+python3 webapp/server.py            # http://127.0.0.1:8765
+python3 webapp/server.py --demo     # precomputed showcase (no live API needed)
+python3 webapp/make_demo.py         # regenerate webapp/demo/demo-data.js
+python3 webapp/build_standalone.py  # single-file demo: webapp/demo/ptpn-chronograph-demo.html
+```
+
+The front-end is plain HTML/CSS/JS with no build step. The same page is used for
+the local live workbench and the precomputed demo; `--demo` swaps in
+`webapp/demo/demo-data.js`.
+
 ## Pipeline
 
 ```text

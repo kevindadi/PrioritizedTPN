@@ -22,3 +22,7 @@ paper/
 
 # Golden fixtures are committed despite the generated-artifact patterns above.
 !test/golden/**
+
+# Generated webapp demo payloads (python3 webapp/make_demo.py / build_standalone.py)
+webapp/demo/demo-data.js
+webapp/demo/ptpn-chronograph-demo.html

@@ -29,6 +29,12 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      - name: Webapp syntax
+        run: |
+          python3 -m py_compile webapp/server.py webapp/make_demo.py webapp/build_standalone.py
+          python3 webapp/server.py --help > /dev/null
+          node --check webapp/static/app.js
+
       - name: CLI smoke test
         run: |
           ./build/ptpn tdg -f example/motivating-examples/hw.json --no-analysis \
