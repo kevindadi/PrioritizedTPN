@@ -31,6 +31,7 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 | `ptpn describe` | Restate an RTSL model's actual analysis semantics in plain text |
 | `ptpn fill` | Fill pending `measured by llm` timing into the RTSL source |
 | `ptpn explain` | List the diagnostic catalog, or explain one or more codes |
+| `ptpn mcp` | Serve the analyzer over MCP (JSON-RPC on stdin/stdout) for LLM clients |
 | `ptpn ptpn` | Load `.ptpn` source, analyze and/or export |
 | `ptpn allocate` | Search core allocations from TDG JSON or RTSL (`core any` is expanded) |
 
@@ -83,6 +84,33 @@ stage, trigger, subject form and fix for each requested code. The catalog is
 generated from `docs/diagnostics.md` (`tools/gen_diagnostic_codes.py`), so the
 CLI and the documentation cannot disagree; an unknown code is `E-SYN-003`
 (exit `2`). With `--diagnostics json` the entries are `result.codes`.
+
+### `ptpn mcp`
+
+`ptpn mcp` speaks the Model Context Protocol over stdin/stdout
+(newline-delimited JSON-RPC 2.0) so an LLM client can call the analyzer as
+tools instead of shelling out:
+
+| Tool | Arguments | Returns |
+|------|-----------|---------|
+| `ptpn_check` | `file` | the `check` diagnostics envelope (`result.pending_measurements`) |
+| `ptpn_analyze` | `file`, optional `max_states`, `horizon`, `timeout`, `max_memory`, `no_exact_wcrt`, `tie`, `policy`, `command` | the analysis envelope (`result.analysis`: WCRT, verdicts, schedulability) |
+| `ptpn_describe` | `file` | the description text (`result.description`) |
+| `ptpn_fill` | `file`, then `values` or `task`+`intervals`, optional `in_place`, `overwrite` | `result.source` (or the written file) plus `filled`/`remaining_pending` |
+| `ptpn_explain` | optional `code` | the catalog or one code's details (`result.codes`) |
+
+Each tool shells out to the same binary with `--diagnostics json`, so the tool
+result is exactly the envelope (`structuredContent`) plus the same JSON as a
+text block; the CLI exit code is in the envelope, and `isError` is only set for
+an internal failure (exit `1`). A client configuration is just:
+
+```json
+{"command": "/path/to/ptpn", "args": ["mcp"]}
+```
+
+Implementation note: the server keeps stdout for the protocol, so every log
+line goes to stderr, and each tool call runs in a child process (a crash or a
+stray write in the analyzer cannot corrupt the JSON-RPC stream).
 
 ## Common options (`tdg` / `rtsl` / `ptpn`)
 

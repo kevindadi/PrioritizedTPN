@@ -531,12 +531,24 @@ target_link_libraries(PTPN_core
     ptpn_app_describe
     ptpn_app_pipelines
     ptpn_app_allocation
+    ptpn_mcp
     spdlog::spdlog
 )
 
 # CLI layer: CLI11 option registration and dispatch for the `ptpn`
 # subcommands. It maps CLI strings into the option structs from app/common.h;
 # the pipeline entry points live in app/pipelines.h.
+# MCP server: newline-delimited JSON-RPC on stdio for LLM clients. It shells
+# out to the ptpn binary so a tool call cannot corrupt the protocol stream.
+add_library(ptpn_mcp STATIC
+    src/mcp/server.cpp
+)
+target_include_directories(ptpn_mcp PUBLIC src)
+target_link_libraries(ptpn_mcp
+    PUBLIC
+    ptpn_diagnostics
+)
+
 add_library(ptpn_cli STATIC
     src/cli/option_groups.cpp
     src/cli/commands/tdg_cmd.cpp
@@ -546,6 +558,7 @@ add_library(ptpn_cli STATIC
     src/cli/commands/describe_cmd.cpp
     src/cli/commands/fill_cmd.cpp
     src/cli/commands/explain_cmd.cpp
+    src/cli/commands/mcp_cmd.cpp
     src/cli/commands/allocate_cmd.cpp
 )
 target_include_directories(ptpn_cli PUBLIC src)
@@ -555,6 +568,7 @@ target_link_libraries(ptpn_cli
     ptpn_app_allocation
     ptpn_app_check
     ptpn_app_describe
+    ptpn_mcp
     CLI11::CLI11
 )
 

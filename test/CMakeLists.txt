@@ -38,6 +38,7 @@ add_executable(ptpn_test
   test_fill.cpp
   test_explain.cpp
   test_rtsl_grammar.cpp
+  test_mcp.cpp
   test_rtsl_lexer.cpp
   test_rtsl_parser.cpp
   test_rtsl_validation.cpp
