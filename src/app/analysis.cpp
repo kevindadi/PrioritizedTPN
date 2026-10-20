@@ -302,7 +302,15 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
           "max-lower and intersection are currently aliases",
           opts.canonicalization_mode);
     }
-    spdlog::info("[SCG] Priority semantics: enumerate all admissible active sets");
+    if (opts.tie_mode == "arbitrary") {
+      spdlog::info(
+          "[SCG] Priority semantics: tie mode=arbitrary (enumerate all "
+          "equal-priority choices, including preemption by a peer)");
+    } else {
+      spdlog::info(
+          "[SCG] Priority semantics: tie mode=fifo (a running transition is not "
+          "preempted by an equal-priority peer)");
+    }
     spdlog::info("[SCG] Suspension clock projection: {}",
                  opts.keep_suspension_clocks ? "off (keeping w_t)" : "on (dropping w_t)");
     if (opts.reduction_mode == "symmetry") {
@@ -521,6 +529,7 @@ int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts,
   if (build_ptpn_from_tdg(tdg, ptpn, diagnostics, source_map) != 0) {
     return 1;
   }
+  ptpn.set_tie_mode(parse_tie_mode(opts.tie_mode));
   detail::log_step_timing("TDG2PN lowering", detail::elapsed_ms(lowering_start));
 
   return run_ptpn_postprocess(ptpn, input_label, opts, pipeline_start, initial_memory, diagnostics,

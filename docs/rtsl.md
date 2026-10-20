@@ -330,6 +330,28 @@ computed rank. `priority` is used directly by `fixed*`, `pip`, `pcp`, and
 `srp`; it is ignored by `rm`/`dm` (recomputed) and unused by EDF/FIFO/LLF
 (clock-based ordering).
 
+### Equal-priority ties
+
+Every task defaults to `priority 100`, so tasks that do not set `priority`
+are **all equal-priority**. For the fixed-priority policies (`fixed*`, `rm`,
+`dm`, `pip`, `pcp`, `srp`) the tie handling is selected by the CLI option
+`--tie`:
+
+- `fifo` (default): an equal-priority peer does **not** preempt a transition
+  that is already running, and a job already in service (its chain token left
+  the entry place) is preferred over a job waiting for its first dispatch.
+  The task that starts first therefore runs to completion (or until it
+  blocks), matching the non-preemptive same-priority behavior of most RTOSes.
+  Simultaneous releases (for example several `start`ed tasks) are still
+  ambiguous and both dispatch orders are explored.
+- `arbitrary`: every equal-priority choice is enumerated, including
+  preemption by a peer. This is the worst case over tie-breaks and can report
+  a real system as unschedulable (or starve a task) when a FIFO tie-break
+  would not.
+
+EDF/FIFO/LLF order jobs by clocks, not scalar priorities; their equal-deadline
+ties are separate branches and `--tie` does not apply.
+
 ## 11. Supported classes and limitations
 
 The grammar accepts more than the analyzer implements. Distinguish three

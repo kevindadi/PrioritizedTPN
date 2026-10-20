@@ -13,6 +13,61 @@ bool FiringRule::admissible(const PolicyContext& /*context*/, size_t /*transitio
   return true;
 }
 
+void FiringRule::ensure_admission_index(const petri::PTPN& net) const {
+  if (admission_net_ == &net) {
+    return;
+  }
+  admission_task_.assign(net.num_transitions(), -1);
+  admission_entry_.clear();
+  admission_places_.clear();
+
+  const std::vector<TaskChain> tasks = build_task_chains(net);
+  admission_entry_.reserve(tasks.size());
+  admission_places_.reserve(tasks.size());
+  for (size_t ordinal = 0; ordinal < tasks.size(); ++ordinal) {
+    admission_entry_.push_back(tasks[ordinal].entry_place);
+    admission_places_.push_back(tasks[ordinal].places);
+    for (size_t transition : tasks[ordinal].transitions) {
+      if (transition < admission_task_.size()) {
+        admission_task_[transition] = static_cast<int>(ordinal);
+      }
+    }
+  }
+  admission_net_ = &net;
+}
+
+std::optional<bool> FiringRule::job_admitted(const PolicyContext& context,
+                                             size_t transition) const {
+  if (context.state == nullptr) {
+    return std::nullopt;
+  }
+  ensure_admission_index(context.net);
+  if (transition >= admission_task_.size()) {
+    return std::nullopt;
+  }
+  const int ordinal = admission_task_[transition];
+  if (ordinal < 0) {
+    return std::nullopt;
+  }
+  const size_t task = static_cast<size_t>(ordinal);
+  const std::vector<int>& marking = context.state->marking;
+  const size_t entry = admission_entry_[task];
+  if (entry >= marking.size()) {
+    return std::nullopt;
+  }
+  // Admitted: a chain token already sits past the entry place, so the job has
+  // left the dispatch queue.
+  for (size_t place : admission_places_[task]) {
+    if (place == entry || place >= marking.size()) {
+      continue;
+    }
+    if (marking[place] > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::vector<PolicyBranch> FiringRule::branches(const TransitionSet& struct_enabled,
                                                const petri::PTPN& net,
                                                const PolicyContext& context) const {

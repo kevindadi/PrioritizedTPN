@@ -73,3 +73,20 @@ SchedulePolicy parse_schedule_policy(const std::string& policy) {
 std::string schedule_policy_to_string(SchedulePolicy policy) {
   return policy_to_string(policy);
 }
+
+TieMode parse_tie_mode(const std::string& value) {
+  if (value == "arbitrary") {
+    return TieMode::ARBITRARY;
+  }
+  return TieMode::FIFO;
+}
+
+std::string tie_mode_to_string(TieMode mode) {
+  switch (mode) {
+    case TieMode::ARBITRARY:
+      return "arbitrary";
+    case TieMode::FIFO:
+    default:
+      return "fifo";
+  }
+}

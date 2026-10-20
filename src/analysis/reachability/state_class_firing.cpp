@@ -254,7 +254,9 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
     build_layout(prepared);
     build_successor_zone(prepared, fired, elapsed, t);
   }
-  const PolicyContext context{net_, &prepared};
+  // `elapsed` is a copy of the source state, so its selected active set is the
+  // scheduler's running set for the tie rule.
+  const PolicyContext context{net_, &prepared, &elapsed.priority_enabled};
   const std::vector<PolicyBranch> branches = firing_rule_->branches(struct_enabled, net_, context);
 
   const int h_lower = -elapsed.zone.get_constraint(0, idx);

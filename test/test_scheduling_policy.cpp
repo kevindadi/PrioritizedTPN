@@ -2170,17 +2170,26 @@ TEST(SrpPolicyTest, StartGateBlocksMediumPreemptionEndToEnd) {
 }
 
 TEST(SrpPolicyTest, StartGatePreventsHoldAndWaitDeadlock) {
-  const auto fixed_report = analyze(lower(parse_tdg(srp_deadlock_json("fixed"))));
-  const auto srp_report = analyze(lower(parse_tdg(srp_deadlock_json("srp"))));
-
-  // Without ceilings, B starts while A holds mutex1; opposite acquisition
-  // orders then form a hold-and-wait cycle.
+  // Worst case over equal-priority tie-breaks (`--tie arbitrary`, the pre-FIFO
+  // behavior): B can take the core while A holds mutex1, so opposite
+  // acquisition orders form a hold-and-wait cycle without ceilings.
+  petri::PTPN fixed_net = lower(parse_tdg(srp_deadlock_json("fixed")));
+  fixed_net.set_tie_mode(TieMode::ARBITRARY);
+  const auto fixed_report = analyze(fixed_net);
   EXPECT_FALSE(fixed_report.deadlock_states.empty());
   EXPECT_FALSE(fixed_report.schedulable);
+
+  // With the default FIFO ties, A is already in service when B is released, so
+  // B waits for A instead of preempting it; the cycle is unreachable even
+  // without ceilings.
+  const auto fifo_report = analyze(lower(parse_tdg(srp_deadlock_json("fixed"))));
+  EXPECT_TRUE(fifo_report.deadlock_states.empty());
+  EXPECT_TRUE(fifo_report.schedulable);
 
   // Under SRP, A holds mutex1 (ceiling 1) when B is released, so B's get_core
   // is inadmissible (1 <= 1) until A releases. A acquires the still-free
   // mutex2 and completes; the cycle is unreachable.
+  const auto srp_report = analyze(lower(parse_tdg(srp_deadlock_json("srp"))));
   EXPECT_TRUE(srp_report.deadlock_states.empty());
   EXPECT_TRUE(srp_report.schedulable);
 }
@@ -2289,6 +2298,67 @@ TEST(SrpPolicyTest, FactoryReturnsDynamicRuleWithSharedBehavior) {
   EXPECT_TRUE(lazy_rule->admissible(context, k_get));
   EXPECT_EQ(net_rule->effective_priority(context, m_get),
             lazy_rule->effective_priority(context, m_get));
+}
+
+// FIFO equal-priority tie handling (the default since the tie-mode change):
+// an in-service job is preferred over one waiting for dispatch, and a running
+// transition is not preempted by an equal-priority peer.
+TEST(SchedulingPolicyTest, FifoTiePrefersAdmittedJobsAndKeepsRunningOnes) {
+  const petri::PTPN net = lower(parse_tdg(kSrpTieJson));
+  // Chain layout of a two-segment task: 0 entry place, 1 get_core, 2 ready
+  // place, 3 exec_1, 4 seg_1_done place, 5 exec_2, 6 exit place.
+  const size_t a_ready = chain_place(net, "A", 2);
+  const size_t a_exec = chain_transition(net, "A", 3);
+  const size_t b_entry = chain_place(net, "B", 0);
+  const size_t b_ready = chain_place(net, "B", 2);
+  const size_t b_get = chain_transition(net, "B", 1);
+  const size_t b_exec = chain_transition(net, "B", 3);
+  ASSERT_NE(a_ready, SIZE_MAX);
+  ASSERT_NE(a_exec, SIZE_MAX);
+  ASSERT_NE(b_entry, SIZE_MAX);
+  ASSERT_NE(b_ready, SIZE_MAX);
+  ASSERT_NE(b_get, SIZE_MAX);
+  ASSERT_NE(b_exec, SIZE_MAX);
+
+  // Case 1: A is in service (its token left the entry place), B waits at its
+  // entry. FIFO prefers A; arbitrary keeps both tie resolutions.
+  {
+    state_class::StateClass state;
+    state.marking.assign(net.num_places(), 0);
+    state.marking[a_ready] = 1;
+    state.marking[b_entry] = 1;
+
+    state_class::StaticPriorityRule fifo(PreemptionMode::RESUME);
+    const PolicyContext context{net, &state};
+    const auto branches = Scheduling::priority_branches({a_exec, b_get}, net, fifo, context);
+    ASSERT_EQ(branches.size(), 1u);
+    EXPECT_EQ(branches[0], (state_class::TransitionSet{a_exec}));
+
+    state_class::StaticPriorityRule arbitrary(PreemptionMode::RESUME);
+    arbitrary.set_tie_mode(TieMode::ARBITRARY);
+    const auto both = Scheduling::priority_branches({a_exec, b_get}, net, arbitrary, context);
+    ASSERT_EQ(both.size(), 2u);
+  }
+
+  // Case 2: both jobs are in service; the running transition keeps its slot.
+  {
+    state_class::StateClass state;
+    state.marking.assign(net.num_places(), 0);
+    state.marking[a_ready] = 1;
+    state.marking[b_ready] = 1;
+    const state_class::TransitionSet running{a_exec};
+
+    state_class::StaticPriorityRule fifo(PreemptionMode::RESUME);
+    const PolicyContext context{net, &state, &running};
+    const auto branches = Scheduling::priority_branches({a_exec, b_exec}, net, fifo, context);
+    ASSERT_EQ(branches.size(), 1u);
+    EXPECT_EQ(branches[0], (state_class::TransitionSet{a_exec}));
+
+    state_class::StaticPriorityRule arbitrary(PreemptionMode::RESUME);
+    arbitrary.set_tie_mode(TieMode::ARBITRARY);
+    const auto both = Scheduling::priority_branches({a_exec, b_exec}, net, arbitrary, context);
+    ASSERT_EQ(both.size(), 2u);
+  }
 }
 
 TEST(SrpPolicyTest, EqualPriorityTransitionsEnumerateBothBranches) {

@@ -28,9 +28,20 @@ class Scheduling {
   // not CPU-scheduled. A core with no admissible transition contributes no
   // choice; if every core is empty the result is one empty active set.
   //
+  // Equal-priority ties are resolved by `rule.tie_mode()`:
+  //  - TieMode::FIFO (default): a transition that `context.running` reports as
+  //    already running keeps its slot when it is among the maximal-priority
+  //    candidates; equal-priority peers cannot preempt it. Additionally, at
+  //    the cutoff priority, jobs whose chain token has left the entry place
+  //    (`FiringRule::job_admitted`) take the remaining slots before jobs
+  //    waiting for a first dispatch, so a task stays in service across its
+  //    lock/segment boundaries. With K = 1 this yields exactly one choice per
+  //    core. Initial classes (nothing running, every job at its entry) still
+  //    enumerate every tie, because the first dispatch has no winner yet.
+  //  - TieMode::ARBITRARY: every equal-priority choice is enumerated, including
+  //    preemption by a peer (worst case over all tie-breaks).
+  //
   // The result is the cartesian product over cores, sorted and duplicate-free.
-  // There is deliberately no deterministic single-choice variant: fixing a tie
-  // would remove reachable schedules and is not sound for worst-case analysis.
   static std::vector<TransitionSet> priority_branches(const TransitionSet& struct_enabled,
                                                       const petri::PTPN& net,
                                                       const FiringRule& rule,

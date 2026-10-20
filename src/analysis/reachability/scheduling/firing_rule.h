@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "analysis/reachability/state_class.h"
@@ -29,6 +30,12 @@ struct PolicyContext {
   // Marking is always set; the full clock layout/zone may be absent at the
   // point priority branches are computed. Static rules must not read it.
   const StateClass* state = nullptr;
+  // Selected active set of the source state class: the transitions the
+  // scheduler had running when it made this decision. Null for initial classes
+  // (nothing is running yet) and for callers that do not model scheduling
+  // decisions. The scalar-priority tie rule uses it to keep a running
+  // transition scheduled instead of preempting it with an equal-priority peer.
+  const TransitionSet* running = nullptr;
 };
 
 // One difference constraint over per-job clocks attached to a scheduling
@@ -105,6 +112,30 @@ class FiringRule {
 
   virtual PreemptionMode preemption_mode() const = 0;
 
+  // Equal-priority tie handling for the scalar-priority branch enumeration
+  // (Scheduling::priority_branches). The factory copies it from the net; rules
+  // with their own branches() (EDF/FIFO/LLF) resolve ties through clock
+  // constraints and do not use it.
+  [[nodiscard]] TieMode tie_mode() const {
+    return tie_;
+  }
+
+  void set_tie_mode(TieMode mode) {
+    tie_ = mode;
+  }
+
+  // FIFO admission predicate, evaluated on `context.state->marking`:
+  //   true    - the transition's task job is already admitted (a chain token
+  //             sits past the entry place), so the job is in service;
+  //   false   - the transition's task is still waiting at its entry place for
+  //             its first dispatch;
+  //   nullopt - the transition does not belong to a task chain (control,
+  //             fork/join, hand-written nets): the rule stays neutral.
+  // The FIFO tie rule prefers admitted jobs over jobs waiting for a first
+  // dispatch at the same priority. The index is cached per net.
+  [[nodiscard]] std::optional<bool> job_admitted(const PolicyContext& context,
+                                                 size_t transition) const;
+
   // True when the rule depends on per-task release clocks and therefore the
   // graph must include them in the clock layout and state identity.
   virtual bool uses_release_clocks() const {
@@ -129,6 +160,19 @@ class FiringRule {
   virtual std::vector<PolicyBranch> branches(const TransitionSet& struct_enabled,
                                              const petri::PTPN& net,
                                              const PolicyContext& context) const;
+
+ private:
+  TieMode tie_ = TieMode::FIFO;
+
+  // Lazily built admission index for job_admitted(): transition -> task
+  // ordinal (-1 outside task chains) plus each task's entry place and chain
+  // places. Rebuilt when the rule sees a different net.
+  void ensure_admission_index(const petri::PTPN& net) const;
+
+  mutable const petri::PTPN* admission_net_ = nullptr;
+  mutable std::vector<int> admission_task_;
+  mutable std::vector<size_t> admission_entry_;
+  mutable std::vector<std::vector<size_t>> admission_places_;
 };
 
 // Policy -> rule mapping:

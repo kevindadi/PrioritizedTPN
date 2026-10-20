@@ -42,6 +42,7 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 | `--reduction` | `none` (default), `upper-bound` (sound WCRT upper bound, `wcrt_lb` unavailable), `cone` (per-task cone analysis; no whole-net deadlock), or `symmetry` (verified isomorphic tasks on distinct cores; pooled timing metrics are conservative) |
 | `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
 | `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified |
+| `--tie` | Equal-priority tie handling for the fixed-priority policies: `fifo` (default) keeps a running transition scheduled and prefers an in-service job over one waiting for its first dispatch, so an equal-priority peer cannot preempt it; `arbitrary` enumerates every equal-priority choice, including equal-priority preemption (worst case over tie-breaks) |
 | `--no-analysis` | Skip state-class reachability analysis |
 | `--diagnostics json` | Emit the versioned JSON diagnostics envelope on stdout and reserve stdout for it (available on `check`, `tdg`, `rtsl`, `ptpn`, and `allocate`; see [diagnostics.md](diagnostics.md)) |
 | `--diagnostics-file PATH` | Write the same envelope to `PATH` |

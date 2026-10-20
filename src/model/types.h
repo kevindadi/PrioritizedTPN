@@ -47,6 +47,20 @@ enum class SchedulePolicy {
 SchedulePolicy parse_schedule_policy(const std::string& policy);
 std::string schedule_policy_to_string(SchedulePolicy policy);
 
+// Equal-priority tie handling for the scalar-priority rules (fixed/rm/dm and
+// the resource protocols). The default is FIFO: a transition that is already
+// running keeps its core and is not preempted by another candidate at the same
+// priority, which matches most RTOS fixed-priority schedulers. ARBITRARY
+// enumerates every equal-priority choice, including preemption by a peer, so
+// the analysis reports the worst case over all tie-breaks.
+enum class TieMode {
+  FIFO,       // no equal-priority preemption; the running transition wins ties
+  ARBITRARY,  // enumerate all equal-priority choices (pre-FIFO behavior)
+};
+
+TieMode parse_tie_mode(const std::string& value);
+std::string tie_mode_to_string(TieMode mode);
+
 struct TaskNode {
   std::string name;
   int core = 0;

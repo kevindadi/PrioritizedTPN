@@ -55,6 +55,11 @@ struct PipelineOptions {
   // certified once pruning occurs. Disabled by default.
   std::optional<int> time_horizon;
   std::optional<SchedulePolicy> policy_override;
+  // Equal-priority tie handling for the scalar-priority rules: "fifo" (default,
+  // no equal-priority preemption) or "arbitrary". Kept as the CLI string; the
+  // analysis layer converts it with parse_tie_mode. See TieMode in
+  // model/types.h.
+  std::string tie_mode = "fifo";
   DiagnosticsOptions diagnostics;
   ExportTargets exports;
 };

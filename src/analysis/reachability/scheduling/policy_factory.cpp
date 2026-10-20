@@ -48,25 +48,27 @@ std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy) {
 }
 
 std::unique_ptr<FiringRule> make_firing_rule(SchedulePolicy policy, const petri::PTPN& net) {
+  std::unique_ptr<FiringRule> rule;
   if (policy == SchedulePolicy::EDF) {
-    return std::make_unique<EdfFiringRule>(net);
+    rule = std::make_unique<EdfFiringRule>(net);
+  } else if (policy == SchedulePolicy::FIFO) {
+    rule = std::make_unique<FifoFiringRule>(net);
+  } else if (policy == SchedulePolicy::LLF) {
+    rule = std::make_unique<LlfFiringRule>(net);
+  } else if (policy == SchedulePolicy::PIP) {
+    rule = std::make_unique<PipFiringRule>(net);
+  } else if (policy == SchedulePolicy::PCP) {
+    rule = std::make_unique<PcpFiringRule>(net);
+  } else if (policy == SchedulePolicy::SRP) {
+    rule = std::make_unique<SrpFiringRule>(net);
+  } else {
+    rule = make_firing_rule(policy);
   }
-  if (policy == SchedulePolicy::FIFO) {
-    return std::make_unique<FifoFiringRule>(net);
-  }
-  if (policy == SchedulePolicy::LLF) {
-    return std::make_unique<LlfFiringRule>(net);
-  }
-  if (policy == SchedulePolicy::PIP) {
-    return std::make_unique<PipFiringRule>(net);
-  }
-  if (policy == SchedulePolicy::PCP) {
-    return std::make_unique<PcpFiringRule>(net);
-  }
-  if (policy == SchedulePolicy::SRP) {
-    return std::make_unique<SrpFiringRule>(net);
-  }
-  return make_firing_rule(policy);
+  // Scalar-priority rules honor the net's equal-priority tie handling; the
+  // job-clock rules (EDF/FIFO/LLF) ignore it because their own branches()
+  // resolves ties through clock constraints.
+  rule->set_tie_mode(net.tie_mode());
+  return rule;
 }
 
 }  // namespace state_class

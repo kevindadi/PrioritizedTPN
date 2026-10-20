@@ -349,6 +349,13 @@ class PTPN {
     schedule_policy_ = policy;
   }
 
+  // Equal-priority tie handling for the scalar-priority rules. Defaults to
+  // FIFO (no equal-priority preemption); the analysis layer reads it when it
+  // builds the firing rule.
+  void set_tie_mode(TieMode mode) {
+    tie_mode_ = mode;
+  }
+
   void clear_lowering_metadata() {
     node_start_end_map_.clear();
     node_pn_map_.clear();
@@ -439,6 +446,10 @@ class PTPN {
 
   [[nodiscard]] SchedulePolicy schedule_policy() const {
     return schedule_policy_;
+  }
+
+  [[nodiscard]] TieMode tie_mode() const {
+    return tie_mode_;
   }
 
   // How many transitions may run simultaneously on `core_id`. The control core
@@ -546,6 +557,7 @@ class PTPN {
   std::unordered_map<int, int> core_parallelism_;
   std::unordered_map<std::string, TaskInfo> task_info_;
   SchedulePolicy schedule_policy_ = SchedulePolicy::FIXED;
+  TieMode tie_mode_ = TieMode::FIFO;
   size_t node_index_ = 0;
 };
 

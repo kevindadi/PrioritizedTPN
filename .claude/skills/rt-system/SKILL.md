@@ -129,6 +129,13 @@ deadline`.
   only a bound the user supplied as `certified by "<tool>"` carries that claim.
 - Report analyzer output mechanically; do not claim schedulability that the
   exit code and `exact`/`truncated` fields do not support.
+- **Equal-priority tasks are common.** Every task defaults to `priority 100`,
+  so tasks without an explicit `priority` are peers. The default `--tie fifo`
+  never lets an equal-priority peer preempt a running transition or an
+  in-service job; `--tie arbitrary` explores equal-priority preemption (worst
+  case over tie-breaks) and can report starvation that FIFO would not. State
+  which tie mode produced a verdict before presenting it as the system's
+  behavior.
 - **Design changes require the user's decision.** Deleting a lock or
   dependency, changing the policy, or changing a period/deadline changes the
   model's semantics. Show the exact diff and the before/after diagnostics and

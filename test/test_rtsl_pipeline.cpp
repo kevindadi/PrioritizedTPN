@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -107,7 +108,7 @@ TEST(RtslPipelineCli, ExportTdgRoundTripsWithIdenticalMetrics) {
   EXPECT_EQ(envelope.at("ok"), true);
   EXPECT_EQ(envelope.at("exit_code"), 0);
   EXPECT_EQ(envelope.at("result").at("analysis").at("exact"), true);
-  EXPECT_EQ(envelope.at("result").at("analysis").at("states"), 82);
+  EXPECT_EQ(envelope.at("result").at("analysis").at("states"), 78);
   EXPECT_FALSE(has_diagnostic(envelope, "E-UNS-001"));
 
   const std::string lowered = read_file(tdg_path);
@@ -344,4 +345,69 @@ TEST(RtslPipelineCli, AllocateAcceptsTdgJsonInput) {
   const nlohmann::json envelope = parse_envelope(result.stdout_text);
   EXPECT_EQ(envelope.at("ok"), true);
   EXPECT_EQ(envelope.at("exit_code"), 0);
+}
+
+TEST(RtslPipelineCli, TieModeSelectsEqualPrioritySemantics) {
+  // a is a three-segment locked task started at t=0; b is a same-priority
+  // periodic task whose first release is at t=1.
+  const std::string path = write_temp_file(".rtsl", R"(system tie {
+  cpus 1
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+
+  task a: aperiodic {
+    core 0
+    locks mutex1
+    time [ [1, 1], [1, 2], [1, 1] ] estimated
+  }
+
+  task b: periodic {
+    period 1ms
+    deadline 10ms
+    core 0
+    time [1, 1] estimated
+  }
+
+  start a
+}
+)");
+  const std::string fifo_metrics = test_artifact_name(".fifo.metrics.json");
+  const std::string arbitrary_metrics = test_artifact_name(".arbitrary.metrics.json");
+
+  // Default (fifo): b cannot preempt a mid-flight and an in-service job is
+  // preferred over a first dispatch, so a's certified lower bound is its true
+  // worst case, 4 ms.
+  const CliResult fifo =
+      run_cli({"rtsl", "-f", path, "--export-metrics", fifo_metrics, "--diagnostics", "json"});
+  ASSERT_EQ(fifo.exit_code, 0) << fifo.stderr_text;
+  const nlohmann::json fifo_json = nlohmann::json::parse(read_file(fifo_metrics), nullptr, false);
+  ASSERT_FALSE(fifo_json.is_discarded());
+  const auto& fifo_tasks = fifo_json.at("tasks");
+  const auto fifo_a = std::find_if(fifo_tasks.begin(), fifo_tasks.end(),
+                                   [](const nlohmann::json& task) {
+                                     return task.value("name", "") == "a";
+                                   });
+  ASSERT_NE(fifo_a, fifo_tasks.end());
+  EXPECT_EQ(fifo_a->at("wcrt_lb"), 4);
+
+  // --tie arbitrary restores the worst case over equal-priority tie-breaks:
+  // b may take the core at every decision point, a starves, and the analyzer
+  // reports the local deadlock (exit 6) instead of a finite WCRT.
+  const CliResult arbitrary = run_cli({"rtsl", "-f", path, "--tie", "arbitrary",
+                                       "--export-metrics", arbitrary_metrics, "--diagnostics",
+                                       "json"});
+  ASSERT_EQ(arbitrary.exit_code, 6) << arbitrary.stderr_text;
+  const nlohmann::json arbitrary_envelope = parse_envelope(arbitrary.stdout_text);
+  EXPECT_NE(find_diagnostic(arbitrary_envelope, "R-ANA-003"), nullptr);
+  const nlohmann::json arbitrary_json =
+      nlohmann::json::parse(read_file(arbitrary_metrics), nullptr, false);
+  ASSERT_FALSE(arbitrary_json.is_discarded());
+  const auto& arbitrary_tasks = arbitrary_json.at("tasks");
+  const auto arbitrary_a = std::find_if(arbitrary_tasks.begin(), arbitrary_tasks.end(),
+                                        [](const nlohmann::json& task) {
+                                          return task.value("name", "") == "a";
+                                        });
+  ASSERT_NE(arbitrary_a, arbitrary_tasks.end());
+  EXPECT_TRUE(arbitrary_a->at("wcrt").is_null());
 }

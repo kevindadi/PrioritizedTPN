@@ -143,7 +143,8 @@ int run_ptpn_pipeline(const std::string& input_file, const PipelineOptions& opts
     std::cerr << "ERROR: Failed to parse PTPN file: " << parse_result.error() << std::endl;
     return 1;
   }
-  const petri::PTPN& ptpn = parse_result.value();
+  petri::PTPN ptpn = parse_result.value();
+  ptpn.set_tie_mode(parse_tie_mode(opts.tie_mode));
 
   detail::log_step_timing("PTPN parsing", detail::elapsed_ms(parse_start));
 

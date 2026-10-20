@@ -74,6 +74,13 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts,
                   "bound on the response time of interest; deadlock/SCC results "
                   "are not certified when pruning occurs")
       ->check(CLI::NonNegativeNumber);
+  cmd->add_option("--tie", opts.tie_mode,
+                  "Equal-priority tie handling for fixed-priority policies. "
+                  "fifo (default): a running transition keeps its core and an "
+                  "equal-priority peer cannot preempt it. arbitrary: enumerate "
+                  "every equal-priority choice, including equal-priority "
+                  "preemption (worst case over tie-breaks)")
+      ->check(CLI::IsMember({"fifo", "arbitrary"}));
   add_diagnostics_options(cmd, opts.diagnostics);
   add_export_target_options(cmd, opts.exports, tdg_export_is_json);
 }
