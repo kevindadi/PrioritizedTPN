@@ -68,7 +68,8 @@ struct PipelineOptions {
   ExportTargets exports;
 };
 
-size_t get_memory_usage();
+// Peak resident memory of this process in megabytes (all platforms).
+size_t get_memory_usage_mb();
 
 // Prints diagnostics in the pre-envelope human-readable format. Shared by the
 // `check` and pipeline commands so engaged/non-engaged output stays consistent.

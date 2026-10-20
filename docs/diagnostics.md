@@ -135,6 +135,7 @@ The table below is the quick reference for the three RTSL-facing commands.
 |---|---|---|---|
 | pending `measured by llm` timing | succeeds; lists tasks in `result.pending_measurements` | rejects with `E-VAL-213`, exit `3` | rejects with `E-VAL-213`, exit `3` |
 | `core any` | succeeds with `E-VAL-218` **hint** | rejects with `E-VAL-218` error, exit `3` | expands the domain to `0..num_cpus-1`; no diagnostic |
+| `core {i, j}` (multi-element set) | succeeds with `E-VAL-218` **hint** | succeeds with `E-VAL-218` **warning**, exit `0` (analysis pins the task to the smallest id) | expands the set; no diagnostic |
 | `interrupt` task | `E-UNS-005` **hint**, exit `0` | hint, exit `0`; lowered as a non-periodic task with the interrupt marker | hint, exit `0`; same lowering |
 | locked task with the wrong segment count | succeeds (lowering-only rule) | `E-VAL-015`, exit `3` | `E-VAL-015`, exit `3` |
 | EDF/FIFO/LLF/PIP/PCP/SRP supported-class violation | succeeds (lowering-only rule) | `E-UNS-001`, exit `4` | candidate is treated as infeasible; **no** `E-UNS-001` diagnostic |
@@ -280,7 +281,7 @@ are zero) even when a file name is present.
 | `E-VAL-215` | error | validator | unknown policy name | `policy`; value span | use one of the listed policies |
 | `E-VAL-216` | error | validator | edge with ≥2 sources and ≥2 targets | canonical `edge:...`; whole edge | split into explicit intermediate tasks |
 | `E-VAL-217` | error | validator | missing/`<1` `cpus`; `cores_per_cpu < 1` | `system:cpus` / `system:cores_per_cpu` | add a positive `cpus` / `cores_per_cpu` |
-| `E-VAL-218` | **hint in `check`; error in `rtsl`** | validator | task uses `core any`; `allocate` expands it instead | `task:<id>:core`; core spec span | use `ptpn allocate`, or give an explicit core |
+| `E-VAL-218` | **hint in `check`; error in `rtsl` for `core any`; warning in `rtsl` for a multi-element core set** | validator | task uses `core any`, or a core set that analysis would silently pin to the smallest id; `allocate` expands both | `task:<id>:core`; core spec span | use `ptpn allocate`, or give an explicit core |
 | `E-VAL-219` | error | validator | an attribute is declared more than once | `system:*`, `policy`, or `task:<id>:<attr>`; duplicate token span | remove the duplicate declaration |
 | `E-VAL-220` | error | validator | measured-block `runs` or `timeout <= 0` | `task:<id>:time`; value span | use a positive integer |
 | `E-VAL-221` | error | validator | a numeric value does not fit the engine's signed 32-bit range: a time value (after unit normalization) reaches `INT_MAX` ms or above, `priority`, `cpus`, or `cores_per_cpu` exceeds `int` | the same subject as the offending attribute (`task:<id>:period`/`:deadline`/`:time`/`:priority`, `system:cpus`/`system:cores_per_cpu`); value span | reduce the value (time values: at most 2147483646 ms; priorities: -2147483648..2147483647) |
@@ -295,8 +296,8 @@ are zero) even when a file name is present.
   lexer (no subject) and the validator (time units, with subject and span).
   `E-VAL-011` and `E-VAL-015` exist in both the JSON validator and RTSL
   lowering with different subject/location conventions.
-- **Mode-dependent severity.** `E-VAL-218` is a hint in `check` but an error in
-  `rtsl`; `E-UNS-005` is a hint in every command; `E-VAL-028..032` are
+- **Mode-dependent severity.** `E-VAL-218` is a hint in `check`, an error in
+  `rtsl` for `core any`, and a warning in `rtsl` for a multi-element core set; `E-UNS-005` is a hint in every command; `E-VAL-028..032` are
   warnings; `E-PERF-*` are warnings that still produce exit `5`.
 - **No code for some conditions.** `E-UNS-002` is not defined. `E-VAL-034+`
   and `E-SYN-003+` do not exist. `E-UNS-001/INT-003/R-ANA-*/E-PERF-*` are not
@@ -434,8 +435,10 @@ A locked task needs `2*lock_count+1` intervals. If the count is wrong,
 ### 7.2 Open core assignment
 
 - `check`: `E-VAL-218` hint, exit `0`.
-- `rtsl`: `E-VAL-218` error, exit `3`.
-- `allocate`: expands `core any` to every core and searches; no diagnostic.
+- `rtsl`: `E-VAL-218` error for `core any` (exit `3`); a multi-element core set
+  warns (exit `0`) because analysis pins the task to the smallest id.
+- `allocate`: expands `core any` to every core (and explores core sets); no
+  diagnostic.
 - To analyze directly, replace `core any` with an explicit core or core set.
 
 ### 7.3 Unsupported class

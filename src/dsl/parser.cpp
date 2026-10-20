@@ -253,6 +253,15 @@ ast::Program Parser::parse() {
     const Token& closing = advance();
     program.system.span = Span{file_, system_keyword.offset, closing.end_offset(),
                                system_keyword.line, system_keyword.column};
+    // Trailing content after the system block used to be silently ignored;
+    // report it instead so a stray declaration cannot pass validation.
+    skip_semicolons();
+    if (!check(TokenKind::EndOfFile)) {
+      error_unexpected(peek(), "end of file after the system block");
+      while (!check(TokenKind::EndOfFile)) {
+        advance();
+      }
+    }
   } else {
     error_unexpected(peek(), "'}' to close the system block");
     program.system.span = span_from(system_keyword);

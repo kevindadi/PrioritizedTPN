@@ -95,7 +95,7 @@ task NAME: KIND {
 | Attribute | Applies to | Rules | Default when omitted |
 |---|---|---|---|
 | `period TIME` | `periodic` only | required for periodic; raw value `> 0` (`E-VAL-206`) | — |
-| `deadline TIME` | any task | raw value `> 0` (`E-VAL-208`); absolute deadline | `0` = implicit deadline (the period) for periodic tasks |
+| `deadline TIME` | any task | raw value `> 0` (`E-VAL-208`); **relative** deadline measured from the job's release (a response-time budget), not an absolute time | `0` = implicit deadline (the period) for periodic tasks |
 | `mit TIME` | `sporadic` only | required for sporadic; raw value `> 0` (`E-VAL-207`) | — |
 | `priority N` | any task | integer in `[-2147483648, 2147483647]` (`E-VAL-221` outside it); **higher value = higher scheduling priority** | `100` |
 | `core ...` | any task | single id, set `{...}`, or `any`; range `0..cpus-1` | core `0` |
@@ -177,7 +177,10 @@ core any        // allocation domain 0..cpus-1
   as `allowed_cores`; `ptpn allocate` explores the set. For `core any`,
   lowering expands the domain to every core.
 - `core any` is a **hint** in `ptpn check`, an **error** in `ptpn rtsl`, and
-  expanded by `ptpn allocate` (`E-VAL-218` in the first two modes).
+  expanded by `ptpn allocate` (`E-VAL-218` in the first two modes). A
+  multi-element set is a **hint** in `check` and a **warning** in `rtsl`
+  (`E-VAL-218`, exit `0`): analysis would pin the task to the smallest id, so
+  use `ptpn allocate` to explore the set. `allocate` expands both silently.
 - If `core` is absent, the task uses core `0`.
 
 ## 7. Locks and execution segments

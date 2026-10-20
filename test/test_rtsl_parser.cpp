@@ -291,6 +291,24 @@ TEST(RtslParser, MissingSystemBlockTaintsSystemAttributes) {
   EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-217"), 0U);
 }
 
+TEST(RtslParser, TrailingContentAfterTheSystemBlockIsASyntaxError) {
+  const std::string source = R"(system demo {
+  cpus 2
+  task a: normal { time [1, 2] estimated }
+}
+
+this is not valid RTSL
+)";
+  ptpn::Diagnostics diagnostics;
+  dsl::SourceMap source_map;
+  rtsl_test::check_source(source, diagnostics, source_map);
+
+  const auto matches = rtsl_test::diagnostics_with_code(diagnostics, "E-SYN-102");
+  ASSERT_EQ(matches.size(), 1U);
+  EXPECT_EQ(matches[0]->location->line, 6);
+  EXPECT_NE(matches[0]->message.find("end of file after the system block"), std::string::npos);
+}
+
 TEST(RtslParser, TimeSourceMapSpanCoversTheWholeAttribute) {
   const std::string source = R"(system s {
   cpus 2

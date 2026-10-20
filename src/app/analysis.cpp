@@ -295,9 +295,9 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
         const auto end_time = detail::PipelineClock::now();
         const auto total_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(end_time - pipeline_start);
-        const size_t total_memory = get_memory_usage() - initial_memory;
+        const size_t total_memory = get_memory_usage_mb() - initial_memory;
         detail::log_step_timing(input_label + " pipeline (total)", total_duration.count(),
-                                std::to_string(total_memory) + " KB");
+                                std::to_string(total_memory) + " MB");
         return 0;
       }
       spdlog::warn("[CONE] Cone analysis unavailable; falling back to full-graph analysis");
@@ -527,9 +527,9 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
   const auto end_time = detail::PipelineClock::now();
   const auto total_duration =
       std::chrono::duration_cast<std::chrono::milliseconds>(end_time - pipeline_start);
-  const size_t total_memory = get_memory_usage() - initial_memory;
+  const size_t total_memory = get_memory_usage_mb() - initial_memory;
   detail::log_step_timing(input_label + " pipeline (total)", total_duration.count(),
-                          std::to_string(total_memory) + " KB");
+                          std::to_string(total_memory) + " MB");
   return 0;
 } catch (const ::ptpn::UnsupportedClassError& error) {
   // The analysis layer rejects models/options that pass lowering but are
@@ -568,7 +568,7 @@ int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts,
     }
     const auto end_time = detail::PipelineClock::now();
     detail::log_step_timing(input_label + " pipeline (total)", detail::elapsed_ms(pipeline_start),
-                            std::to_string(get_memory_usage() - initial_memory) + " KB");
+                            std::to_string(get_memory_usage_mb() - initial_memory) + " MB");
     return 0;
   }
 

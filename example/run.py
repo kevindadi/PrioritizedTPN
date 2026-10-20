@@ -50,14 +50,14 @@ RE_STATS_SCG = re.compile(
 )
 RE_STATS_SCG_DOT = re.compile(r"\[STATS\] SCG DOT export:\s*(\d+)\s*ms")
 RE_STATS_TOTAL = re.compile(
-    r"\[STATS\] TDG pipeline \(total\):\s*(\d+)\s*ms(?: \((\d+) KB\))?"
+    r"\[STATS\] TDG pipeline \(total\):\s*(\d+)\s*ms(?: \((\d+) MB\))?"
 )
 RE_STATS_PTPN_TOTAL = re.compile(
-    r"\[STATS\] PTPN pipeline \(total\):\s*(\d+)\s*ms(?: \((\d+) KB\))?"
+    r"\[STATS\] PTPN pipeline \(total\):\s*(\d+)\s*ms(?: \((\d+) MB\))?"
 )
 RE_BUILD_TRUNCATED = re.compile(r"build complete:.*truncated=(true|false)")
 RE_TDG_DOT = re.compile(r"\[DOT\] Exported (\d+) nodes, (\d+) edges")
-RE_MEMORY_KB = re.compile(r"\((\d+) KB\)")
+RE_MEMORY_MB = re.compile(r"\((\d+) MB\)")
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +366,7 @@ class BenchRow:
     ms_tdg2pn: int | None = None
     ms_scg_build: int | None = None
     ms_total: int | None = None
-    memory_kb: int | None = None
+    memory_mb: int | None = None
     validate_tdg_only: bool = False
     outputs: list[str] = field(default_factory=list)
 
@@ -474,12 +474,12 @@ def parse_lbench_log(text: str) -> dict:
         if m := pattern.search(text):
             stats["ms_total"] = int(m.group(1))
             if m.group(2):
-                stats["memory_kb"] = int(m.group(2))
+                stats["memory_mb"] = int(m.group(2))
             break
-    if "memory_kb" not in stats:
-        kb_vals = [int(m.group(1)) for m in RE_MEMORY_KB.finditer(text)]
-        if kb_vals:
-            stats["memory_kb"] = max(kb_vals)
+    if "memory_mb" not in stats:
+        mb_vals = [int(m.group(1)) for m in RE_MEMORY_MB.finditer(text)]
+        if mb_vals:
+            stats["memory_mb"] = max(mb_vals)
     return stats
 
 
@@ -620,7 +620,7 @@ def write_lbench_summary(
         "scg_states",
         "scg_edges",
         "scg_truncated",
-        "memory_kb",
+        "memory_mb",
         "ms_tdg2pn",
         "ms_scg_build",
         "ms_total",
@@ -651,7 +651,7 @@ def print_lbench_table(rows: list[BenchRow]) -> None:
             else "-"
         )
         scg = str(r.scg_states) if r.scg_states is not None else "-"
-        mem = str(r.memory_kb) if r.memory_kb is not None else "-"
+        mem = str(r.memory_mb) if r.memory_mb is not None else "-"
         ms = str(r.ms_total) if r.ms_total is not None else "-"
         ok = "yes" if r.ok else "no"
         print(f"{r.case:<26} {ok:<4} {tcl:<10} {lp:<8} {pt:<11} {scg:<8} {mem:<8} {ms:<8}")

@@ -322,6 +322,9 @@ void Validator::validate_task(const ast::TaskDecl& task) {
 void Validator::validate_core(const ast::TaskDecl& task) {
   const std::string subject = "task:" + task.id + ":core";
   Span any_span;
+  Span set_span;
+  std::string set_text;
+  std::int64_t set_min = 0;
   for (const ast::CoreSpec& core : task.core) {
     switch (core.kind) {
       case ast::CoreSpec::Kind::Single:
@@ -355,6 +358,24 @@ void Validator::validate_core(const ast::TaskDecl& task) {
                    "use a core in [0, cpus-1]");
           }
         }
+        // A multi-core set is an allocation domain: lowering pins the task to
+        // the smallest id and records the set. Silently analysing a set as one
+        // core is a trap, so it is a hint in `check` and an error in `rtsl`
+        // (like `core any`), while `allocate` explores the set.
+        if (seen.size() > 1) {
+          set_span = core.span;
+          set_min = *seen.begin();
+          set_text = "{";
+          bool first = true;
+          for (std::int64_t core_id : seen) {
+            if (!first) {
+              set_text += ", ";
+            }
+            set_text += std::to_string(core_id);
+            first = false;
+          }
+          set_text += "}";
+        }
         break;
       }
       case ast::CoreSpec::Kind::Any:
@@ -374,6 +395,24 @@ void Validator::validate_core(const ast::TaskDecl& task) {
       report(diagnostics_, "E-VAL-218", subject, any_span,
              "task '" + task.id + "' uses 'core any', which requires ptpn allocate",
              "use `ptpn allocate` to expand the core domain before analysis", "hint");
+    }
+  }
+
+  if (set_span.valid()) {
+    // A multi-core set is an allocation domain: lowering pins the task to the
+    // smallest id and records the set, and `allocate` explores it. Analysing it
+    // as one core is a trap, so `rtsl` warns (the lowered model may be
+    // overloaded for reasons the user did not intend) while `check` hints;
+    // `allocate` stays silent because it does explore the set.
+    const std::string message = "task '" + task.id + "' uses the core set '" + set_text +
+                                "'; analysis pins it to core " + std::to_string(set_min) +
+                                " instead of exploring the set";
+    const std::string fix =
+        "use `ptpn allocate` to explore the set, or pin the task to one core";
+    if (options_.mode == ValidationOptions::Mode::Rtsl) {
+      report(diagnostics_, "E-VAL-218", subject, set_span, message, fix, "warning");
+    } else if (options_.mode == ValidationOptions::Mode::Check) {
+      report(diagnostics_, "E-VAL-218", subject, set_span, message, fix, "hint");
     }
   }
 }

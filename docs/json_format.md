@@ -92,9 +92,11 @@ lock-hold, and exit places) use **saturating** capacity semantics:
   See the policy list below.
 
 Resource places are **not** saturating: core places (capacity =
-`cores_per_cpu`), lock places (capacity 1), and the periodic control place
-`{task}_period` keep the strict blocking semantics, since dropping a resource
-token would be unsound.
+`cores_per_cpu`) and lock places (capacity 1) keep the strict blocking
+semantics, since dropping a resource token would be unsound. The periodic
+control place `{task}_period` is created saturating as well, but its `_fire`
+self-loop consumes and re-produces exactly one token, so it never over-fills
+and the flag has no observable effect.
 
 Note: the saturation flag is an analysis-time semantic; the model field only
 carries the plain capacity value.
@@ -188,8 +190,8 @@ Analysis coverage in this phase:
   dependency edges, `task_place_capacity == 1`, at most one start token per
   task, and every task either periodic with a positive period released by
   `_fire` or a one-shot task started at time 0; every task needs a positive
-  absolute deadline. The state class adds a release clock per in-flight job and
-  per-core absolute-deadline order constraints to the DBM zone, enumerating
+  relative deadline. The state class adds a release clock per in-flight job and
+  per-core deadline-order constraints to the DBM zone, enumerating
   every feasible earliest-deadline task on each core (ties included) and taking
   the Cartesian product across cores. A periodic release that fires while the
   previous job is mid-chain is rejected with `std::invalid_argument` (no queued
@@ -232,7 +234,7 @@ Analysis coverage in this phase:
   `nodes[].core`, no locks, no fork/join, no task-to-task dependency edges,
   `task_place_capacity == 1`, at most one start token per task, and every task
   either periodic with a positive period released by `_fire` or a one-shot task
-  started at time 0; every task needs a positive absolute deadline or period.
+  started at time 0; every task needs a positive relative deadline or period.
   Execution segments must be deterministic (`earliest == latest`,
   non-negative), and `TaskInfo::wcet` must equal their sum. The state class adds
   a laxity clock per in-flight job,
@@ -273,7 +275,7 @@ Supported node types:
 | `type`          | string           | yes      | Node type                                                                   |
 | `priority`      | integer          | no       | Task priority, default `100`; ignored by `rm`/`dm`, which compute priorities |
 | `core`          | integer          | no       | Assigned core id, starting from `0`; default `0`                            |
-| `deadline`      | integer          | no       | Absolute deadline in the `time` unit; `0`/absent means implicit (= period). DM uses it as its priority key when `> 0`; EDF requires a positive absolute deadline per task (explicit or implicit). |
+| `deadline`      | integer          | no       | Relative deadline in the `time` unit, measured from each job's release (a response-time budget); `0`/absent means implicit (= period). DM uses it as its priority key when `> 0`; EDF requires a positive deadline per task (explicit or implicit). |
 | `allowed_cores` | array of integers | no       | Core-allocation domain; see below. Absent means the task is fixed to `core` |
 | `wcet_kind`     | string           | no       | WCET provenance class, default `model`; see below                           |
 | `wcet_method`   | string           | no       | Free-form provenance, e.g. `OTAWA`, `MBPTA`, `llm-estimate`                 |

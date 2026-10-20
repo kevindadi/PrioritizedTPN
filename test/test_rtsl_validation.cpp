@@ -418,6 +418,48 @@ TEST(RtslValidation, CheckModeHintsDoNotAffectTheExitCode) {
   EXPECT_EQ(diagnostics.exit_code(), 0);
 }
 
+TEST(RtslValidation, CoreSetIsHintedInCheckAndWarnedInRtsl) {
+  const std::string source =
+      rtsl_test::system_block("  task a: normal { core {2, 0} time [1, 2] estimated }");
+
+  // `check` hints: the set is a valid allocation domain for `ptpn allocate`.
+  {
+    ptpn::Diagnostics diagnostics;
+    dsl::SourceMap source_map;
+    rtsl_test::check_source(source, diagnostics, source_map);
+    const auto matches = rtsl_test::diagnostics_with_code(diagnostics, "E-VAL-218");
+    ASSERT_EQ(matches.size(), 1U);
+    EXPECT_EQ(matches[0]->severity, "hint");
+    EXPECT_NE(matches[0]->message.find("{0, 2}"), std::string::npos);
+    EXPECT_NE(matches[0]->message.find("core 0"), std::string::npos);
+    EXPECT_EQ(diagnostics.exit_code(), 0);
+  }
+
+  // `rtsl` warns (analysis would silently pin the task to core 0); the model
+  // still lowers, so the exit code stays 0 without other errors.
+  {
+    ptpn::Diagnostics diagnostics;
+    dsl::SourceMap source_map;
+    dsl::ValidationOptions options;
+    options.mode = dsl::ValidationOptions::Mode::Rtsl;
+    rtsl_test::check_source(source, diagnostics, source_map, options);
+    const auto matches = rtsl_test::diagnostics_with_code(diagnostics, "E-VAL-218");
+    ASSERT_EQ(matches.size(), 1U);
+    EXPECT_EQ(matches[0]->severity, "warning");
+    EXPECT_EQ(diagnostics.exit_code(), 0);
+  }
+
+  // A single-element set is exactly `core N`; no diagnostic.
+  {
+    const std::string single =
+        rtsl_test::system_block("  task a: normal { core {1} time [1, 2] estimated }");
+    ptpn::Diagnostics diagnostics;
+    dsl::SourceMap source_map;
+    rtsl_test::check_source(single, diagnostics, source_map);
+    EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-218"), 0U);
+  }
+}
+
 TEST(RtslValidation, MeasuredMissingIntervalsAreAcceptedByCheck) {
   const std::string source =
       rtsl_test::system_block("  task a: normal { time measured by llm { runs 20 } }");

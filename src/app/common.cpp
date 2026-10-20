@@ -17,7 +17,10 @@
 
 namespace app {
 
-size_t get_memory_usage() {
+// Peak resident set size in megabytes. Linux reports ru_maxrss in kilobytes,
+// macOS/Windows in bytes; all branches normalize to MB, so callers must label
+// the value as MB.
+size_t get_memory_usage_mb() {
 #if defined(_WIN32)
   PROCESS_MEMORY_COUNTERS pmc;
   if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {

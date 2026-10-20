@@ -233,7 +233,8 @@ Tasks may declare an allocation domain:
 ```
 
 Valid core ids are `0 .. num_cpus-1` (`cores_per_cpu` is a capacity parameter,
-not an extra range of core ids). `deadline` is an absolute deadline; `0` or
+not an extra range of core ids). `deadline` is a relative deadline measured from
+each job's release (a response-time budget); `0` or
 absent means the implicit deadline (the period).
 
 `ptpn allocate` copies the TDG for each candidate assignment, writes the chosen
