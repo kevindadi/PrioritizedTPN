@@ -497,7 +497,10 @@ TEST(RtslValidation, ScheduleHintsAreNonBlocking) {
   EXPECT_EQ(diagnostics.exit_code(), 0);
 }
 
-TEST(RtslValidation, SeparateEdgeStatementsAreHintedAsAlternatives) {
+TEST(RtslValidation, SeparateEdgeStatementsAreRejected) {
+  // Two statements sharing a source or target used to lower to the
+  // token-consuming alternative semantics silently; that is now an error, so
+  // every fork/join/choice is explicit.
   const std::string source = rtsl_test::system_block(
       "  task a: normal { core 0 time [1, 1] estimated }\n"
       "  task b: normal { core 0 time [1, 1] estimated }\n"
@@ -510,31 +513,63 @@ TEST(RtslValidation, SeparateEdgeStatementsAreHintedAsAlternatives) {
   dsl::SourceMap source_map;
   rtsl_test::check_source(source, diagnostics, source_map);
 
-  const auto hints = rtsl_test::diagnostics_with_code(diagnostics, "E-VAL-225");
-  ASSERT_EQ(hints.size(), 2U);
-  for (const ptpn::Diagnostic* hint : hints) {
-    EXPECT_EQ(hint->severity, "hint");
-    EXPECT_NE(hint->message.find("whichever"), std::string::npos);
+  const auto errors = rtsl_test::diagnostics_with_code(diagnostics, "E-VAL-225");
+  ASSERT_EQ(errors.size(), 2U);
+  for (const ptpn::Diagnostic* error : errors) {
+    EXPECT_EQ(error->severity, "error");
+    EXPECT_NE(error->message.find("separate"), std::string::npos);
+    ASSERT_TRUE(error->fix.has_value());
+    EXPECT_NE(error->fix->find("|"), std::string::npos);
   }
   const std::set<std::string> subjects = subjects_for(diagnostics, "E-VAL-225");
   EXPECT_TRUE(subjects.count("task:a") == 1U);  // two outgoing statements
   EXPECT_TRUE(subjects.count("task:c") == 1U);  // two incoming statements
-  EXPECT_EQ(diagnostics.exit_code(), 0);
-}
+  EXPECT_EQ(diagnostics.exit_code(), 3);
 
-TEST(RtslValidation, ExplicitForkAndJoinStatementsStaySilent) {
-  const std::string source = rtsl_test::system_block(
+  // The same endpoints written as one explicit alternative statement are fine.
+  const std::string explicit_form = rtsl_test::system_block(
+      "  task a: normal { core 0 time [1, 1] estimated }\n"
+      "  task b: normal { core 0 time [1, 1] estimated }\n"
+      "  task c: normal { core 0 time [1, 1] estimated }\n"
+      "  task d: normal { core 0 time [1, 1] estimated }\n"
+      "  start a\n"
+      "  a -> b | c\n"
+      "  b | c -> d");
+  ptpn::Diagnostics explicit_diagnostics;
+  dsl::SourceMap explicit_map;
+  const dsl::ast::Program program =
+      rtsl_test::check_source(explicit_form, explicit_diagnostics, explicit_map);
+  EXPECT_EQ(rtsl_test::count_code(explicit_diagnostics, "E-VAL-225"), 0U);
+  EXPECT_EQ(explicit_diagnostics.exit_code(), 0);
+  ASSERT_EQ(program.edges.size(), 2U);
+  EXPECT_TRUE(program.edges[0].alternative);
+  EXPECT_TRUE(program.edges[1].alternative);
+  EXPECT_EQ(program.edges[0].target_names(), (std::vector<std::string>{"b", "c"}));
+  EXPECT_EQ(program.edges[1].source_names(), (std::vector<std::string>{"b", "c"}));
+
+  // The braced AND form stays silent too, and mixing the two is a syntax error.
+  const std::string and_form = rtsl_test::system_block(
       "  task a: normal { core 0 time [1, 1] estimated }\n"
       "  task b: normal { core 0 time [1, 1] estimated }\n"
       "  task c: normal { core 0 time [1, 1] estimated }\n"
       "  start a\n"
       "  a -> {b, c}\n"
       "  {b, c} -> c");
-  ptpn::Diagnostics diagnostics;
-  dsl::SourceMap source_map;
-  rtsl_test::check_source(source, diagnostics, source_map);
+  ptpn::Diagnostics and_diagnostics;
+  dsl::SourceMap and_map;
+  rtsl_test::check_source(and_form, and_diagnostics, and_map);
+  EXPECT_EQ(rtsl_test::count_code(and_diagnostics, "E-VAL-225"), 0U);
 
-  EXPECT_EQ(rtsl_test::count_code(diagnostics, "E-VAL-225"), 0U);
+  const std::string mixed = rtsl_test::system_block(
+      "  task a: normal { core 0 time [1, 1] estimated }\n"
+      "  task b: normal { core 0 time [1, 1] estimated }\n"
+      "  task c: normal { core 0 time [1, 1] estimated }\n"
+      "  start a\n"
+      "  a -> {b} | c");
+  ptpn::Diagnostics mixed_diagnostics;
+  dsl::SourceMap mixed_map;
+  rtsl_test::check_source(mixed, mixed_diagnostics, mixed_map);
+  EXPECT_EQ(rtsl_test::count_code(mixed_diagnostics, "E-SYN-102"), 1U);
 }
 
 TEST(RtslValidation, MeasuredMissingIntervalsAreAcceptedByCheck) {
@@ -609,12 +644,13 @@ TEST(RtslValidation, SourceMapBindsEverySubjectFamily) {
   dsl::SourceMap source_map;
   rtsl_test::check_source(source, diagnostics, source_map);
   // The model deliberately declares two outgoing edge statements from `a` and
-  // two incoming into `b` (to bind both the edge and the join subject); those
-  // produce non-blocking E-VAL-225 hints.
-  EXPECT_EQ(diagnostics.exit_code(), 0);
+  // two incoming into `b` (to bind both the edge and the join subject); that
+  // shared-endpoint form is now E-VAL-225, and the source map must still be
+  // fully populated for an invalid model.
+  EXPECT_EQ(diagnostics.exit_code(), 3);
   for (const ptpn::Diagnostic& diagnostic : diagnostics.entries()) {
     EXPECT_EQ(diagnostic.code, "E-VAL-225");
-    EXPECT_EQ(diagnostic.severity, "hint");
+    EXPECT_EQ(diagnostic.severity, "error");
   }
 
   const std::vector<std::string> keys = {

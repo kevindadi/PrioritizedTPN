@@ -30,6 +30,7 @@ enum class TokenKind {
   Colon,
   Semicolon,
   Arrow,
+  Pipe,
   KwSystem,
   KwCpus,
   KwCoresPerCpu,

@@ -803,7 +803,9 @@ void Parser::parse_binding(ast::Program& program, ast::BindingKind kind) {
 void Parser::parse_edge(ast::Program& program) {
   const Token& first = peek();
   ast::EdgeDecl edge;
-  if (!parse_edge_endpoint(edge.sources, edge.source_braced, "source")) {
+  bool source_alternative = false;
+  bool target_alternative = false;
+  if (!parse_edge_endpoint(edge.sources, edge.source_braced, source_alternative, "source")) {
     synchronize_top();
     return;
   }
@@ -813,10 +815,11 @@ void Parser::parse_edge(ast::Program& program) {
     return;
   }
   edge.arrow_span = span_of(tokens_[position_ - 1]);
-  if (!parse_edge_endpoint(edge.targets, edge.target_braced, "target")) {
+  if (!parse_edge_endpoint(edge.targets, edge.target_braced, target_alternative, "target")) {
     synchronize_top();
     return;
   }
+  edge.alternative = source_alternative || target_alternative;
   edge.span = span_from(first);
 
   const std::vector<std::string> source_names = edge.source_names();
@@ -834,18 +837,30 @@ void Parser::parse_edge(ast::Program& program) {
 }
 
 bool Parser::parse_edge_endpoint(std::vector<ast::IdentRef>& references, bool& braced,
-                                 const char* side) {
+                                 bool& alternative, const char* side) {
   references.clear();
   braced = false;
+  alternative = false;
 
   if (!check(TokenKind::LBrace)) {
-    if (check(TokenKind::Identifier)) {
-      const Token& identifier = advance();
-      references.push_back(ast::IdentRef{identifier.text, span_of(identifier)});
-      return true;
+    if (!check(TokenKind::Identifier)) {
+      error_unexpected(peek(), "an identifier or '{' for the edge " + std::string(side));
+      return false;
     }
-    error_unexpected(peek(), "an identifier or '{' for the edge " + std::string(side));
-    return false;
+    const Token& identifier = advance();
+    references.push_back(ast::IdentRef{identifier.text, span_of(identifier)});
+    // `a | b | c`: the token-consuming alternative form. The braced list is the
+    // AND form and may not be mixed with '|'.
+    while (match(TokenKind::Pipe)) {
+      alternative = true;
+      if (!check(TokenKind::Identifier)) {
+        error_unexpected(peek(), "an identifier after '|' in the edge " + std::string(side));
+        return false;
+      }
+      const Token& next = advance();
+      references.push_back(ast::IdentRef{next.text, span_of(next)});
+    }
+    return true;
   }
 
   braced = true;
@@ -870,6 +885,11 @@ bool Parser::parse_edge_endpoint(std::vector<ast::IdentRef>& references, bool& b
 
   if (!match(TokenKind::RBrace)) {
     error_unexpected(peek(), "',' or '}' in the edge " + std::string(side) + " set");
+    return false;
+  }
+  if (check(TokenKind::Pipe)) {
+    error_unexpected(peek(),
+                     "'->' (the '{ }' list is the AND form and cannot be mixed with '|')");
     return false;
   }
   return true;

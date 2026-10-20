@@ -59,7 +59,8 @@ class Parser {
   bool parse_measured_block(ast::MeasureBlock& block);
   void parse_binding(ast::Program& program, ast::BindingKind kind);
   void parse_edge(ast::Program& program);
-  bool parse_edge_endpoint(std::vector<ast::IdentRef>& references, bool& braced, const char* side);
+  bool parse_edge_endpoint(std::vector<ast::IdentRef>& references, bool& braced,
+                           bool& alternative, const char* side);
 
   std::vector<Token> tokens_;
   std::string file_;

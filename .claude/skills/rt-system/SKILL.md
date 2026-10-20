@@ -33,7 +33,9 @@ Reference docs (use these instead of guessing syntax or codes):
    `example/introduction/demo.rtsl`. The base unit is milliseconds; `us` is
    rejected (`E-UNS-004`). Periodic tasks need `period`; `sporadic` is
    rejected by validation (`E-UNS-003`). A locked task needs
-   `2*lock_count+1` execution intervals.
+   `2*lock_count+1` execution intervals. Edges are unambiguous: `a -> {b, c}`
+   is an AND fork, `{a, b} -> c` an AND join, `a -> b | c` the token-consuming
+   choice; separate statements with a shared endpoint are `E-VAL-225`.
 3. **Check loop.** Run `build/ptpn check -f model.rtsl --diagnostics json`
    (omit `--diagnostics` for human-readable stderr while iterating). Fix every
    **error-severity** `E-SYN`/`E-VAL` diagnostic and rerun until exit 0.
@@ -100,7 +102,7 @@ envelope `result` — not on the code prefix alone. The complete table is
 | Signal | Action |
 |---|---|
 | `E-SYN-1xx` | Syntax/lexing error. Rewrite the reported line using the expected tokens; check units (`ms`, `s`) and string escapes. `E-SYN-002` is an unreadable input file, not grammar. |
-| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-226` comes from `fill`: the values do not match the model (unknown task, wrong interval count, or already filled - pass `--overwrite`). `E-VAL-015` means a locked task's segment count is wrong. `E-VAL-218` means `core any` (hint in `check`, error in `rtsl`) or a multi-element core set (hint in `check`, warning in `rtsl`, which pins the task to the smallest id): use `ptpn allocate` or an explicit single core. Non-blocking schedule hints: `E-VAL-222` (deadline > period), `E-VAL-223` (same core and priority), `E-VAL-224` (single-core utilisation > 1), `E-VAL-225` (several separate edge statements sharing a source or target: the targets are alternatives / the target is released by whichever source completes first). |
+| `E-VAL-2xx` | Model semantics. Fix the named task/attribute/edge. `E-VAL-213` from `rtsl`/`allocate` means measured timing is missing - fill the pending `time` attributes first. `E-VAL-226` comes from `fill`: the values do not match the model (unknown task, wrong interval count, or already filled - pass `--overwrite`). `E-VAL-015` means a locked task's segment count is wrong. `E-VAL-218` means `core any` (hint in `check`, error in `rtsl`) or a multi-element core set (hint in `check`, warning in `rtsl`, which pins the task to the smallest id): use `ptpn allocate` or an explicit single core. Non-blocking schedule hints: `E-VAL-222` (deadline > period), `E-VAL-223` (same core and priority), `E-VAL-224` (single-core utilisation > 1), `E-VAL-225` is an **error**: two separate edge statements share a source or target - write `a -> {b, c}` for an AND fork/join, or `a -> b | c` for the token-consuming choice. |
 | `E-UNS-001` | Supported-class guard from lowering **or analysis** (not emitted by `check`). EDF/FIFO/LLF require a static partition, `cores_per_cpu 1`, one in-flight job per task, no locks, no fork/join, and no dependency-driven releases; PIP/PCP/SRP require `task_place_capacity 1`. Analysis also rejects job-clock overlapping releases (period shorter than execution) and job-clock + extrapolation/symmetry. Subjects are `task:`, `node:`, `edge:`, `policy:`, `option:extrapolation`, or `option:symmetry`. Simplify the model or change the policy/option. |
 | `E-UNS-003` | Sporadic arrivals are not implemented and stay rejected. With the user's explicit agreement, you may model a **periodic reference scenario** with an explicit period such as `period 10ms`. That changes the model and does not certify the original sporadic system; never auto-change the task kind, delete `mit`, or rewrite the period to clear the diagnostic. |
 | `E-UNS-004` | Sub-millisecond (`us`) timing is unsupported. Use `ms` and adjust precision. |

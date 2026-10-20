@@ -316,13 +316,16 @@ sensor -> {fusion, logger}     // fork: sensor releases fusion and logger
   completes; lowering inserts a zero-time bridge transition. Self-loops are
   accepted but are annotations, not dependency releases. RTSL has no dashed
   edges or edge labels.
-- Several **separate** statements that share a source or target use the
-  token-consuming semantics: `a -> b` plus `a -> c` makes `b` and `c`
-  alternatives (the exit token is consumed by whichever bridge fires first),
-  and `a -> c` plus `b -> c` releases `c` when whichever source completes first
-  (once per completion). Use one statement (`a -> {b, c}` / `{a, b} -> c`) when
-  you mean an AND fork/join; `ptpn check`/`rtsl` hint this with `E-VAL-225` and
-  `ptpn describe` restates the effective semantics.
+- `A -> B | C` / `A | B -> C` is the **token-consuming alternative**: only one
+  of the targets is released per completion (the source's exit token is
+  consumed by whichever bridge fires first), and a target with several sources
+  is released by whichever source completes first, once per completion. `|`
+  and `{ }` may not be mixed in one endpoint; `ptpn describe` restates the
+  choice explicitly.
+- Two **separate** statements that share a source or target are rejected with
+  `E-VAL-225`: `a -> b` plus `a -> c` would silently mean the alternative
+  above. Write one `a -> {b, c}` for an AND fork, or `a -> b | c` to state the
+  choice on purpose. This keeps every edge statement unambiguous.
 - `A -> {B, C}` creates an implicit fork node
   `__fork_<A>__<B>__<C>` (targets sorted). The fork is a zero-time control
   transition on the control core; each target gets its own token.
@@ -330,7 +333,9 @@ sensor -> {fusion, logger}     // fork: sensor releases fusion and logger
   `__join_<A>__<B>__<C>` (sources sorted); the join fires only after all
   sources complete, then releases the target.
 - Multi-source **and** multi-target edges (`{A,B} -> {C,D}`) are rejected with
-  `E-VAL-216`; split them through an explicit task.
+  `E-VAL-216`; split them through an explicit task. The `|` form is allowed on
+  both sides (`a | b -> c | d`) because it is per-pair token consumption, not
+  an aggregate.
 - Edge endpoints and bindings must name declared tasks (`E-VAL-204`).
 - Periodic tasks are released by their `_fire` transition; a dependency edge
   into a periodic task adds a release condition. EDF/FIFO/LLF reject

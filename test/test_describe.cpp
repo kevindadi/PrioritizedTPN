@@ -72,20 +72,21 @@ TEST(DescribeTest, ReportsEffectiveSemantics) {
   EXPECT_NE(text.find("E-VAL-223"), std::string::npos);  // b and c share core 1 + priority 100
 }
 
-TEST(DescribeTest, SeparateEdgeStatementsAreDescribedAsAlternatives) {
+TEST(DescribeTest, AlternativeEdgeStatementsAreDescribedAsChoices) {
   const std::string source = rtsl_test::system_block(
       "  task a: normal { core 0 time [1, 1] estimated }\n"
       "  task b: normal { core 0 time [1, 1] estimated }\n"
       "  task c: normal { core 0 time [1, 1] estimated }\n"
       "  start a\n"
-      "  a -> b\n"
-      "  a -> c\n"
-      "  b -> c");
+      "  a -> b | c\n"
+      "  b | c -> b");
   const std::string text = describe(source);
   ASSERT_FALSE(text.empty());
-  EXPECT_NE(text.find("separate outgoing edge statements"), std::string::npos);
-  EXPECT_NE(text.find("separate incoming edge statements"), std::string::npos);
-  EXPECT_NE(text.find("E-VAL-225"), std::string::npos);
+  EXPECT_NE(text.find("choice: a -> b | c"), std::string::npos);
+  EXPECT_NE(text.find("only one target is released per completion"), std::string::npos);
+  EXPECT_NE(text.find("choice: b | c -> b"), std::string::npos);
+  EXPECT_NE(text.find("released by whichever source completes first"), std::string::npos);
+  EXPECT_EQ(text.find("E-VAL-225"), std::string::npos);
 }
 
 TEST(DescribeTest, ExplicitForkAndJoinStaySilent) {
@@ -100,8 +101,7 @@ TEST(DescribeTest, ExplicitForkAndJoinStaySilent) {
   ASSERT_FALSE(text.empty());
   EXPECT_NE(text.find("AND fork (__fork_a__b__c)"), std::string::npos);
   EXPECT_NE(text.find("AND join (__join_b__c__c)"), std::string::npos);
-  EXPECT_EQ(text.find("separate outgoing edge statements"), std::string::npos);
-  EXPECT_EQ(text.find("separate incoming edge statements"), std::string::npos);
+  EXPECT_EQ(text.find("choice:"), std::string::npos);
 }
 
 TEST(DescribeCliTest, CommandPrintsAndEmbedsTheDescription) {

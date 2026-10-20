@@ -109,6 +109,7 @@ struct EdgeStatement {
   std::vector<std::string> targets;
   bool fork = false;
   bool join = false;
+  bool alternative = false;
 };
 
 std::vector<EdgeStatement> edge_statements(const dsl::ast::Program& program) {
@@ -117,8 +118,11 @@ std::vector<EdgeStatement> edge_statements(const dsl::ast::Program& program) {
     EdgeStatement statement;
     statement.sources = edge.source_names();
     statement.targets = edge.target_names();
-    statement.fork = statement.sources.size() == 1 && statement.targets.size() >= 2;
-    statement.join = statement.targets.size() == 1 && statement.sources.size() >= 2;
+    statement.alternative = edge.alternative;
+    statement.fork = !edge.alternative && statement.sources.size() == 1 &&
+                     statement.targets.size() >= 2;
+    statement.join = !edge.alternative && statement.targets.size() == 1 &&
+                     statement.sources.size() >= 2;
     if (!statement.sources.empty() && !statement.targets.empty()) {
       statements.push_back(std::move(statement));
     }
@@ -294,33 +298,24 @@ std::string build_model_description(const tdg::TDG& tdg, const dsl::ast::Program
     out << line << "\n";
   }
   if (program != nullptr) {
-    // Separate statements that share a source or target are the token-consuming
-    // (alternative / OR) form, not an AND fork/join. The plain edges themselves
-    // are already listed above from the lowered TDG.
-    std::map<std::string, int> outgoing;
-    std::map<std::string, int> incoming;
+    // The token-consuming alternative form (`a -> b | c` / `a | b -> c`) is
+    // spelled out: only one of the targets is released per completion, and the
+    // target is released by whichever source completes first. The plain edges
+    // themselves are already listed above from the lowered TDG.
     for (const EdgeStatement& statement : edge_statements(*program)) {
-      if (statement.sources.size() == 1 && statement.targets.size() == 1) {
-        ++outgoing[statement.sources.front()];
-        ++incoming[statement.targets.front()];
+      if (!statement.alternative) {
+        continue;
       }
-    }
-    for (const auto& [source, count] : outgoing) {
-      if (count > 1) {
-        out << "  note: " << source << " has " << count
-            << " separate outgoing edge statements: its exit token is consumed by whichever "
-               "bridge fires first, so the targets are alternatives (only one is released). "
-               "Use one '"
-            << source << " -> {t1, t2}' statement for an AND fork.\n";
-      }
-    }
-    for (const auto& [target, count] : incoming) {
-      if (count > 1) {
-        out << "  note: " << target << " has " << count
-            << " separate incoming edge statements: it is released by whichever source "
-               "completes first and can run once per completion. Use one '{s1, s2} -> "
-            << target << "}' statement for an AND join.\n";
-      }
+      out << "  choice: " << join(statement.sources, " | ") << " -> "
+          << join(statement.targets, " | ")
+          << ": the token-consuming alternative, not an AND fork/join: "
+          << (statement.sources.size() > 1 && statement.targets.size() > 1
+                  ? "each source's exit token is consumed by whichever target bridge fires "
+                    "first, and each target is released by whichever source completes first"
+                  : statement.targets.size() > 1
+                        ? "only one target is released per completion"
+                        : "the target is released by whichever source completes first")
+          << "\n";
     }
   }
 

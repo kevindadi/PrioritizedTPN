@@ -51,6 +51,15 @@ def split_category(text: str) -> tuple[str, str]:
     return "", text
 
 
+CELL_SPLIT = re.compile(r"(?<!\\)\|")
+
+
+def split_cells(line: str) -> list[str]:
+    """Splits a Markdown table row, honouring `\\|` escapes inside cells."""
+    cells = CELL_SPLIT.split(line.strip().strip("|"))
+    return [cell.replace("\\|", "|").strip() for cell in cells]
+
+
 def escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -78,7 +87,7 @@ def main() -> int:
 
         index += 2  # skip the header and the separator row
         while index < len(lines) and lines[index].startswith("|"):
-            cells = [cell.strip() for cell in lines[index].strip("|").split("|")]
+            cells = split_cells(lines[index])
             match = CODE_RE.match(cells[0]) if cells else None
             if match:
                 # The row shape decides the columns: six cells carry an extra

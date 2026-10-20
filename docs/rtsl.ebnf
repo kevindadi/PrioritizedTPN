@@ -60,11 +60,13 @@ provenance        = "estimated" , [ "by" , string ]
 measure_item      = "runs" , integer | "timeout" , integer | "artifact" , string ;
 
 (* One statement is one dependency edge. `a -> {b, c}` is an AND fork and
-   `{a, b} -> c` is an AND join; two separate statements that share a source or
-   target use the token-consuming alternative/OR semantics (E-VAL-225 hints
-   this). Both sides braced is E-VAL-216. *)
+   `{a, b} -> c` is an AND join; `a -> b | c` / `a | b -> c` is the
+   token-consuming alternative (only one target is released per completion).
+   Braced lists and `|` may not be mixed in one endpoint; both sides braced is
+   E-VAL-216; separate statements that share a source or target are E-VAL-225. *)
 edge_stmt         = endpoint , "->" , endpoint ;
-endpoint          = identifier | "{" , identifier , { "," , identifier } , "}" ;
+endpoint          = identifier , { "|" , identifier }
+                  | "{" , identifier , { "," , identifier } , "}" ;
 
 time_value        = integer , [ "ms" | "s" ] ;   (* bare integers use the system time_unit *)
 integer           = digit , { digit } ;          (* non-negative; -1 is E-SYN-101 *)

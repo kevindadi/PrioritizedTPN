@@ -98,6 +98,8 @@ const char* token_kind_name(TokenKind kind) {
       return "';'";
     case TokenKind::Arrow:
       return "'->'";
+    case TokenKind::Pipe:
+      return "'|'";
     case TokenKind::KwSystem:
       return "'system'";
     case TokenKind::KwCpus:
@@ -420,6 +422,10 @@ std::vector<Token> Lexer::tokenize() {
         case ']':
           advance_char();
           token = make_token(TokenKind::RBracket, start_offset, start_line, start_column);
+          break;
+        case '|':
+          advance_char();
+          token = make_token(TokenKind::Pipe, start_offset, start_line, start_column);
           break;
         case ',':
           advance_char();

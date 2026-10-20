@@ -664,13 +664,14 @@ void Validator::validate_edges() {
     }
   }
 
-  // Several separate dependency statements with a shared source or target use
-  // the token-consuming bridge semantics: the source's exit token is consumed
-  // by whichever statement fires first (a choice), and a target with several
-  // incoming statements is released by whichever source completes first (an OR
-  // join, possibly one activation per completion). That is a common modelling
-  // trap, so spell it out. One `a -> {b, c}` / `{a, b} -> c` statement is an
-  // explicit AND fork/join and stays silent.
+  // Several separate dependency statements with a shared source or target used
+  // to lower to the token-consuming bridge semantics by accident: the source's
+  // exit token is consumed by whichever bridge fires first (a choice), and a
+  // target with several incoming statements is released by whichever source
+  // completes first (an OR join). The meaning is easy to miss, so it is now an
+  // error: an explicit `a -> {b, c}` / `{a, b} -> c` statement is an AND
+  // fork/join, and an explicit `a -> b | c` / `a | b -> c` statement states the
+  // token-consuming alternative on purpose.
   std::map<std::string, std::vector<const ast::EdgeDecl*>> outgoing_statements;
   std::map<std::string, std::vector<const ast::EdgeDecl*>> incoming_statements;
   for (const ast::EdgeDecl& edge : program_.edges) {
@@ -692,27 +693,40 @@ void Validator::validate_edges() {
       }
     }
   }
+  // Two statements with the same endpoint sets are a duplicate (E-VAL-203),
+  // not an accidental choice: report E-VAL-225 only when the statements
+  // actually differ.
+  const auto statements_differ = [](const std::vector<const ast::EdgeDecl*>& statements) {
+    const auto& first = statements.front();
+    for (const ast::EdgeDecl* statement : statements) {
+      if (statement->source_names() != first->source_names() ||
+          statement->target_names() != first->target_names()) {
+        return true;
+      }
+    }
+    return false;
+  };
   for (const auto& [source, statements] : outgoing_statements) {
-    if (statements.size() < 2) {
+    if (statements.size() < 2 || !statements_differ(statements)) {
       continue;
     }
     report(diagnostics_, "E-VAL-225", "task:" + source, statements.front()->span,
            "task '" + source + "' has " + std::to_string(statements.size()) +
-               " separate outgoing edge statements; its exit token is consumed by whichever "
+               " separate outgoing edge statements; the exit token would be consumed by whichever "
                "bridge fires first, so the targets are alternatives and only one is released",
-           "merge them into one 'task -> {t1, t2}' edge to release every target",
-           "hint");
+           "write one '" + source + " -> {t1, t2}' statement for an AND fork, or '" + source +
+               " -> t1 | t2' to state the token-consuming choice on purpose");
   }
   for (const auto& [target, statements] : incoming_statements) {
-    if (statements.size() < 2) {
+    if (statements.size() < 2 || !statements_differ(statements)) {
       continue;
     }
     report(diagnostics_, "E-VAL-225", "task:" + target, statements.front()->span,
            "task '" + target + "' has " + std::to_string(statements.size()) +
-               " separate incoming edge statements; it is released by whichever source completes "
-               "first and can run once per completion",
-           "merge them into one '{s1, s2} -> task' edge to wait for every source",
-           "hint");
+               " separate incoming edge statements; it would be released by whichever source "
+               "completes first and can run once per completion",
+           "write one '{s1, s2} -> " + target + "}' statement for an AND join, or 's1 | s2 -> " +
+               target + "' to state the token-consuming choice on purpose");
   }
 }
 

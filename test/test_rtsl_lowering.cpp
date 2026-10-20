@@ -454,3 +454,43 @@ TEST(RtslLowering, GoldenJsonAndDotAreByteStable) {
   EXPECT_EQ(tdg::to_dot_string(*lowered), read_text("test/golden/rtsl/appendix.tdg.dot"))
       << "regenerate test/golden/rtsl/appendix.tdg.dot if the change is intentional";
 }
+
+TEST(RtslLowering, AlternativeEdgesLowerToTokenConsumingWires) {
+  // `a -> b | c` is the explicit token-consuming alternative: it lowers to one
+  // plain wire per pair (no implicit fork node), which is what two separate
+  // statements used to produce before they became E-VAL-225.
+  const std::string source = rtsl_test::system_block(
+      "  task a: normal { core 0 time [1, 1] estimated }\n"
+      "  task b: normal { core 0 time [1, 1] estimated }\n"
+      "  task c: normal { core 0 time [1, 1] estimated }\n"
+      "  start a\n"
+      "  a -> b | c");
+  ptpn::Diagnostics diagnostics;
+  dsl::SourceMap source_map;
+  const std::optional<tdg::TDG> lowered =
+      lower_with_mode(source, diagnostics, source_map, ValidationOptions::Mode::Rtsl);
+  ASSERT_TRUE(lowered.has_value());
+  EXPECT_EQ(count_code(diagnostics, "E-VAL-225"), 0U);
+
+  std::set<std::pair<std::string, std::string>> wires;
+  for (const TdgEdge& edge : lowered->tdg_edges) {
+    wires.emplace(edge.source, edge.target);
+  }
+  EXPECT_EQ(wires, (std::set<std::pair<std::string, std::string>>{{"a", "b"}, {"a", "c"}}));
+  // No implicit fork node is created.
+  EXPECT_EQ(lowered->nodes_type.count("__fork_a__b__c"), 0U);
+
+  // The braced form is the AND fork: one wire per target through a fork node.
+  const std::string and_source = rtsl_test::system_block(
+      "  task a: normal { core 0 time [1, 1] estimated }\n"
+      "  task b: normal { core 0 time [1, 1] estimated }\n"
+      "  task c: normal { core 0 time [1, 1] estimated }\n"
+      "  start a\n"
+      "  a -> {b, c}");
+  ptpn::Diagnostics and_diagnostics;
+  dsl::SourceMap and_map;
+  const std::optional<tdg::TDG> and_lowered =
+      lower_with_mode(and_source, and_diagnostics, and_map, ValidationOptions::Mode::Rtsl);
+  ASSERT_TRUE(and_lowered.has_value());
+  EXPECT_EQ(and_lowered->nodes_type.count("__fork_a__b__c"), 1U);
+}

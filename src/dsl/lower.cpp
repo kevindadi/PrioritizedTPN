@@ -263,6 +263,20 @@ std::optional<tdg::TDG> lower(const ast::Program& program, SourceMap& source_map
       continue;
     }
 
+    if (edge.alternative) {
+      // `a -> b | c` / `a | b -> c`: the token-consuming alternative. It lowers
+      // to one plain wire per (source, target) pair, exactly like the separate
+      // statements it replaces: each bridge consumes the source's exit token,
+      // and a target with several incoming wires is released by whichever
+      // source completes first.
+      for (const std::string& source : sources) {
+        for (const std::string& target : targets) {
+          wires.emplace(source, target);
+        }
+      }
+      continue;
+    }
+
     if (sources.size() == 1 && targets.size() == 1) {
       wires.emplace(sources.front(), targets.front());
       continue;

@@ -47,8 +47,9 @@ what the source might look like:
 - release bindings, including the first periodic release at `P` and the extra
   `t=0` release a `start` binding adds;
 - dependency edges: explicit `a -> {b, c}` / `{a, b} -> c` statements are named
-  as AND forks/joins, while several separate statements that share a source or
-  target are called out as the token-consuming alternative/OR form;
+  as AND forks/joins, and `a -> b | c` / `a | b -> c` statements are named as
+  the token-consuming choice (separate statements with a shared endpoint are
+  `E-VAL-225`);
 - lock usage, and the non-blocking validation hints (`E-VAL-222..225`) that
   flag the common modelling traps.
 

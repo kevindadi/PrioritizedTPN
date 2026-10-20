@@ -145,6 +145,9 @@ struct EdgeDecl {
   std::vector<IdentRef> targets;
   bool source_braced = false;
   bool target_braced = false;
+  // `a -> b | c` / `a | b -> c`: the token-consuming alternative form, written
+  // with `|` instead of the braced AND fork/join lists.
+  bool alternative = false;
   Span span;        // whole edge declaration
   Span arrow_span;  // the "->" token
 
