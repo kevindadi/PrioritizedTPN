@@ -148,14 +148,13 @@ are compared only on libstdc++ builds.
 These are recorded for future work; this repository does not change analysis
 semantics to remove them:
 
-- `model/tdg.cpp` still implements TDG JSON *loading* and includes
-  `parse/json.h` (which includes `model/types.h`), so the include and link
-  dependency runs one way: `ptpn_tdg` privately depends on `ptpn_json`. There is
-  no cycle, but the responsibility is inverted: TDG JSON loading conceptually
-  belongs to the parse layer. The TDG/PTPN/SCG DOT, TDG JSON and WCET JSON
+- TDG JSON *loading* lives in the parse layer (`parse::load_tdg`,
+  `parse::load_tdg_from_file`, `parse::load_tdg_from_string` in
+  `src/parse/json.cpp`), so `model/` has no dependency on the parser and
+  `ptpn_tdg` is header-only. The TDG/PTPN/SCG DOT, TDG JSON and WCET JSON
   writers live in `src/export/`; metrics JSON stays with the metrics library so
   export does not depend on `ptpn_metrics` (the SCG writer still depends on
-  `ptpn_reachability`). Loading remains for a follow-up.
+  `ptpn_reachability`).
 - `analysis/allocation/` is grouped under `analysis/` but depends on
   `lower/tdg2pn/` to evaluate candidates. It is orchestration above the
   analysis core.

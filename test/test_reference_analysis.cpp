@@ -24,6 +24,7 @@
 #include "lower/tdg2pn/tdg2pn.h"
 #include "model/petri.h"
 #include "model/tdg.h"
+#include "parse/json.h"
 
 namespace {
 
@@ -71,7 +72,7 @@ std::string make_tdg_json(const std::vector<TaskSpec>& tasks) {
 
 state_class::MetricsReport analyze(const std::vector<TaskSpec>& tasks) {
   tdg::TDG tdg;
-  tdg.parse_json_string(make_tdg_json(tasks));
+  parse::load_tdg_from_string(make_tdg_json(tasks), tdg);
   petri::PTPN ptpn;
   converter::TDG2PN::transform(tdg, ptpn);
   state_class::StateClassReachabilityGraph graph(ptpn);

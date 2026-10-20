@@ -51,11 +51,6 @@ class TDG {
   // Per-task WCET provenance (trust class plus optional method/artifact).
   std::unordered_map<std::string, WcetProvenance> task_wcet_provenance;
   std::vector<TdgEdge> tdg_edges;
-
-  void parse_json(const std::string& json_file);
-  void parse_json_string(const std::string& json_content);
-  // Populates the TDG from an already-parsed JSON graph, avoiding a second read.
-  void load_from_parser(const parse::Parser& parser, bool log_nodes = false);
 };
 
 }  // namespace tdg

@@ -6,12 +6,13 @@
 #include "lower/tdg2pn/tdg2pn.h"
 #include "model/petri.h"
 #include "model/tdg.h"
+#include "parse/json.h"
 
 namespace {
 
 petri::PTPN lower(const std::string& json) {
   tdg::TDG tdg;
-  tdg.parse_json_string(json);
+  parse::load_tdg_from_string(json, tdg);
   petri::PTPN ptpn;
   converter::TDG2PN::transform(tdg, ptpn);
   return ptpn;

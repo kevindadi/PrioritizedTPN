@@ -9,12 +9,13 @@
 
 #include "analysis/allocation/allocation.h"
 #include "model/tdg.h"
+#include "parse/json.h"
 
 namespace {
 
 tdg::TDG parse_tdg(const std::string& json) {
   tdg::TDG graph;
-  graph.parse_json_string(json);
+  parse::load_tdg_from_string(json, graph);
   return graph;
 }
 

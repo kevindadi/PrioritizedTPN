@@ -17,7 +17,7 @@ inline tdg::TDG load_tdg(const std::string& path) {
     throw std::runtime_error("failed to parse " + path + ": " + result.error_message);
   }
   tdg::TDG tdg(parser.get_num_cpus(), parser.get_cores_per_cpu());
-  tdg.load_from_parser(parser);
+  parse::load_tdg(parser, tdg);
   return tdg;
 }
 

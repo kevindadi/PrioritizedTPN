@@ -15,6 +15,7 @@
 #include "dsl/source_map.h"
 #include "dsl/validate.h"
 #include "model/tdg.h"
+#include "parse/json.h"
 #include "export/tdg_dot.h"
 #include "export/tdg_json_writer.h"
 #include "test_rtsl_helpers.h"
@@ -432,7 +433,7 @@ TEST(RtslLowering, JsonExportIsDeterministicAndRoundTrips) {
   EXPECT_EQ(first_json, second_json);
 
   tdg::TDG round_tripped;
-  round_tripped.parse_json_string(first_json);
+  parse::load_tdg_from_string(first_json, round_tripped);
   EXPECT_EQ(exporting::tdg_to_json(round_tripped).dump(2) + "\n", first_json);
 }
 

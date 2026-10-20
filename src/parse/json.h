@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "common/diagnostics.h"
+#include "model/tdg.h"
 #include "model/types.h"
 
 namespace parse {
@@ -152,6 +153,14 @@ class Parser {
 
 // 时间区间计算
 int calculate_time_interval_count(int lock_count);
+
+// TDG loading lives in the parse layer so `model/` does not depend on it.
+// `load_tdg` fills an already-parsed graph without a second read; the
+// convenience overloads parse a file (logging failures) or a string (throwing
+// on failure, like the removed TDG::parse_json_string).
+void load_tdg(const Parser& parser, tdg::TDG& tdg, bool log_nodes = false);
+void load_tdg_from_file(const std::string& json_file, tdg::TDG& tdg);
+void load_tdg_from_string(const std::string& json_content, tdg::TDG& tdg);
 
 }  // namespace parse
 

@@ -184,21 +184,19 @@ add_library(ptpn_json STATIC
 target_link_libraries(ptpn_json
     PUBLIC
     ptpn_types
+    ptpn_tdg
     ptpn_diagnostics
     nlohmann_json::nlohmann_json
     PRIVATE
     spdlog::spdlog
 )
 
-add_library(ptpn_tdg STATIC
-    src/model/tdg.cpp
-)
+# Header-only: TDG JSON loading lives in the parse layer (ptpn_parser), so the
+# model layer has no dependency on it.
+add_library(ptpn_tdg INTERFACE)
 target_link_libraries(ptpn_tdg
-    PUBLIC
+    INTERFACE
     ptpn_types
-    PRIVATE
-    ptpn_json
-    spdlog::spdlog
 )
 
 add_library(ptpn_petri STATIC

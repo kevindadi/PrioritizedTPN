@@ -636,4 +636,116 @@ NodeType JsonNode::to_node_type() const {
   return EmptyTask{id};
 }
 
+
+namespace {
+
+// Registers a parsed node into the TDG lookup tables.
+void register_node(tdg::TDG& tdg, const NodeType& node_type, bool log_node) {
+  visit_node(node_type, [&](const auto& node) {
+    using Node = std::decay_t<decltype(node)>;
+
+    if constexpr (std::is_same_v<Node, TaskNode>) {
+      tdg.all_task.emplace_back(node_type);
+      tdg.tasks_priority.emplace(node.name, node.priority);
+      tdg.nodes_type.emplace(node.name, node_type);
+
+      for (const auto& lock : node.lock) {
+        tdg.lock_set.insert(lock);
+        tdg.task_locks_map[node.name].push_back(lock);
+      }
+
+      if (log_node) {
+        spdlog::info("[TDG] Node '{}' -> task (priority={}, core={})", node.name, node.priority,
+                     node.core);
+      }
+      return;
+    }
+
+    if constexpr (std::is_same_v<Node, ForkTask>) {
+      tdg.nodes_type.emplace(node.name, node_type);
+      if (log_node) {
+        spdlog::info("[TDG] Node '{}' -> fork", node.name);
+      }
+      return;
+    }
+
+    if constexpr (std::is_same_v<Node, JoinTask>) {
+      tdg.nodes_type.emplace(node.name, node_type);
+      if (log_node) {
+        spdlog::info("[TDG] Node '{}' -> join", node.name);
+      }
+      return;
+    }
+
+    if constexpr (std::is_same_v<Node, EmptyTask>) {
+      tdg.nodes_type.emplace(node.name, node_type);
+      if (log_node) {
+        spdlog::info("[TDG] Node '{}' -> empty", node.name);
+      }
+    }
+  });
+}
+
+}  // namespace
+
+void load_tdg(const Parser& parser, tdg::TDG& tdg, bool log_nodes) {
+  tdg.num_cpus = parser.get_num_cpus();
+  tdg.cores_per_cpu = parser.get_cores_per_cpu();
+  tdg.task_place_capacity = parser.get_task_place_capacity();
+  tdg.policy = parser.get_policy();
+  tdg.start_tasks = parser.get_start_tasks();
+  tdg.end_tasks = parser.get_end_tasks();
+  tdg.periodic_tasks = parser.get_periodic_tasks();
+
+  for (const auto& json_node : parser.get_nodes()) {
+    const NodeType node_type = json_node.to_node_type();
+    if (const TaskNode* task = std::get_if<TaskNode>(&node_type)) {
+      if (json_node.has_allowed_cores) {
+        tdg.task_allowed_cores[task->name] = json_node.allowed_cores;
+      } else {
+        tdg.task_allowed_cores[task->name] = {task->core};
+      }
+      tdg.task_wcet_provenance[task->name] = {json_node.wcet_kind, json_node.wcet_method,
+                                              json_node.wcet_artifact};
+    }
+    register_node(tdg, node_type, log_nodes);
+  }
+
+  tdg.tdg_edges.clear();
+  tdg.tdg_edges.reserve(parser.get_edges().size());
+  for (const auto& edge : parser.get_edges()) {
+    tdg.tdg_edges.push_back({edge.source, edge.target, edge.label, edge.style});
+    spdlog::debug("[TDG] Edge: {} -> {} (style={})", edge.source, edge.target, edge.style);
+  }
+}
+
+void load_tdg_from_file(const std::string& json_file, tdg::TDG& tdg) {
+  spdlog::info("[TDG] Starting JSON parsing: {}", json_file);
+
+  Parser parser;
+  const auto result = parser.parse_file(json_file);
+  if (!result.success) {
+    spdlog::error("[TDG] JSON parsing failed: {}", result.error_message);
+    return;
+  }
+
+  spdlog::info("[TDG] Configuration: {} CPUs, {} cores per CPU", parser.get_num_cpus(),
+               parser.get_cores_per_cpu());
+
+  load_tdg(parser, tdg, /*log_nodes=*/true);
+
+  spdlog::info("[TDG] JSON parsing completed: {} nodes, {} edges", tdg.nodes_type.size(),
+               tdg.tdg_edges.size());
+}
+
+void load_tdg_from_string(const std::string& json_content, tdg::TDG& tdg) {
+  Parser parser;
+  const auto result = parser.parse_string(json_content);
+  if (!result.success) {
+    throw std::runtime_error("JSON parsing failed: " + result.error_message);
+  }
+
+  load_tdg(parser, tdg, /*log_nodes=*/false);
+}
+
 }  // namespace parse

@@ -313,7 +313,7 @@ TEST_F(JsonParserTest, TdgPopulatesAllocationDomainsAndProvenance) {
   ASSERT_TRUE(parser.validate().success);
 
   tdg::TDG model(parser.get_num_cpus(), parser.get_cores_per_cpu());
-  model.load_from_parser(parser);
+  parse::load_tdg(parser, model);
 
   EXPECT_EQ(model.task_allowed_cores.at("TaskA"), (std::vector<int>{2, 4}));
   EXPECT_EQ(model.task_allowed_cores.at("TaskB"), (std::vector<int>{3}));

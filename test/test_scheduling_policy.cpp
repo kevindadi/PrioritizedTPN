@@ -15,6 +15,7 @@
 #include "lower/tdg2pn/tdg2pn_common.h"
 #include "model/petri.h"
 #include "model/tdg.h"
+#include "parse/json.h"
 
 namespace {
 
@@ -26,7 +27,7 @@ using state_class::StateClassReachabilityGraph;
 
 tdg::TDG parse_tdg(const std::string& json) {
   tdg::TDG tdg;
-  tdg.parse_json_string(json);
+  parse::load_tdg_from_string(json, tdg);
   return tdg;
 }
 

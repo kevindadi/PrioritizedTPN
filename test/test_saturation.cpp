@@ -126,7 +126,7 @@ petri::PTPN lower_periodic_net(int task_place_capacity) {
   })";
 
   tdg::TDG tdg;
-  tdg.parse_json_string(json);
+  parse::load_tdg_from_string(json, tdg);
   petri::PTPN ptpn;
   converter::TDG2PN::transform(tdg, ptpn);
   return ptpn;
