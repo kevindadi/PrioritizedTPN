@@ -28,8 +28,30 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 | `ptpn tdg` | Load TDG JSON, lower to PTPN, analyze and/or export |
 | `ptpn rtsl` | Load RTSL source, lower in process to TDG, then run the TDG analysis pipeline |
 | `ptpn check` | Lex, parse, and validate RTSL (no lowering or analysis) |
+| `ptpn describe` | Restate an RTSL model's actual analysis semantics in plain text |
 | `ptpn ptpn` | Load `.ptpn` source, analyze and/or export |
 | `ptpn allocate` | Search core allocations from TDG JSON or RTSL (`core any` is expanded) |
+
+### `ptpn describe`
+
+`ptpn describe -f model.rtsl` prints what the analyzer will actually do, not
+what the source might look like:
+
+- the effective cores and policy (including the priorities `rm`/`dm` compute
+  during lowering, and the `--tie` mode the analysis will use);
+- each task's kind, core, priority, relative deadline, and execution segments
+  with lock nesting (`pre-critical | mutex1 critical section | post-critical`);
+- release bindings, including the first periodic release at `P` and the extra
+  `t=0` release a `start` binding adds;
+- dependency edges: explicit `a -> {b, c}` / `{a, b} -> c` statements are named
+  as AND forks/joins, while several separate statements that share a source or
+  target are called out as the token-consuming alternative/OR form;
+- lock usage, and the non-blocking validation hints (`E-VAL-222..225`) that
+  flag the common modelling traps.
+
+With `--diagnostics json` the same text is available as
+`result.description`. A model whose `measured by llm` timing is still pending
+gets the pending list instead of a description.
 
 ## Common options (`tdg` / `rtsl` / `ptpn`)
 

@@ -299,6 +299,13 @@ sensor -> {fusion, logger}     // fork: sensor releases fusion and logger
   completes; lowering inserts a zero-time bridge transition. Self-loops are
   accepted but are annotations, not dependency releases. RTSL has no dashed
   edges or edge labels.
+- Several **separate** statements that share a source or target use the
+  token-consuming semantics: `a -> b` plus `a -> c` makes `b` and `c`
+  alternatives (the exit token is consumed by whichever bridge fires first),
+  and `a -> c` plus `b -> c` releases `c` when whichever source completes first
+  (once per completion). Use one statement (`a -> {b, c}` / `{a, b} -> c`) when
+  you mean an AND fork/join; `ptpn check`/`rtsl` hint this with `E-VAL-225` and
+  `ptpn describe` restates the effective semantics.
 - `A -> {B, C}` creates an implicit fork node
   `__fork_<A>__<B>__<C>` (targets sorted). The fork is a zero-time control
   transition on the control core; each target gets its own token.

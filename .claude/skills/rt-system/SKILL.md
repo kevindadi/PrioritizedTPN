@@ -54,7 +54,14 @@ Reference docs (use these instead of guessing syntax or codes):
    `build/ptpn check -f model.rtsl --diagnostics json` until
    `result.pending_measurements` is empty. While tasks remain pending,
    `ptpn rtsl` and `ptpn allocate` reject the model with `E-VAL-213`.
-5. **Analyze.** `build/ptpn rtsl -f model.rtsl` for WCRT/schedulability
+5. **Verify the semantics (recommended before reporting).** Run
+   `build/ptpn describe -f model.rtsl`: it restates the effective policy,
+   priorities (including `rm`/`dm` recomputation), core mapping, lock nesting,
+   release phases, and whether each dependency edge is an AND fork/join or the
+   token-consuming alternative/OR form of separate statements. If the
+   description does not match the user's intent, fix the model (or ask) before
+   trusting any verdict.
+6. **Analyze.** `build/ptpn rtsl -f model.rtsl` for WCRT/schedulability
    (add `--no-analysis` only for lowering/export). Use
    `build/ptpn allocate` when core assignment is open. Read the per-task
    `verdict` (`meets`/`misses`/`unknown`) and the report-level
@@ -63,7 +70,7 @@ Reference docs (use these instead of guessing syntax or codes):
    while `exact: false` or `wcrt_capped: true` means it is a bound. The
    completion observation is off under symmetry, extrapolation, merging,
    non-equality canonicalization and `--tie arbitrary`.
-6. **Report** the facts, not a vibe: command, exit code, diagnostics,
+7. **Report** the facts, not a vibe: command, exit code, diagnostics,
    `schedulability`, `counterexample`, `exact`/`wcrt_exact`, `truncated`, and
    pending count. State timing provenance (`certified`/`measured`/`estimated`)
    and whether the result is exact. Measured or estimated intervals are **not**

@@ -360,6 +360,18 @@ target_link_libraries(ptpn_app_support
 
 # `ptpn check`: parse and validate only; deliberately independent of lowering,
 # analysis and allocation.
+add_library(ptpn_app_describe STATIC
+    src/app/describe.cpp
+)
+target_include_directories(ptpn_app_describe PUBLIC src)
+target_link_libraries(ptpn_app_describe
+    PUBLIC
+    ptpn_app_support
+    ptpn_lowering
+    PRIVATE
+    spdlog::spdlog
+)
+
 add_library(ptpn_app_check STATIC
     src/app/check_cmd.cpp
 )
@@ -514,6 +526,7 @@ target_link_libraries(PTPN_core
     ptpn_allocation
     ptpn_app_support
     ptpn_app_check
+    ptpn_app_describe
     ptpn_app_pipelines
     ptpn_app_allocation
     spdlog::spdlog
@@ -528,6 +541,7 @@ add_library(ptpn_cli STATIC
     src/cli/commands/rtsl_cmd.cpp
     src/cli/commands/ptpn_cmd.cpp
     src/cli/commands/check_cmd.cpp
+    src/cli/commands/describe_cmd.cpp
     src/cli/commands/allocate_cmd.cpp
 )
 target_include_directories(ptpn_cli PUBLIC src)
@@ -536,6 +550,7 @@ target_link_libraries(ptpn_cli
     ptpn_app_pipelines
     ptpn_app_allocation
     ptpn_app_check
+    ptpn_app_describe
     CLI11::CLI11
 )
 

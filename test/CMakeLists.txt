@@ -34,6 +34,7 @@ add_executable(ptpn_test
   test_llf_multicore.cpp
   test_allocation.cpp
   test_diagnostics.cpp
+  test_describe.cpp
   test_rtsl_lexer.cpp
   test_rtsl_parser.cpp
   test_rtsl_validation.cpp

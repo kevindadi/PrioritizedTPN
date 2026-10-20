@@ -43,6 +43,7 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
   commands.push_back(cli::make_ptpn_command());
   commands.push_back(cli::make_allocate_command());
   commands.push_back(cli::make_check_command());
+  commands.push_back(cli::make_describe_command());
   for (const auto& command : commands) {
     command->add_to(app);
   }

@@ -34,6 +34,7 @@ std::unique_ptr<Command> make_tdg_command();
 std::unique_ptr<Command> make_rtsl_command();
 std::unique_ptr<Command> make_ptpn_command();
 std::unique_ptr<Command> make_check_command();
+std::unique_ptr<Command> make_describe_command();
 std::unique_ptr<Command> make_allocate_command();
 
 }  // namespace cli
