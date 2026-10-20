@@ -198,6 +198,19 @@ a release clock per in-flight job to the state-class zones, which slows the
 DBM closure on models with many tasks (`--no-exact-wcrt` trades that back for
 bounds).
 
+The model's suspension semantics freezes an execution clock while a transition
+is preempted. A transition whose clock is pinned at the upper bound of its
+interval has finished its work, so the analyzer keeps it active and fires it at
+the completion instant: a preemption cannot delay a completion past the moment
+the work was done. Classic fixed-priority response-time analysis and an
+independent tick-based simulator agree with the reported values on the
+synchronously released single-core models in
+`test/test_reference_analysis.cpp`. When only *part* of a state class has
+reached the bound, the class keeps the previous suspension semantics; a
+completion that coincides with a higher-priority release can then still be
+delayed by one preemption (a documented over-approximation, never an
+under-report).
+
 ## Reduction modes and defaults
 
 The default is `--reduction none`: exhaustive state-class exploration with

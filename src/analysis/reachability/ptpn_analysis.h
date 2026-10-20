@@ -318,6 +318,11 @@ class StateClassReachabilityGraph {
   // Builds a successor zone by carrying surviving clocks over from `fired`.
   void build_successor_zone(StateClass& successor, const DBM& fired, const StateClass& source,
                             size_t fired_transition) const;
+  // Keeps a transition whose execution clock is pinned at the upper bound of its
+  // interval (its work is definitely done) in the active set, so a preemption
+  // cannot suspend a finished clock and delay the completion. In-place and
+  // bounded: it never splits a class, so it cannot multiply states.
+  void force_completed_transitions(StateClass& state) const;
 
   // Replaces `state` by its canonical orbit representative when symmetry is
   // active. No-op otherwise.

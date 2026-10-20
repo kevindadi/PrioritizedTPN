@@ -320,10 +320,49 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
       continue;
     }
     successor.elapsed_time = elapsed.elapsed_time + std::max(0, firing_instant);
+    force_completed_transitions(successor);
     result.push_back(std::move(successor));
   }
 
   return result;
+}
+
+void StateClassReachabilityGraph::force_completed_transitions(StateClass& state) const {
+  // A suspendable transition whose execution clock is pinned at the upper bound
+  // of its interval has definitely finished its work. Letting a preemption
+  // suspend it would freeze a finished clock and delay the completion past the
+  // instant the work was actually done, which over-approximates the response
+  // time (and makes the classic response-time analysis disagree). Keep such a
+  // transition active instead: the next step fires it immediately, at zero
+  // additional time, so the completion is recorded at the right instant.
+  //
+  // Only the "definitely done" case (h == cap for every valuation) is handled
+  // here: it needs no state split. Classes where only part of the zone has
+  // reached the cap keep the previous suspension semantics; that residual is
+  // documented as an over-approximation in docs/usage.md.
+  for (size_t candidate : state.struct_enabled) {
+    if (!net_.get_transition(petri::TransitionId{candidate}).suspendable ||
+        contains(state.priority_enabled, candidate)) {
+      continue;
+    }
+    const int index = state.exec_index(candidate);
+    if (index <= 0) {
+      continue;
+    }
+    const int cap = effective_latest(candidate);
+    if (cap == INF_TIME) {
+      continue;
+    }
+    const size_t idx = static_cast<size_t>(index);
+    if (state.zone.get_constraint(idx, 0) != cap || state.zone.get_constraint(0, idx) != -cap) {
+      continue;
+    }
+    state.priority_enabled.push_back(candidate);
+    std::sort(state.priority_enabled.begin(), state.priority_enabled.end());
+    state.suspended.erase(
+        std::remove(state.suspended.begin(), state.suspended.end(), candidate),
+        state.suspended.end());
+  }
 }
 
 bool StateClassReachabilityGraph::fire(const StateClass& elapsed, size_t t,

@@ -101,6 +101,15 @@ The observation is disabled under extrapolation, upper-bound merging, symmetry,
 non-equality canonicalization, `--tie arbitrary`, and per task when a release
 overlaps an in-flight job (one column cannot time two jobs).
 
+A transition whose execution clock is pinned at the upper bound of its interval
+has finished its work, so `force_completed_transitions` keeps it active and the
+next step fires it at the completion instant: a preemption must not suspend a
+finished clock and delay the completion. Classic fixed-priority response-time
+analysis and a tick-based simulator agree with the reported values on
+synchronously released single-core models (`test/test_reference_analysis.cpp`);
+the "only part of the class reached the bound" case keeps the previous
+suspension semantics and remains a documented over-approximation.
+
 ## Build targets
 
 The CMake targets follow the same direction:

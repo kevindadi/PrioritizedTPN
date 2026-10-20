@@ -71,7 +71,7 @@ struct PipelineCase {
 };
 
 const PipelineCase kPipelineCases[] = {
-    {"example/s-bench/a.json", 20, 21, 125, 163, 39},
+    {"example/s-bench/a.json", 20, 21, 115, 149, 35},
     {"example/s-bench/b.json", 20, 21, 84, 113, 30},
     {"example/motivating-examples/hw.json", 10, 10, 17, 17, 1},
     {"example/p-bench/initial.json", 20, 21, 80, 106, 27},
