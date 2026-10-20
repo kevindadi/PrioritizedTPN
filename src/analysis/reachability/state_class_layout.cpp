@@ -6,6 +6,7 @@
 #include "analysis/dbm/clock_state.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "analysis/reachability/scheduling.h"
+#include "common/memory.h"
 
 namespace state_class {
 
@@ -94,6 +95,38 @@ bool apply_branch_constraints(StateClass& state, const std::vector<BranchConstra
 
 int StateClassReachabilityGraph::effective_earliest(size_t transition) const {
   return net_.get_transition(petri::TransitionId{transition}).time_interval.effective_earliest();
+}
+
+void StateClassReachabilityGraph::set_resource_budget(ResourceBudget budget) {
+  resource_budget_ = std::move(budget);
+}
+
+bool StateClassReachabilityGraph::resource_budget_exhausted() {
+  if (!resource_budget_.timeout_seconds.has_value() &&
+      !resource_budget_.max_memory_mb.has_value()) {
+    return false;
+  }
+  ++budget_check_counter_;
+  if (resource_budget_.timeout_seconds.has_value()) {
+    const double elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - build_start_).count();
+    if (elapsed > resource_budget_.timeout_seconds.value()) {
+      stats_.budget_exhausted = true;
+      stats_.budget_reason = "timeout";
+      stats_.truncated = true;
+      return true;
+    }
+  }
+  if (resource_budget_.max_memory_mb.has_value() && budget_check_counter_ % 64 == 0) {
+    const size_t rss = ptpn::get_memory_usage_mb();
+    if (rss != 0 && rss > resource_budget_.max_memory_mb.value()) {
+      stats_.budget_exhausted = true;
+      stats_.budget_reason = "memory";
+      stats_.truncated = true;
+      return true;
+    }
+  }
+  return false;
 }
 
 int StateClassReachabilityGraph::effective_latest(size_t transition) const {

@@ -3,9 +3,11 @@
 
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graph_traits.hpp>
+#include <chrono>
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -138,6 +140,18 @@ class StateClassReachabilityGraph {
   // Returns the number of state classes discovered.
   size_t build(size_t max_states = std::numeric_limits<size_t>::max());
 
+  // Optional resource budget for the exploration. When the wall clock spent in
+  // build() or the process resident set exceeds a limit, the build stops and
+  // reports `Statistics::budget_exhausted` with the reason. The graph is then
+  // an incomplete prefix exactly like a max-states cut (`truncated` is set), so
+  // every consumer treats the metrics and verdicts as partial.
+  struct ResourceBudget {
+    std::optional<double> timeout_seconds;
+    std::optional<size_t> max_memory_mb;  // absolute process RSS ceiling
+  };
+
+  void set_resource_budget(ResourceBudget budget);
+
   // Exact completion observation (metrics only). When enabled and the firing
   // rule supports it, the layout carries a scheduling-irrelevant release clock
   // for every in-flight job (EDF/FIFO already have one) and every completion
@@ -216,6 +230,10 @@ class StateClassReachabilityGraph {
     size_t merged_states = 0;
     // Stopped at the max_states cap.
     bool truncated = false;
+    // The exploration also stopped because the resource budget was exhausted;
+    // `budget_reason` is "timeout" or "memory".
+    bool budget_exhausted = false;
+    std::string budget_reason;
     // Horizon reduction bookkeeping. `horizon_pruned_states` counts discovered
     // classes that were not expanded because their minimum accumulated
     // lower-bound dwell exceeded the horizon.
@@ -241,6 +259,9 @@ class StateClassReachabilityGraph {
   bool extrapolation_enabled_ = false;
   bool suspension_clock_projection_ = true;
   bool completion_observation_ = false;
+  ResourceBudget resource_budget_;
+  std::chrono::steady_clock::time_point build_start_{};
+  size_t budget_check_counter_ = 0;
   int extrapolation_k_ = -1;  // computed lazily from the net's static intervals
   bool horizon_enabled_ = false;
   int horizon_ = 0;
@@ -279,6 +300,10 @@ class StateClassReachabilityGraph {
 
   [[nodiscard]] int effective_earliest(size_t transition) const;
   [[nodiscard]] int effective_latest(size_t transition) const;
+
+  // True when the configured resource budget is exhausted; sets
+  // `Statistics::budget_exhausted`/`budget_reason` and `truncated` once.
+  [[nodiscard]] bool resource_budget_exhausted();
 
   // True when the clock layout includes release clocks: the rule uses them for
   // scheduling (EDF/FIFO) or the completion observation requested them.

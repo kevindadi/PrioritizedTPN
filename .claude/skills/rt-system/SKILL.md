@@ -85,6 +85,7 @@ envelope `result` — not on the code prefix alone. The complete table is
 | `E-UNS-005` | `interrupt` is only a hint: it is lowered as a non-periodic task with a type marker; no interrupt-preemption semantics exist. Do not claim interrupt support. |
 | `E-PERF-001` | `-m` max-states truncation. If a counterexample is already reported, **do not raise `-m`** - fix the design. Otherwise raising `-m` may help; the result is partial either way. |
 | `E-PERF-002` | `--horizon` truncation. Same rule: with a counterexample, change the design; without one, raise/disable the horizon. |
+| `E-PERF-003/004` | The `--timeout` / `--max-memory` budget stopped the exploration. Results are partial (exit 5); raise the budget or simplify the model. |
 | `R-ANA-001` | Certified reachable deadlock. Fix dependency/lock structure or policy. |
 | `R-ANA-002` | A proven deadline miss (verdict `misses`): the certified lower bound exceeds the deadline, the observed response reached the deadline cap (`wcrt_capped`), or a complete graph shows the job never completes. Change priorities, cores, or periods; `result.analysis.tasks[].witness` shows the worst-case path. |
 | `R-ANA-003` | Periodic local deadlock. Change period, priority, or core assignment. |

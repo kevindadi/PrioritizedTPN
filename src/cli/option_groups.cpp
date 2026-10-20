@@ -86,6 +86,14 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts,
                 "values fall back to sound dwell-DP bounds, which is faster on "
                 "models with many tasks but makes deadline verdicts conservative "
                 "(default: observation on)");
+  cmd->add_option("--timeout", opts.timeout_seconds,
+                  "Stop the state-class exploration after N seconds of wall clock "
+                  "and report partial results (E-PERF-003, exit 5)")
+      ->check(CLI::PositiveNumber);
+  cmd->add_option("--max-memory", opts.max_memory_mb,
+                  "Stop the state-class exploration once the process resident set "
+                  "exceeds N MB and report partial results (E-PERF-004, exit 5)")
+      ->check(CLI::PositiveNumber);
   add_diagnostics_options(cmd, opts.diagnostics);
   add_export_target_options(cmd, opts.exports, tdg_export_is_json);
 }

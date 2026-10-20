@@ -364,7 +364,7 @@ TEST(DiagnosticsCliTest, TruncationWithoutCounterexampleIsPerformance) {
   EXPECT_EQ("performance", diagnostic->value("category", ""));
   EXPECT_EQ("warning", diagnostic->value("severity", ""));
   EXPECT_NE(std::string::npos,
-            diagnostic->value("fix", "").find("no counterexample found; raising -m may help"));
+            diagnostic->value("fix", "").find("no counterexample found; raising the limit may help"));
 }
 
 TEST(DiagnosticsCliTest, UnreleasedTaskIsHinted) {
@@ -387,6 +387,44 @@ TEST(DiagnosticsCliTest, UnreleasedTaskIsHinted) {
   EXPECT_EQ("hint", diagnostic->value("severity", ""));
   EXPECT_EQ("task:orphan", diagnostic->value("subject", ""));
   EXPECT_EQ("schedulable", envelope.at("result").at("analysis").value("schedulability", ""));
+}
+
+TEST(DiagnosticsCliTest, ResourceBudgetsReportPartialResults) {
+  // A wall-clock budget that is already exhausted stops the exploration with a
+  // performance diagnostic and exit 5 instead of running to completion.
+  const CliResult timeout = run_cli({"tdg", "-f", "example/s-bench/a.json", "--diagnostics",
+                                     "json", "--timeout", "0.000001"});
+  EXPECT_EQ(5, timeout.exit_code);
+  {
+    const nlohmann::json envelope = parse_envelope(timeout.stdout_text);
+    const nlohmann::json* diagnostic = find_diagnostic(envelope, "E-PERF-003");
+    ASSERT_NE(nullptr, diagnostic);
+    EXPECT_EQ("performance", diagnostic->value("category", ""));
+    EXPECT_EQ("system:timeout", diagnostic->value("subject", ""));
+    EXPECT_FALSE(has_diagnostic(envelope, "E-PERF-001"));
+    const nlohmann::json& analysis = envelope.at("result").at("analysis");
+    EXPECT_TRUE(analysis.at("truncated").get<bool>());
+    EXPECT_EQ("unknown", analysis.value("schedulability", ""));
+  }
+
+  // A memory ceiling below the process baseline stops it as well.
+  const CliResult memory = run_cli({"tdg", "-f", "example/s-bench/a.json", "--diagnostics", "json",
+                                    "--max-memory", "1"});
+  EXPECT_EQ(5, memory.exit_code);
+  {
+    const nlohmann::json envelope = parse_envelope(memory.stdout_text);
+    const nlohmann::json* diagnostic = find_diagnostic(envelope, "E-PERF-004");
+    ASSERT_NE(nullptr, diagnostic);
+    EXPECT_EQ("system:max_memory", diagnostic->value("subject", ""));
+    EXPECT_TRUE(envelope.at("result").at("analysis").at("truncated").get<bool>());
+  }
+
+  // Generous budgets leave the run untouched.
+  const CliResult normal = run_cli({"tdg", "-f", "example/s-bench/a.json", "--diagnostics", "json",
+                                    "--timeout", "60", "--max-memory", "4000"});
+  EXPECT_EQ(0, normal.exit_code);
+  EXPECT_EQ("schedulable",
+            parse_envelope(normal.stdout_text).at("result").at("analysis").value("schedulability", ""));
 }
 
 TEST(DiagnosticsCliTest, CounterexampleDominatesTruncation) {

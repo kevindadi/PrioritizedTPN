@@ -55,15 +55,17 @@ inline bool has_any_export(const ExportTargets& exports) {
 
 // Translates the metrics layer's signals into the diagnostics protocol:
 // - a decisive counterexample found in the explored prefix (deadlock, local
-//   deadlock, or wcrt_lb > deadline) is an analysis result (exit 6);
-// - truncation without a counterexample is a performance warning (exit 5);
+//   deadlock, or a proven deadline miss) is an analysis result (exit 6);
+// - truncation without a counterexample is a performance warning (exit 5),
+//   including the resource budget (`--timeout` -> E-PERF-003,
+//   `--max-memory` -> E-PERF-004);
 // - an upper-bound `wcrt` exceeding the deadline is never a counterexample.
 //
 // Also fills `result.analysis` when a collector is provided.
 void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
                                  const state_class::MetricsReport& report,
                                  bool max_states_truncated, bool horizon_truncated,
-                                 size_t max_states);
+                                 size_t max_states, const std::string& budget_reason = {});
 
 }  // namespace app
 

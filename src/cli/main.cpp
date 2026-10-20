@@ -79,7 +79,7 @@ int run_cli(int argc, char* argv[], ptpn::Diagnostics& diagnostics, bool& diagno
   spdlog::info("PTPN - Priority Timed Petri Net Analyzer");
   spdlog::info("==========================================");
 
-  const size_t initial_memory = app::get_memory_usage_mb();
+  const size_t initial_memory = ptpn::get_memory_usage_mb();
   ptpn::Diagnostics* diag = diagnostics_engaged ? &diagnostics : nullptr;
   return selected->run(diag, initial_memory);
 }

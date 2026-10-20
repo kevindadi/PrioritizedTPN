@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 
+#include "common/memory.h"
 #include "model/types.h"
 
 namespace ptpn {
@@ -64,13 +65,16 @@ struct PipelineOptions {
   // dwell-DP WCRT bounds. Faster on models with many tasks, but the values are
   // bounds and deadline verdicts become conservative.
   bool no_exact_wcrt = false;
+  // Resource budget for the state-class exploration: a wall-clock limit in
+  // seconds and an absolute process-memory ceiling in MB. Exceeding either
+  // stops the build with partial results and an E-PERF-003/004 diagnostic.
+  std::optional<double> timeout_seconds;
+  std::optional<std::size_t> max_memory_mb;
   DiagnosticsOptions diagnostics;
   ExportTargets exports;
 };
 
 // Peak resident memory of this process in megabytes (all platforms).
-size_t get_memory_usage_mb();
-
 // Prints diagnostics in the pre-envelope human-readable format. Shared by the
 // `check` and pipeline commands so engaged/non-engaged output stays consistent.
 void print_legacy_diagnostics(const ptpn::Diagnostics& diagnostics);

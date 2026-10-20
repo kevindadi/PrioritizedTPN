@@ -319,7 +319,8 @@ MetricsReport MetricsAnalyzer::analyze() {
   MetricsReport report;
   report.exact = exact_;
   report.wcrt_lb_valid = wcrt_lb_valid_;
-  report.horizon = horizon_;  // A horizon-pruned graph is missing the successors of boundary classes.
+  report.horizon = horizon_;
+  report.truncated = graph_truncated_;  // A horizon-pruned graph is missing the successors of boundary classes.
   // Deadlocks, schedulability, local deadlocks and SCC statistics computed on
   // it would be artifacts of the cut, so they are skipped and flagged. WCRT
   // values are still produced, but they are approximate unless the caller's

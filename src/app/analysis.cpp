@@ -295,7 +295,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
         const auto end_time = detail::PipelineClock::now();
         const auto total_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(end_time - pipeline_start);
-        const size_t total_memory = get_memory_usage_mb() - initial_memory;
+        const size_t total_memory = ptpn::get_memory_usage_mb() - initial_memory;
         detail::log_step_timing(input_label + " pipeline (total)", total_duration.count(),
                                 std::to_string(total_memory) + " MB");
         return 0;
@@ -395,6 +395,14 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
           "dwell-DP bounds (WCRT values are bounds, verdicts conservative)");
     }
     const auto scg_start = detail::PipelineClock::now();
+    // Resource budget: both limits are optional and produce partial results
+    // (E-PERF-003/004) instead of an unbounded run.
+    {
+      state_class::StateClassReachabilityGraph::ResourceBudget budget;
+      budget.timeout_seconds = opts.timeout_seconds;
+      budget.max_memory_mb = opts.max_memory_mb;
+      reachability_graph.set_resource_budget(std::move(budget));
+    }
     const size_t state_count = reachability_graph.build(opts.max_states);
     const auto& reachability_stats = reachability_graph.get_statistics();
     detail::log_step_timing(
@@ -424,6 +432,10 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
           opts.max_states);
     } else {
       spdlog::info("[SCG] Reachability graph built with {} states", state_count);
+    }
+    if (reachability_stats.budget_exhausted) {
+      spdlog::warn("[SCG] Exploration stopped by the {} budget; results are partial",
+                   reachability_stats.budget_reason);
     }
 
     if (!opts.exports.scg_dot.empty()) {
@@ -493,8 +505,11 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
       analyzer.set_horizon_info(horizon_info);
       analyzer.set_symmetry_task_groups(reachability_graph.symmetry_task_groups());
       const state_class::MetricsReport report = analyzer.analyze();
-      record_analysis_diagnostics(diagnostics, report, reachability_stats.truncated,
-                                  horizon_truncated, opts.max_states);
+      record_analysis_diagnostics(
+          diagnostics, report,
+          /*max_states_truncated=*/reachability_stats.truncated &&
+              !reachability_stats.budget_exhausted,
+          horizon_truncated, opts.max_states, reachability_stats.budget_reason);
       if (export_metrics) {
         if (state_class::save_metrics_json(report, opts.exports.metrics_json)) {
           detail::log_step_timing("Metrics analysis", detail::elapsed_ms(metrics_start));
@@ -527,7 +542,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
   const auto end_time = detail::PipelineClock::now();
   const auto total_duration =
       std::chrono::duration_cast<std::chrono::milliseconds>(end_time - pipeline_start);
-  const size_t total_memory = get_memory_usage_mb() - initial_memory;
+  const size_t total_memory = ptpn::get_memory_usage_mb() - initial_memory;
   detail::log_step_timing(input_label + " pipeline (total)", total_duration.count(),
                           std::to_string(total_memory) + " MB");
   return 0;
@@ -568,7 +583,7 @@ int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts,
     }
     const auto end_time = detail::PipelineClock::now();
     detail::log_step_timing(input_label + " pipeline (total)", detail::elapsed_ms(pipeline_start),
-                            std::to_string(get_memory_usage_mb() - initial_memory) + " MB");
+                            std::to_string(ptpn::get_memory_usage_mb() - initial_memory) + " MB");
     return 0;
   }
 
@@ -588,7 +603,7 @@ int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts,
 void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
                                  const state_class::MetricsReport& report,
                                  bool max_states_truncated, bool horizon_truncated,
-                                 size_t max_states) {
+                                 size_t max_states, const std::string& budget_reason) {
   if (diagnostics == nullptr) {
     return;
   }
@@ -616,8 +631,13 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
     // Compact per-task result so consumers do not have to parse the metrics
     // JSON for the verdict and the WCRT.
     if (!task.observed) {
-      // The task never executes in any reachable state: usually a missing
-      // `start` binding or dependency edge, not a deliberate choice.
+      // A task that never executes in any reachable state is usually a missing
+      // `start` binding or dependency edge. The hint is only meaningful when
+      // the graph is complete: a truncated prefix can simply not have reached
+      // the release yet.
+      if (!report.deadlock_analysis_certified || report.truncated) {
+        continue;
+      }
       ptpn::Diagnostic orphan;
       orphan.code = "R-ANA-004";
       orphan.message = "task '" + task.name +
@@ -630,7 +650,8 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
       diagnostics->add(std::move(orphan));
       continue;
     }
-    if (task.observed) {      nlohmann::json entry;
+    if (task.observed) {
+      nlohmann::json entry;
       entry["task"] = task.name;
       entry["wcrt"] = task.wcrt.infinite ? nlohmann::json(nullptr) : nlohmann::json(task.wcrt.value);
       if (report.wcrt_lb_valid && !task.wcrt_lb.infinite) {
@@ -684,13 +705,14 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
   }
 
   const bool counterexample = deadlock || !local_deadlocks.empty() || !deadline_misses.empty();
-  const bool truncated = max_states_truncated || horizon_truncated;
+  const bool truncated =
+      max_states_truncated || horizon_truncated || !budget_reason.empty();
   if (truncated) {
     const std::string fix =
         counterexample
-            ? "a counterexample was already found; raising -m cannot change the verdict; fix the "
-              "model design"
-            : "no counterexample found; raising -m may help";
+            ? "a counterexample was already found; raising the limit cannot change the verdict; "
+              "fix the model design"
+            : "no counterexample found; raising the limit may help";
     if (max_states_truncated) {
       diagnostics->add("E-PERF-001",
                        "state-class graph truncated at the max-states bound (" +
@@ -703,10 +725,21 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
                        "pruned",
                        "system:horizon", std::nullopt,
                        counterexample
-                           ? "a counterexample was already found; raising -m cannot change the "
-                             "verdict; fix the model design"
-                           : "no counterexample found; raising -m may help, or increase/disable "
-                             "--horizon");
+                           ? "a counterexample was already found; raising the limit cannot change "
+                             "the verdict; fix the model design"
+                           : "no counterexample found; raising the limit may help, or "
+                             "increase/disable --horizon");
+    }
+    if (budget_reason == "timeout") {
+      diagnostics->add("E-PERF-003",
+                       "state-class exploration stopped by the --timeout budget; the reported "
+                       "values and verdicts are partial",
+                       "system:timeout", std::nullopt, fix);
+    } else if (budget_reason == "memory") {
+      diagnostics->add("E-PERF-004",
+                       "state-class exploration stopped by the --max-memory budget; the reported "
+                       "values and verdicts are partial",
+                       "system:max_memory", std::nullopt, fix);
     }
   }
 

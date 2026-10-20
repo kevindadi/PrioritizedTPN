@@ -76,7 +76,7 @@ int run_tdg_pipeline(const std::string& input_file, PipelineOptions opts, size_t
   }
 
   const auto tdg_end = detail::PipelineClock::now();
-  const size_t tdg_memory = get_memory_usage_mb() - initial_memory;
+  const size_t tdg_memory = ptpn::get_memory_usage_mb() - initial_memory;
   detail::log_step_timing("TDG parsing", detail::elapsed_ms(tdg_start),
                           std::to_string(tdg_memory) + " MB");
 
@@ -124,7 +124,7 @@ int run_rtsl_pipeline(const std::string& input_file, PipelineOptions opts, size_
   }
 
   detail::log_step_timing("RTSL lowering", detail::elapsed_ms(pipeline_start),
-                          std::to_string(get_memory_usage_mb() - initial_memory) + " MB");
+                          std::to_string(ptpn::get_memory_usage_mb() - initial_memory) + " MB");
 
   return run_tdg_analysis(tdg, opts, "RTSL", pipeline_start, initial_memory, diagnostics,
                           &loaded->source_map);

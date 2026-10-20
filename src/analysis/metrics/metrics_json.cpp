@@ -69,6 +69,7 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
   out << "  \"exact\": " << (report.exact ? "true" : "false") << ",\n";
   out << "  \"wcrt_lb_valid\": " << (report.wcrt_lb_valid ? "true" : "false") << ",\n";
   out << "  \"wcrt_exact\": " << (report.wcrt_exact ? "true" : "false") << ",\n";
+  out << "  \"truncated\": " << (report.truncated ? "true" : "false") << ",\n";
   out << "  \"states\": " << report.states << ",\n";
   out << "  \"transitions\": " << report.transitions << ",\n";
   out << "  \"bounded\": " << (report.bounded ? "true" : "false") << ",\n";

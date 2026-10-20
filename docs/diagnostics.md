@@ -141,14 +141,14 @@ The table below is the quick reference for the three RTSL-facing commands.
 | EDF/FIFO/LLF/PIP/PCP/SRP supported-class violation | succeeds (lowering-only rule) | `E-UNS-001`, exit `4` | candidate is treated as infeasible; **no** `E-UNS-001` diagnostic |
 | job-clock overlap, or a job-clock + extrapolation/symmetry combination detected during analysis | not run | `E-UNS-001`, exit `4`; legacy exit `1` | not emitted (candidate-level rejection) |
 | analysis deadlock / deadline counterexample | not run | `R-ANA-*`, exit `6` | not emitted by the allocation search |
-| truncation without counterexample | not run | `E-PERF-*`, exit `5` | reflected in the report's feasibility/truncation fields, not as a diagnostic |
+| truncation without counterexample (`-m`, `--horizon`, `--timeout`, `--max-memory`) | not run | `E-PERF-*`, exit `5` | reflected in the report's feasibility/truncation fields, not as a diagnostic |
 
 Stage coverage by command:
 
 | Command | Parse/validate | Lowering | Analysis | Codes that can appear |
 |---|---|---|---|---|
 | `ptpn check` | RTSL | no | no | `E-SYN-002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..225` (not `E-VAL-213`), CLI `E-INT-001/002` |
-| `ptpn rtsl` | RTSL | yes | yes | `check` codes and `E-VAL-213`, lowering `E-VAL-011/014/015`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-001/002/003/004`, `E-PERF-001/002`, `E-INT-002` |
+| `ptpn rtsl` | RTSL | yes | yes | `check` codes and `E-VAL-213`, lowering `E-VAL-011/014/015`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-001/002/003/004`, `E-PERF-001/002/003/004`, `E-INT-002` |
 | `ptpn allocate` | RTSL or JSON | via TDG2PN per candidate | no protocol diagnostics | input codes, RTSL lowering `E-VAL-011/014/015`; **not** `E-UNS-001`/`E-INT-003`/`R-ANA-*`/`E-PERF-*`; `E-INT-002` for the report |
 | `ptpn tdg` | TDG JSON | yes | yes | `E-SYN-001/002`, `E-VAL-001..033`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
 | `ptpn ptpn` | PTPN source | no | yes | `E-SYN-002`, `E-VAL-101..113`, parser `E-INT-001`, `E-UNS-001` (analysis), `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
@@ -180,6 +180,8 @@ user ran.
 | `E-UNS-001` | unsupported/error | TDG2PN lowering guard, or the analysis supported-class guard (`rtsl`, `tdg`, `ptpn`) | EDF/FIFO/LLF static-partition rules, PIP/PCP/SRP capacity/start rules, a job-clock overlapping/multiple-in-flight job, or job-clock + extrapolation/symmetry are violated | lowering: `task:<id>`, `node:<fork/join>`, `edge:<src>-><tgt>`, `policy:<policy>`; analysis: `task:<name>`, `option:extrapolation`, `option:symmetry`; RTSL gets a SourceMap span when the subject is locatable | simplify the model or choose a supported policy/option |
 | `E-PERF-001` | performance/**warning** | analysis (`tdg`, `rtsl`, `ptpn`, full and cone) | state-class graph reached `--max-states` | `system:max_states` / none | with a counterexample: fix the design, do not raise `-m`; otherwise raising `-m` may help |
 | `E-PERF-002` | performance/**warning** | analysis (`tdg`, `rtsl`, `ptpn`, full graph only) | `--horizon` actually pruned expansion | `system:horizon` / none | same as above; otherwise raise/disable `--horizon` |
+| `E-PERF-003` | performance/**warning** | analysis (`tdg`, `rtsl`, `ptpn`) | `--timeout` elapsed before the exploration finished | `system:timeout` / none | same as `E-PERF-001`; raising `--timeout` may complete the run |
+| `E-PERF-004` | performance/**warning** | analysis (`tdg`, `rtsl`, `ptpn`) | the process resident set exceeded `--max-memory` | `system:max_memory` / none | same as `E-PERF-001`; raising `--max-memory` may complete the run |
 | `R-ANA-001` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`; not cone) | a certified reachable deadlock exists | `system:deadlock` / none | fix dependency/lock structure or policy |
 | `R-ANA-002` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`) | the task is observed and its verdict is `misses`: a certified lower bound above the deadline, an observed response that reached the deadline cap, or a complete graph with no completion edge (starvation) | `task:<name>` / none | adjust priorities, cores, or periods |
 | `R-ANA-003` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`) | certified periodic local deadlock | `task:<name>` / none | change period, priority, or core assignment |
@@ -383,7 +385,7 @@ The envelope's `result.analysis` is the machine-readable verdict for
   — for a proven miss — the witness transition path. `wcrt_capped: true` means
   the response reached the analysis cap (deadline + 1): the true WCRT is at
   least `wcrt_lb` and the miss is proven.
-- `E-PERF-001/002` mean the explored graph is incomplete. If a counterexample
+- `E-PERF-001/002/003/004` mean the explored graph is incomplete. If a counterexample
   is already present, raising `-m` cannot change the verdict; fix the design.
   Without a counterexample, raising `-m` may turn a partial result into a
   complete one. A max-states cut no longer manufactures deadlock

@@ -44,6 +44,8 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 | `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified |
 | `--tie` | Equal-priority tie handling for the fixed-priority policies: `fifo` (default) keeps a running transition scheduled and prefers an in-service job over one waiting for its first dispatch, so an equal-priority peer cannot preempt it; `arbitrary` enumerates every equal-priority choice, including equal-priority preemption (worst case over tie-breaks) |
 | `--no-exact-wcrt` | Disable the exact completion observation: WCRT values fall back to sound dwell-DP bounds. Faster on models with many tasks (the release clocks add a DBM column per in-flight job), but `wcrt_exact` is `false` and deadline verdicts become conservative |
+| `--timeout SECONDS` | Stop the state-class exploration after this much wall clock and report partial results (`E-PERF-003`, exit `5`). The graph is then an incomplete prefix: metrics stay bounds and verdicts become conservative |
+| `--max-memory MB` | Stop the state-class exploration once the process resident set exceeds this many megabytes and report partial results (`E-PERF-004`, exit `5`), with the same partial semantics as `--timeout` |
 | `--no-analysis` | Skip state-class reachability analysis |
 | `--diagnostics json` | Emit the versioned JSON diagnostics envelope on stdout and reserve stdout for it (available on `check`, `tdg`, `rtsl`, `ptpn`, and `allocate`; see [diagnostics.md](diagnostics.md)) |
 | `--diagnostics-file PATH` | Write the same envelope to `PATH` |

@@ -144,6 +144,13 @@ add_library(ptpn_types STATIC
 )
 target_include_directories(ptpn_types PUBLIC src)
 
+# Platform probes shared by the application layer and the analysis core (the
+# process memory ceiling behind --max-memory).
+add_library(ptpn_platform STATIC
+    src/common/memory.cpp
+)
+target_include_directories(ptpn_platform PUBLIC src)
+
 # Structured, versioned diagnostics shared by the parsers, the pipeline and
 # the CLI. nlohmann/json is a PUBLIC dependency because the envelope
 # serialization is part of this library's API.
@@ -285,6 +292,7 @@ target_link_libraries(ptpn_reachability
     ptpn_petri
     Boost::graph
     PRIVATE
+    ptpn_platform
     spdlog::spdlog
 )
 
@@ -346,6 +354,7 @@ target_link_libraries(ptpn_app_support
     ptpn_types
     PRIVATE
     ptpn_json
+    ptpn_platform
     spdlog::spdlog
 )
 
@@ -534,7 +543,7 @@ target_link_libraries(ptpn_cli
 add_executable(ptpn
     src/cli/main.cpp
 )
-target_link_libraries(ptpn PRIVATE ptpn_cli CLI11::CLI11 spdlog::spdlog)
+target_link_libraries(ptpn PRIVATE ptpn_cli CLI11::CLI11 ptpn_platform spdlog::spdlog)
 
 # Test subdirectory
 add_subdirectory(test)

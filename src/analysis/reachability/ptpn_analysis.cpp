@@ -413,6 +413,8 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
   initial_vertices_.clear();
   reset_dbm_instrumentation();
   petri::reset_overflow_recording();
+  build_start_ = std::chrono::steady_clock::now();
+  budget_check_counter_ = 0;
 
   std::vector<StateClass> initial_states = compute_initial_classes();
   if (initial_states.empty()) {
@@ -453,6 +455,9 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
       for (SCVertex u : frontier) {
         if (stats_.total_states >= max_states) {
           stats_.truncated = true;
+          break;
+        }
+        if (resource_budget_exhausted()) {
           break;
         }
 
@@ -508,6 +513,9 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
       }
       if (stats_.total_states >= max_states) {
         stats_.truncated = true;
+        break;
+      }
+      if (resource_budget_exhausted()) {
         break;
       }
 

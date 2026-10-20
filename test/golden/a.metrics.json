@@ -2,6 +2,7 @@
   "exact": true,
   "wcrt_lb_valid": true,
   "wcrt_exact": true,
+  "truncated": false,
   "states": 115,
   "transitions": 149,
   "bounded": true,
