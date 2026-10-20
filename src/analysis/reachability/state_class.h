@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "analysis/dbm/clock_state.h"
 #include "analysis/dbm/dbm.h"
 #include "model/petri.h"
 
@@ -107,6 +108,13 @@ struct FiringEdge {
   int firing_max = 0;
   int dwell_min = 0;
   int dwell_max = 0;
+  // Completion observation (release-clock metrics): when the fired transition
+  // moves a task's job token into its exit place, this is the sup of that
+  // task's observation release clock in the fired zone, i.e. the worst-case
+  // response time of the completing job along this edge. INF_TIME means "not
+  // observed" or "unbounded"; the metrics pass reads it only on completion
+  // edges while the graph carries observation clocks.
+  int observed_response = INF_TIME;
 
   FiringEdge() = default;
 
@@ -123,7 +131,7 @@ struct FiringEdge {
   bool operator==(const FiringEdge& other) const {
     return transition_id == other.transition_id && firing_min == other.firing_min &&
            firing_max == other.firing_max && dwell_min == other.dwell_min &&
-           dwell_max == other.dwell_max;
+           dwell_max == other.dwell_max && observed_response == other.observed_response;
   }
 
   [[nodiscard]] std::string to_string() const;
@@ -205,6 +213,53 @@ inline int job_clock_index(const StateClass& state, ClockKind kind, size_t task)
     default:
       return -1;
   }
+}
+
+// Completion-observation cap for one task: the deadline + 1, or the period + 1
+// when the task has no explicit deadline. A job whose release clock reaches the
+// cap has already missed its deadline, so the clock is clamped there and the
+// state space stays finite. INF_TIME means "no deadline and no period": the
+// caller falls back to fallback_observation_cap(). Shared by the graph's clock
+// clamp and the metrics layer's capped-value detection so both agree on the
+// exact cap.
+inline int task_observation_cap(int deadline, int period) {
+  const int bound = deadline > 0 ? deadline : period;
+  if (bound <= 0 || bound >= std::numeric_limits<int>::max() - 1) {
+    return INF_TIME;
+  }
+  return bound + 1;
+}
+
+// Net-wide fallback cap for tasks with neither a deadline nor a period. Such a
+// task may be starved forever, so no structural bound exists; the cap only has
+// to keep the release-clock column finite while staying above any response a
+// schedulable-ish system can produce. Heuristic: twice the total execution
+// demand plus the largest finite transition bound. INF_TIME when the net has
+// no finite bound and no task metadata. Both the graph's clock clamp and the
+// metrics layer's capped-value detection call this so they agree bit for bit.
+inline int fallback_observation_cap(const petri::PTPN& net) {
+  long long total_wcet = 0;
+  for (const auto& entry : net.task_info()) {
+    total_wcet += std::max(0, entry.second.wcet);
+  }
+  int max_bound = 0;
+  for (size_t t = 0; t < net.num_transitions(); ++t) {
+    const petri::TimeInterval& interval =
+        net.get_transition(petri::TransitionId{t}).time_interval;
+    const int latest = interval.effective_latest();
+    if (latest != petri::INF) {
+      max_bound = std::max(max_bound, latest);
+    }
+    max_bound = std::max(max_bound, interval.effective_earliest());
+  }
+  if (max_bound <= 0 && total_wcet <= 0) {
+    return INF_TIME;
+  }
+  const long long cap = 2 * total_wcet + std::max(1, max_bound);
+  if (cap >= static_cast<long long>(std::numeric_limits<int>::max()) - 1) {
+    return INF_TIME;
+  }
+  return static_cast<int>(cap);
 }
 
 // Human-readable single-letter name used in diagnostics and DOT labels.

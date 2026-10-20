@@ -56,13 +56,18 @@ Reference docs (use these instead of guessing syntax or codes):
    `ptpn rtsl` and `ptpn allocate` reject the model with `E-VAL-213`.
 5. **Analyze.** `build/ptpn rtsl -f model.rtsl` for WCRT/schedulability
    (add `--no-analysis` only for lowering/export). Use
-   `build/ptpn allocate` when core assignment is open. Read the metrics'
-   `exact` flag: `false` under symmetry, extrapolation, or horizon truncation;
-   `wcrt_lb` is absent when only an upper bound exists.
+   `build/ptpn allocate` when core assignment is open. Read the per-task
+   `verdict` (`meets`/`misses`/`unknown`) and the report-level
+   `schedulability` (`schedulable`/`unschedulable`/`unknown`) from
+   `result.analysis`; `wcrt_exact: true` means the WCRT is the exact value,
+   while `exact: false` or `wcrt_capped: true` means it is a bound. The
+   completion observation is off under symmetry, extrapolation, merging,
+   non-equality canonicalization and `--tie arbitrary`.
 6. **Report** the facts, not a vibe: command, exit code, diagnostics,
-   `schedulable`, `counterexample`, `exact`, `truncated`, and pending count.
-   State timing provenance (`certified`/`measured`/`estimated`) and whether the
-   result is exact. Measured or estimated intervals are **not** WCET bounds.
+   `schedulability`, `counterexample`, `exact`/`wcrt_exact`, `truncated`, and
+   pending count. State timing provenance (`certified`/`measured`/`estimated`)
+   and whether the result is exact. Measured or estimated intervals are **not**
+   WCET bounds.
 
 ## Diagnostics -> action
 
@@ -81,7 +86,7 @@ envelope `result` — not on the code prefix alone. The complete table is
 | `E-PERF-001` | `-m` max-states truncation. If a counterexample is already reported, **do not raise `-m`** - fix the design. Otherwise raising `-m` may help; the result is partial either way. |
 | `E-PERF-002` | `--horizon` truncation. Same rule: with a counterexample, change the design; without one, raise/disable the horizon. |
 | `R-ANA-001` | Certified reachable deadlock. Fix dependency/lock structure or policy. |
-| `R-ANA-002` | Certified per-task lower-bound WCRT exceeds deadline. Change priorities, cores, or periods. |
+| `R-ANA-002` | A proven deadline miss (verdict `misses`): the certified lower bound exceeds the deadline, the observed response reached the deadline cap (`wcrt_capped`), or a complete graph shows the job never completes. Change priorities, cores, or periods; `result.analysis.tasks[].witness` shows the worst-case path. |
 | `R-ANA-003` | Periodic local deadlock. Change period, priority, or core assignment. |
 | `E-INT-*` | Typed supported-class rejections use `E-UNS-001`; unclassified internal failures use `E-INT-*`. |
 
@@ -118,9 +123,11 @@ option, unknown `--policy`, invalid `--diagnostics` value) bypass the envelope
 and use CLI11's own codes (for example 106/105). **Never raise `-m` on a proven
 counterexample** (exit 6, or `E-PERF-*` accompanied by a counterexample):
 truncation does not invalidate a counterexample found in the explored prefix.
-Conversely, an upper-bound `wcrt` exceeding a deadline is not a
-counterexample and never produces exit 6; `R-ANA-002` requires `wcrt_lb >
-deadline`.
+A max-states cut no longer reports deadlocks from dropped successors, so a
+truncated run without a proven miss exits 5, not 6. Conversely, an upper-bound
+`wcrt` exceeding a deadline is not a counterexample and never produces exit 6;
+`R-ANA-002` requires the task verdict to be `misses` (a certified lower bound
+above the deadline, a capped observation, or proven starvation).
 
 ## Trust boundary and design changes
 

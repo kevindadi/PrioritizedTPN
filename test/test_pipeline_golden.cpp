@@ -25,12 +25,16 @@ namespace {
 
 using ptpn_test::load_tdg;
 
-// Golden outputs are generated with libstdc++ (the stdlib used by CI):
+// Golden outputs are generated with libstdc++ (the stdlib used by CI). The
+// structural exports run without metrics so the state-class DOT has no
+// observation clocks; the metrics exports enable the completion observation
+// exactly like `--export-metrics` does:
 //   ./build/ptpn tdg -f example/motivating-examples/hw.json \
-//     --export-ptpn test/golden/hw.ptpn.dot --export-scg test/golden/hw.scg.dot \
+//     --export-ptpn test/golden/hw.ptpn.dot --export-scg test/golden/hw.scg.dot
+//   ./build/ptpn tdg -f example/motivating-examples/hw.json \
 //     --export-metrics test/golden/hw.metrics.json
-//   ./build/ptpn tdg -f example/s-bench/a.json \
-//     --export-ptpn test/golden/a.ptpn.dot --export-metrics test/golden/a.metrics.json
+//   ./build/ptpn tdg -f example/s-bench/a.json --export-ptpn test/golden/a.ptpn.dot
+//   ./build/ptpn tdg -f example/s-bench/a.json --export-metrics test/golden/a.metrics.json
 
 petri::PTPN lower_to_ptpn(const std::string& path) {
   tdg::TDG tdg = load_tdg(path);
@@ -137,9 +141,13 @@ TEST(PipelineGolden, MetricsJsonMatchesGolden) {
     SCOPED_TRACE(test_case.first);
     const petri::PTPN ptpn = lower_to_ptpn(test_case.first);
     state_class::StateClassReachabilityGraph graph(ptpn);
+    // Mirror the production pipeline: `--export-metrics` enables the exact
+    // completion observation.
+    graph.set_completion_observation(true);
     graph.build(5000);
     state_class::MetricsAnalyzer analyzer(graph.get_graph(), ptpn, graph.get_initial_vertex(),
                                           /*exact=*/true);
+    analyzer.set_completion_observation(graph.observation_active());
     const state_class::MetricsReport report = analyzer.analyze();
     const std::string out = testing::TempDir() + "ptpn_test_metrics.json";
     ASSERT_TRUE(state_class::save_metrics_json(report, out));

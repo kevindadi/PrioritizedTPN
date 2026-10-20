@@ -43,6 +43,70 @@ void StateClassReachabilityGraph::set_suspension_clock_projection(bool enabled) 
   suspension_clock_projection_ = enabled;
 }
 
+void StateClassReachabilityGraph::set_completion_observation(bool enabled) {
+  completion_observation_ = enabled;
+}
+
+bool StateClassReachabilityGraph::observation_active() const {
+  return completion_observation_ && firing_rule_ && firing_rule_->supports_completion_observation();
+}
+
+bool StateClassReachabilityGraph::include_release_clocks() const {
+  return firing_rule_ &&
+         (firing_rule_->uses_release_clocks() || observation_active());
+}
+
+bool StateClassReachabilityGraph::job_clock_layout() const {
+  return include_release_clocks() ||
+         (firing_rule_ && firing_rule_->uses_laxity_clocks());
+}
+
+int StateClassReachabilityGraph::observation_cap(size_t task) const {
+  const std::vector<TaskChain>& tasks = task_chains();
+  if (task >= tasks.size()) {
+    return INF_TIME;
+  }
+  const int per_task = task_observation_cap(tasks[task].deadline, tasks[task].period);
+  if (per_task != INF_TIME) {
+    return per_task;
+  }
+  // No deadline and no period: fall back to the structural cap so a starved
+  // job cannot make the zone space infinite.
+  return fallback_observation_cap(net_);
+}
+
+int StateClassReachabilityGraph::observe_completion(const StateClass& elapsed, size_t transition,
+                                                    const petri::Marking& target_marking) const {
+  const std::vector<TaskChain>& tasks = task_chains();
+  for (size_t ordinal = 0; ordinal < tasks.size(); ++ordinal) {
+    const TaskChain& task = tasks[ordinal];
+    if (task.exit_place >= target_marking.size() ||
+        task.exit_place >= elapsed.marking.size()) {
+      continue;
+    }
+    if (target_marking[task.exit_place] <= elapsed.marking[task.exit_place]) {
+      continue;  // this firing does not complete the task
+    }
+    const int release = elapsed.release_index(ordinal);
+    if (release <= 0) {
+      return INF_TIME;
+    }
+    // Fired zone: the elapsed zone intersected with the firing domain
+    // h_t >= downSI(t). Surviving clocks keep these values in the successor, so
+    // the release-clock sup here is the response time at the firing instant.
+    DBM fired = elapsed.zone;
+    const size_t hidx = static_cast<size_t>(elapsed.exec_index(transition));
+    if (hidx <= 0) {
+      return INF_TIME;
+    }
+    if (!fired.tighten(0, hidx, -effective_earliest(transition))) {
+      return INF_TIME;
+    }
+    return fired.get_constraint(static_cast<size_t>(release), 0);
+  }
+  return INF_TIME;
+}
+
 void StateClassReachabilityGraph::set_reduction_mode(ReductionMode mode) {
   reduction_mode_ = mode;
 }
@@ -62,7 +126,7 @@ size_t StateClassReachabilityGraph::MarkingActiveHash::operator()(
 }
 
 void StateClassReachabilityGraph::set_extrapolation(bool enabled) {
-  if (enabled && firing_rule_ && firing_rule_->uses_job_clocks()) {
+  if (enabled && job_clock_layout()) {
     throw ptpn::UnsupportedClassError(
         "k-extrapolation is not sound for job-clock (EDF/FIFO/LLF) states: relaxing "
         "job-clock bounds can merge different scheduling orderings",
@@ -277,6 +341,12 @@ StateClassReachabilityGraph::expand_vertex(SCVertex u, size_t max_states) {
     // One firing yields one successor per admissible target active set; the
     // edge weight is identical for all of them.
     std::vector<StateClass> successors = fire_all(elapsed, t);
+    if (observation_active() && !successors.empty()) {
+      // All successors share the same successor marking, so the completing job
+      // (if any) is edge-level, not branch-level.
+      edge.observed_response =
+          observe_completion(elapsed, t, successors.front().marking);
+    }
     for (StateClass& successor : successors) {
       if (extrapolation_enabled_) {
         successor.zone.extrapolate(extrapolation_k_);
@@ -319,7 +389,7 @@ size_t StateClassReachabilityGraph::build(size_t max_states) {
   // k-extrapolation (which would relax those bounds) nor the task-symmetry
   // quotient (which would have to permute release/laxity clocks and tasks) is
   // implemented for them; reject rather than silently approximate.
-  if (firing_rule_->uses_job_clocks()) {
+  if (job_clock_layout()) {
     if (extrapolation_enabled_) {
       throw ptpn::UnsupportedClassError(
           "k-extrapolation is not sound for job-clock (EDF/FIFO/LLF) states",

@@ -368,14 +368,20 @@ TEST(DiagnosticsCliTest, TruncationWithoutCounterexampleIsPerformance) {
 }
 
 TEST(DiagnosticsCliTest, CounterexampleDominatesTruncation) {
-  const CliResult result =
-      run_cli({"tdg", "-f", "example/s-bench/a.json", "--diagnostics", "json", "-m", "5"});
+  // A proven deadline miss (R-ANA-002) inside the explored prefix still wins
+  // over the truncation warning (E-PERF-001): exit 6, not 5. A max-states cut
+  // no longer manufactures deadlock counterexamples from dropped successors.
+  const CliResult result = run_cli({"rtsl", "-f", "example/diagnostics/deadline-miss.rtsl",
+                                    "--diagnostics", "json", "-m", "10"});
   EXPECT_EQ(6, result.exit_code);
 
   const nlohmann::json envelope = parse_envelope(result.stdout_text);
   EXPECT_EQ(6, envelope.value("exit_code", 0));
-  EXPECT_TRUE(has_diagnostic(envelope, "R-ANA-001"));
+  EXPECT_TRUE(has_diagnostic(envelope, "R-ANA-002"));
   EXPECT_TRUE(has_diagnostic(envelope, "E-PERF-001"));
+  EXPECT_FALSE(has_diagnostic(envelope, "R-ANA-001"));
   ASSERT_TRUE(envelope.contains("result"));
-  EXPECT_EQ("deadlock", envelope.at("result").at("analysis").value("counterexample", ""));
+  EXPECT_EQ("deadline", envelope.at("result").at("analysis").value("counterexample", ""));
+  EXPECT_EQ("unschedulable",
+            envelope.at("result").at("analysis").value("schedulability", ""));
 }

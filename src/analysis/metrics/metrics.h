@@ -17,8 +17,44 @@ struct TimeValue {
   [[nodiscard]] std::string to_string() const;
 };
 
+// Three-valued deadline verdict: `Misses` and `Meets` are certified by the
+// analysis, `Unknown` means neither could be proven (incomplete graph, or the
+// certified bounds straddle the deadline).
+enum class DeadlineVerdict { Meets, Misses, Unknown };
+
+// Overall schedulability verdict. `Schedulable` requires every observed
+// deadline to be met on a complete analysis; `Unschedulable` requires a proven
+// counterexample (deadline miss, starvation, or deadlock); everything else is
+// `Unknown`.
+enum class Schedulability { Schedulable, Unschedulable, Unknown };
+
+inline const char* deadline_verdict_to_string(DeadlineVerdict verdict) {
+  switch (verdict) {
+    case DeadlineVerdict::Meets:
+      return "meets";
+    case DeadlineVerdict::Misses:
+      return "misses";
+    case DeadlineVerdict::Unknown:
+    default:
+      return "unknown";
+  }
+}
+
+inline const char* schedulability_to_string(Schedulability value) {
+  switch (value) {
+    case Schedulability::Schedulable:
+      return "schedulable";
+    case Schedulability::Unschedulable:
+      return "unschedulable";
+    case Schedulability::Unknown:
+    default:
+      return "unknown";
+  }
+}
+
 // Per-task performance metrics derived from the reachability graph. All times
-// are sound bounds over the symbolic state classes (see docs/metrics.md).
+// are sound bounds over the symbolic state classes; `wcrt_exact` marks the
+// values that are certified exact (see docs/usage.md, "Metrics and verdicts").
 struct TaskMetrics {
   std::string name;
   int core = -1;
@@ -31,12 +67,20 @@ struct TaskMetrics {
   bool observed = false;  // at least one activation seen in the graph
   int activations = 0;    // number of release events observed
 
-  TimeValue wcrt;     // worst-case response time (sound upper bound)
+  TimeValue wcrt;     // worst-case response time (exact when wcrt_exact)
   TimeValue wcrt_lb;  // certified lower bound for the same quantity
   // True when the certified interval collapses (wcrt_lb == wcrt). A false
   // value does NOT prove that `wcrt` is inexact; it only means the interval
   // did not certify exactness.
   bool wcrt_interval_tight = false;
+  // True when `wcrt` is the exact worst-case response time: the complete,
+  // unreduced graph carries release-clock observations and the value did not
+  // reach the analysis cap. False means `wcrt` is a bound.
+  bool wcrt_exact = false;
+  // True when the observed response reached the analysis cap (the task's
+  // deadline + 1): the true WCRT is at least `wcrt_lb`, but the analysis
+  // stopped refining once the deadline was exceeded.
+  bool wcrt_capped = false;
   TimeValue bcrt;                // best-case response time
   TimeValue jitter;              // wcrt - bcrt
   TimeValue worst_interference;  // max time suspended by higher priority
@@ -45,7 +89,16 @@ struct TaskMetrics {
   int max_in_flight = 0;         // max simultaneous tokens across this task's chain
 
   bool has_deadline = false;
-  bool deadline_missed = false;  // wcrt exceeds the deadline (or is infinite)
+  // Proven deadline miss: the certified lower bound exceeds the deadline, the
+  // observed response reached the cap, or the job provably never completes.
+  // An upper bound that merely exceeds the deadline does not set this.
+  bool deadline_missed = false;
+  // Three-valued deadline verdict. `Unknown` when neither a miss nor a meet can
+  // be certified (incomplete graph, or the bounds straddle the deadline).
+  DeadlineVerdict verdict = DeadlineVerdict::Unknown;
+  // Witness for a proven miss: transition names from a release to the
+  // worst-case completion edge (empty when not applicable).
+  std::vector<std::string> worst_case_path;
   TimeValue slack;               // deadline - wcrt (only when has_deadline)
   int jobs_per_hyperperiod = 0;  // hyperperiod / period (0 if aperiodic)
 
@@ -92,6 +145,9 @@ struct MetricsReport {
   // graph (notably `wcrt_lb`) are not certified for the original state space
   // and are reported as unavailable.
   bool wcrt_lb_valid = true;
+  // True when every observed task's `wcrt` is the exact worst-case response
+  // time (see TaskMetrics::wcrt_exact).
+  bool wcrt_exact = false;
   size_t states = 0;
   size_t transitions = 0;
   bool truncated = false;
@@ -107,7 +163,10 @@ struct MetricsReport {
   std::vector<std::string> overflow_places;  // places exceeding capacity
 
   std::vector<size_t> deadlock_states;  // ids of illegitimate sinks
-  bool schedulable = true;              // no illegitimate deadlock reachable
+  // True only when the system is proven schedulable: no proven miss, no
+  // deadlock, and a complete analysis. Use `schedulability` for the tri-state.
+  bool schedulable = true;
+  Schedulability schedulability = Schedulability::Schedulable;
 
   std::vector<TaskMetrics> tasks;
   std::vector<LockMetrics> locks;
@@ -143,6 +202,16 @@ class MetricsAnalyzer {
   // the horizon truncated expansion.
   void set_horizon_info(HorizonInfo info);
 
+  // Declares that the graph carries completion observations
+  // (FiringEdge::observed_response from release clocks). WCRT is then read
+  // from the completion edges instead of the dwell DP.
+  void set_completion_observation(bool enabled);
+
+  // Records that the reachability graph was truncated at the max-states bound.
+  // "Meets" verdicts and starvation conclusions are then uncertifiable; proven
+  // misses stay valid because they are witnessed by the explored prefix.
+  void set_graph_truncated(bool truncated);
+
   // Declares task groups that the reachability graph proved interchangeable
   // (StateClassReachabilityGraph::symmetry_task_groups()). Timing values are
   // pooled within each group: the members are symmetric, so they share the
@@ -174,6 +243,7 @@ class MetricsAnalyzer {
     int transition_id = -1;
     int dwell_min = 0;
     int dwell_max = 0;
+    int observed_response = INF_TIME;
   };
 
   const SCGraph& graph_;
@@ -185,7 +255,15 @@ class MetricsAnalyzer {
   bool exact_;
   bool wcrt_lb_valid_;
   HorizonInfo horizon_;
+  bool observation_ = false;
+  bool graph_truncated_ = false;
   std::vector<std::vector<std::string>> symmetry_task_groups_;
+
+  // True when the explored graph is complete (no max-states or horizon cut):
+  // only then are "meets" verdicts and starvation conclusions certifiable.
+  [[nodiscard]] bool graph_complete() const {
+    return !graph_truncated_ && !horizon_.truncated;
+  }
 
   size_t num_vertices_ = 0;
   std::vector<std::vector<Edge>> out_edges_;  // per vertex
@@ -216,6 +294,23 @@ class MetricsAnalyzer {
   void compute_local_deadlocks(MetricsReport& report);
   void compute_locks(MetricsReport& report);
   void compute_utilisation(MetricsReport& report);
+
+  // Completion observation for one task: the worst response over its completion
+  // edges (release-clock sup recorded by the reachability builder).
+  struct CompletionObservation {
+    bool has_completion = false;
+    bool infinite = false;
+    bool capped = false;
+    long long value = -1;           // worst finite response (-1 = none)
+    size_t witness_target = 0;      // successor vertex of the worst completion edge
+    size_t witness_transition = 0;  // its transition
+  };
+  [[nodiscard]] CompletionObservation observe_completions(const TaskTopology& task,
+                                                          int cap) const;
+  // Transition names along a shortest graph path from any release state to the
+  // worst completion edge; the witness for a proven deadline miss.
+  [[nodiscard]] std::vector<std::string> build_witness_path(
+      const std::vector<size_t>& release_states, size_t target_vertex) const;
 };
 
 }  // namespace state_class

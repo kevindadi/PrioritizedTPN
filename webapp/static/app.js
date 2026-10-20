@@ -111,6 +111,23 @@
     return isNum(d) ? Number(d) : 0;
   }
 
+  // Tri-state schedulability: prefers the `schedulability` string, falls back
+  // to the legacy boolean (`false` with no proven counterexample is unknown).
+  function schedulabilityOf(metrics) {
+    if (!metrics) return "unknown";
+    if (metrics.schedulability === "schedulable" || metrics.schedulability === "unschedulable" ||
+        metrics.schedulability === "unknown") {
+      return metrics.schedulability;
+    }
+    if (metrics.schedulable === true) return "schedulable";
+    if (metrics.schedulable === false) {
+      return deadlockCount(metrics) > 0 || (metrics.tasks || []).some((t) => t && t.deadline_missed)
+        ? "unschedulable"
+        : "unknown";
+    }
+    return "unknown";
+  }
+
   function truncate(text, max) {
     const s = String(text ?? "");
     return s.length > max ? `${s.slice(0, Math.max(0, max - 1))}…` : s;
@@ -630,7 +647,8 @@
     else if (!resp.ok && errors) { label = "Blocked by diagnostics"; dot = "err"; }
     else if (!resp.ok) { label = "Diagnostics found"; dot = "err"; }
     else if (resp.analysis && resp.analysis.truncated) { label = "Run truncated"; dot = "warn"; }
-    else if (metrics && metrics.schedulable === false) { label = "Not schedulable"; dot = "err"; }
+    else if (metrics && schedulabilityOf(metrics) === "unschedulable") { label = "Not schedulable"; dot = "err"; }
+    else if (metrics && schedulabilityOf(metrics) === "unknown") { label = "Schedulability unknown"; dot = "warn"; }
     else if (metrics && metrics.exact === false) { label = "Approximate result"; dot = "warn"; }
     else if (pending) { label = "Pending measurements"; dot = "warn"; }
     const parts = [];
@@ -759,13 +777,17 @@
     const tasks = metrics.tasks || [];
     const maxWcrt = tasks.reduce((m, t) => Math.max(m, isNum(t.wcrt) ? Number(t.wcrt) : 0), 0);
     const deadlocks = deadlockCount(metrics);
-    const sched = metrics.schedulable === true;
+    const schedState = schedulabilityOf(metrics);
+    const sched = schedState === "schedulable";
+    const unknownSched = schedState === "unknown";
     const exact = metrics.exact !== false;
-    const status = sched ? (exact ? "ok" : "warn") : "err";
-    const schedLabel = sched ? (exact ? "YES" : "YES*") : "NO";
+    const status = sched ? (exact ? "ok" : "warn") : unknownSched ? "warn" : "err";
+    const schedLabel = sched ? (exact ? "YES" : "YES*") : unknownSched ? "UNKNOWN" : "NO";
     const schedSub = sched
       ? (exact ? "certified exact run" : "approximate / reduced")
-      : `${deadlocks ? `${deadlocks} deadlock states` : "deadline violation or deadlock"}`;
+      : unknownSched
+        ? "not certified by the explored graph"
+        : `${deadlocks ? `${deadlocks} deadlock states` : "deadline violation or deadlock"}`;
     const taskCount = tasks.length;
     const periods = tasks.map((t) => Number(t.period) || 0).filter((p) => p > 0);
     const minDeadline = tasks.map((t) => Number(t.deadline) || 0).filter((d) => d > 0).sort((a, b) => a - b)[0];
@@ -810,7 +832,7 @@
       } else if (ratio > 1.0001) {
         stampText = "DEADLINE MISS";
         stampClass = "stamp err";
-      } else if (metrics.exact === false || metrics.schedulable !== true) {
+      } else if (metrics.exact === false || schedulabilityOf(metrics) !== "schedulable") {
         stampText = metrics.exact === false ? "BOUND" : "CHECK";
         stampClass = "stamp warn";
       } else {
@@ -1128,7 +1150,9 @@
     if (!items.length) {
       items.push(`<div class="signal ok"><i></i><span class="signal-text">clean — no diagnostics</span><span class="count">0</span></div>`);
       if (state.response && state.response.metrics) {
-        items.push(`<div class="signal ok"><i></i><span class="signal-text">${state.response.metrics.schedulable ? "schedulable" : "not schedulable"}</span><span class="count">${fmtInt(state.response.metrics.states)}</span></div>`);
+        const schedState = schedulabilityOf(state.response.metrics);
+        const schedText = schedState === "schedulable" ? "schedulable" : schedState === "unschedulable" ? "not schedulable" : "schedulability unknown";
+        items.push(`<div class="signal ${schedState === "schedulable" ? "ok" : schedState === "unschedulable" ? "error" : "warning"}"><i></i><span class="signal-text">${schedText}</span><span class="count">${fmtInt(state.response.metrics.states)}</span></div>`);
       }
     }
     root.innerHTML = items.join("");
@@ -2306,7 +2330,10 @@
           <th class="num">preempt</th><th class="num">in flight</th><th>status</th>
         </tr></thead>
         <tbody>${tasks.map((t) => {
-          const status = t.deadline_missed ? `<span class="row-status err">miss</span>`
+          const status = t.verdict === "misses" ? `<span class="row-status err">misses</span>`
+            : t.verdict === "unknown" ? `<span class="row-status warn">unknown</span>`
+            : t.verdict === "meets" ? `<span class="row-status ok">meets</span>`
+            : t.deadline_missed ? `<span class="row-status err">miss</span>`
             : t.local_deadlock ? `<span class="row-status err">local deadlock</span>`
             : t.observed === false ? `<span class="row-status">unobserved</span>`
             : `<span class="row-status ok">ok</span>`;
@@ -2353,9 +2380,10 @@
 
     const facts = [
       ["exact", metrics.exact ? "true" : "false"],
+      ["wcrt_exact", metrics.wcrt_exact === undefined ? "—" : metrics.wcrt_exact ? "true" : "false"],
       ["wcrt_lb_valid", metrics.wcrt_lb_valid ? "true" : "false"],
       ["bounded", metrics.bounded ? "true" : "false"],
-      ["schedulable", metrics.schedulable ? "true" : "false"],
+      ["schedulability", schedulabilityOf(metrics)],
       ["steady cycle", metrics.has_steady_cycle ? "yes" : "no"],
       ["recurrent SCC", fmtInt(metrics.recurrent_scc_size)],
       ["hyperperiod", `${fmtInt(metrics.hyperperiod)}<small> ms</small>`],

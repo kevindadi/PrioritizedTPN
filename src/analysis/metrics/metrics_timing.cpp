@@ -1,5 +1,7 @@
 #include <algorithm>
-#include <functional>
+#include <limits>
+#include <string>
+#include <vector>
 
 #include "analysis/dbm/clock_state.h"
 #include "analysis/metrics/metrics.h"
@@ -58,6 +60,101 @@ TimeValue to_time(const DPResult& r) {
 }
 
 }  // namespace
+
+MetricsAnalyzer::CompletionObservation MetricsAnalyzer::observe_completions(
+    const TaskTopology& task, int cap) const {
+  CompletionObservation result;
+  if (!task.has_end) {
+    return result;
+  }
+  for (size_t v = 0; v < num_vertices_; ++v) {
+    const std::vector<int>& source_marking = state_of_[v]->marking;
+    if (task.end_place >= source_marking.size()) {
+      continue;
+    }
+    for (const Edge& e : out_edges_[v]) {
+      const std::vector<int>& target_marking = state_of_[e.target]->marking;
+      if (task.end_place >= target_marking.size()) {
+        continue;
+      }
+      if (target_marking[task.end_place] <= source_marking[task.end_place]) {
+        continue;  // not a completion edge for this task
+      }
+      result.has_completion = true;
+      if (is_inf(e.observed_response)) {
+        // A saturated observation clock is abstracted to "unbounded"; with a
+        // finite cap that means the response is at least the cap, which is a
+        // certified lower bound (and a proven miss for a deadline).
+        if (cap != INF_TIME) {
+          result.capped = true;
+          if (result.value < cap) {
+            result.value = cap;
+            result.witness_target = e.target;
+            result.witness_transition = static_cast<size_t>(e.transition_id);
+          }
+        }
+        result.infinite = true;
+        continue;
+      }
+      if (cap != INF_TIME && e.observed_response >= cap) {
+        result.capped = true;
+      }
+      if (e.observed_response > result.value) {
+        result.value = e.observed_response;
+        result.witness_target = e.target;
+        result.witness_transition = static_cast<size_t>(e.transition_id);
+      }
+    }
+  }
+  return result;
+}
+
+std::vector<std::string> MetricsAnalyzer::build_witness_path(
+    const std::vector<size_t>& release_states, size_t target_vertex) const {
+  std::vector<std::string> path;
+  if (target_vertex >= num_vertices_) {
+    return path;
+  }
+  constexpr size_t kNoParent = std::numeric_limits<size_t>::max();
+  std::vector<size_t> parent(num_vertices_, kNoParent);
+  std::vector<size_t> parent_transition(num_vertices_, 0);
+  std::vector<size_t> queue;
+  queue.reserve(num_vertices_);
+  for (size_t start : release_states) {
+    if (start < num_vertices_ && parent[start] == kNoParent) {
+      parent[start] = start;  // root
+      queue.push_back(start);
+    }
+  }
+  bool found = false;
+  for (size_t head = 0; head < queue.size(); ++head) {
+    const size_t v = queue[head];
+    if (v == target_vertex) {
+      found = true;
+      break;
+    }
+    for (const Edge& e : out_edges_[v]) {
+      if (parent[e.target] != kNoParent) {
+        continue;
+      }
+      parent[e.target] = v;
+      parent_transition[e.target] = static_cast<size_t>(e.transition_id);
+      queue.push_back(e.target);
+    }
+  }
+  if (!found) {
+    return path;
+  }
+  std::vector<std::string> reversed;
+  for (size_t v = target_vertex; parent[v] != v; v = parent[v]) {
+    const size_t t = parent_transition[v];
+    reversed.push_back(t < net_.num_transitions()
+                           ? net_.get_transition(petri::TransitionId{t}).name
+                           : std::string("T") + std::to_string(t));
+  }
+  std::reverse(reversed.begin(), reversed.end());
+  return reversed;
+}
 
 void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
   // Generic DP: accumulate `weight` along in-flight paths of `task` up to a
@@ -141,6 +238,27 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
       tm.has_deadline = info_it->second.deadline > 0;
     }
 
+    // Overlapping releases (a release that creates a second in-flight job)
+    // make the per-task release clock ambiguous: one column cannot time two
+    // jobs, so the completion observation would measure the newer job from the
+    // older job's release. Such a value stays a sound upper bound but cannot
+    // certify a miss; fall back to the DP bounds for this task instead.
+    bool observation_usable = observation_;
+    if (observation_usable) {
+      for (size_t v = 0; v < num_vertices_ && observation_usable; ++v) {
+        int in_flight = 0;
+        for (size_t p : task.chain_places) {
+          if (p == task.end_place) {
+            continue;  // completion notification, not a job
+          }
+          if (p < state_of_[v]->marking.size()) {
+            in_flight += state_of_[v]->marking[p];
+          }
+        }
+        observation_usable = in_flight <= 1;
+      }
+    }
+
     // Release states: edges that deposit a token into the entry place, plus
     // every initial state class in which the task starts already released.
     // All initial classes with the entry token are path starts so that the DP
@@ -199,18 +317,90 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
         return (task_active(task, v) && task_suspended(task, e.target)) ? 1 : 0;
       };
 
-      tm.wcrt = to_time(run_dp(task, w_dwell_max, true, release_states));
-      // Certified lower bound for the same worst case: every edge's dwell is at
-      // least (fire_min - entry_high)^+, so the longest such path is a sound
-      // lower bound on the true WCRT. [wcrt_lb, wcrt] brackets the exact value.
-      // With a state-merging reduction, the candidate classes that carried the
-      // tighter dwell bounds are gone, so this bound is not certified for the
-      // original graph and is left unavailable instead of being misreported.
-      if (wcrt_lb_valid_) {
-        tm.wcrt_lb = to_time(run_dp(task, w_dwell_min, true, release_states));
-        tm.wcrt_interval_tight =
-            !tm.wcrt.infinite && !tm.wcrt_lb.infinite && tm.wcrt.value == tm.wcrt_lb.value;
+      // Worst-case response time. With completion observations the exact value
+      // is the worst release-clock sup over the task's completion edges;
+      // otherwise the dwell DP gives a bound (the per-edge maxima along a path
+      // ignore cross-state DBM correlation).
+      bool observation_used = false;
+      bool capped = false;
+      bool infinite_proven = false;
+      if (observation_usable) {
+        int cap = task_observation_cap(tm.deadline, tm.period);
+        if (cap == INF_TIME) {
+          cap = fallback_observation_cap(net_);
+        }
+        const CompletionObservation obs = observe_completions(task, cap);
+        observation_used = true;
+        if (!obs.has_completion) {
+          // No completion edge: the job is starved when the graph is complete.
+          // A truncated graph may hold the completion in the unexplored part.
+          tm.wcrt.infinite = true;
+          infinite_proven = graph_complete();
+        } else if (obs.infinite) {
+          // Unbounded release clock: either truly unbounded (no finite cap) or
+          // saturated at the cap, which proves the job has already been waiting
+          // longer than its deadline.
+          tm.wcrt.infinite = true;
+          infinite_proven = true;
+          if (obs.capped) {
+            capped = true;
+            tm.wcrt_capped = true;
+            tm.wcrt.value = obs.value;  // the cap is a certified lower bound
+          }
+          if (tm.has_deadline && obs.capped) {
+            tm.worst_case_path = build_witness_path(release_states, obs.witness_target);
+          }
+        } else {
+          tm.wcrt.value = obs.value;
+          if (obs.capped) {
+            // The observation hit the deadline cap: the true response is at
+            // least the cap, so `wcrt` is not an upper bound; the cap itself is
+            // a certified lower bound when the graph was not merged.
+            capped = true;
+            tm.wcrt_capped = true;
+            tm.wcrt.infinite = true;
+            infinite_proven = wcrt_lb_valid_;
+          }
+          if (tm.has_deadline && (obs.capped || obs.value > tm.deadline)) {
+            tm.worst_case_path = build_witness_path(release_states, obs.witness_target);
+          }
+        }
+        if (wcrt_lb_valid_) {
+          if (capped || !tm.wcrt.infinite) {
+            // The cap and a finite observation are certified lower bounds.
+            tm.wcrt_lb.value = tm.wcrt.value;
+            tm.wcrt_lb.infinite = false;
+          } else {
+            // Unbounded or starved; the verdict logic only treats this as a
+            // proven miss when the graph is complete.
+            tm.wcrt_lb.infinite = true;
+          }
+        }
+      } else {
+        tm.wcrt = to_time(run_dp(task, w_dwell_max, true, release_states));
+        // Certified lower bound for the same worst case: every edge's dwell is
+        // at least (fire_min - entry_high)^+, so the longest such path is a
+        // sound lower bound on the true WCRT. [wcrt_lb, wcrt] brackets the
+        // exact value. With a state-merging reduction, the candidate classes
+        // that carried the tighter dwell bounds are gone, so this bound is not
+        // certified for the original graph and is left unavailable instead of
+        // being misreported.
+        if (wcrt_lb_valid_) {
+          tm.wcrt_lb = to_time(run_dp(task, w_dwell_min, true, release_states));
+        }
+        // A cycle in the explored graph is a real unbounded behavior.
+        infinite_proven = tm.wcrt.infinite;
       }
+
+      tm.wcrt_interval_tight =
+          wcrt_lb_valid_ && !tm.wcrt.infinite && !tm.wcrt_lb.infinite &&
+          tm.wcrt.value == tm.wcrt_lb.value;
+      // Exactness: the observation is exact on a complete, unreduced graph when
+      // the cap was not reached; the DP certifies itself when its bounds
+      // collapse.
+      tm.wcrt_exact = observation_used ? (!capped && !tm.wcrt.infinite && exact_)
+                                       : tm.wcrt_interval_tight;
+
       tm.bcrt = to_time(run_dp(task, w_dwell_min, false, release_states));
       // The per-edge dwell_min sum ignores cross-state DBM correlation and can
       // dip below the execution demand. BCET is an independent, sound lower
@@ -227,8 +417,14 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
       const DPResult preempt = run_dp(task, w_preempt, true, release_states);
       tm.max_preemptions = preempt.infinite ? -1 : static_cast<int>(preempt.value);
 
+      // Three-valued deadline verdict. A miss needs a certified counterexample
+      // (unbounded response, cap reached, or a certified lower bound above the
+      // deadline); a meet needs a sound upper bound within the deadline on a
+      // complete graph. Everything else is unknown.
       if (tm.has_deadline) {
-        tm.deadline_missed = tm.wcrt.infinite || tm.wcrt.value > tm.deadline;
+        tm.verdict = deadline_verdict_from_bounds(tm, graph_complete(), wcrt_lb_valid_,
+                                                  infinite_proven);
+        tm.deadline_missed = tm.verdict == DeadlineVerdict::Misses;
         tm.slack.infinite = tm.wcrt.infinite;
         if (!tm.wcrt.infinite) {
           tm.slack.value = static_cast<long long>(tm.deadline) - tm.wcrt.value;

@@ -218,8 +218,8 @@ void build_clock_layout(StateClass& state, const petri::PTPN& net, bool keep_sus
 }
 
 void StateClassReachabilityGraph::build_layout(StateClass& state) const {
-  build_clock_layout(state, net_, !suspension_clock_projection_,
-                     firing_rule_->uses_release_clocks(), firing_rule_->uses_laxity_clocks());
+  build_clock_layout(state, net_, !suspension_clock_projection_, include_release_clocks(),
+                     firing_rule_->uses_laxity_clocks());
 }
 
 StateClass StateClassReachabilityGraph::compute_initial_class() {
@@ -246,11 +246,11 @@ std::vector<StateClass> StateClassReachabilityGraph::compute_initial_classes() {
   StateClass prepared = base;
   prepared.struct_enabled = struct_enabled;
   prepared.priority_enabled = struct_enabled;
-  if (firing_rule_->uses_job_clocks()) {
+  if (job_clock_layout()) {
     build_layout(prepared);
     prepared.zone = initial_zone(prepared, net_);
   }
-  const PolicyContext context{net_, firing_rule_->uses_job_clocks() ? &prepared : &base};
+  const PolicyContext context{net_, job_clock_layout() ? &prepared : &base};
   const std::vector<PolicyBranch> branches = firing_rule_->branches(struct_enabled, net_, context);
 
   std::vector<StateClass> out;

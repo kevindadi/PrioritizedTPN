@@ -43,6 +43,7 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 | `--extrapolation` | Enable opt-in k-extrapolation (timing metrics become approximate) |
 | `--horizon N` | WCRT time-horizon reduction: do not expand state classes whose accumulated lower-bound dwell exceeds `N` (default: off). Sound for WCRT only when `N` bounds the response time of interest; deadlock/SCC results are then uncertified |
 | `--tie` | Equal-priority tie handling for the fixed-priority policies: `fifo` (default) keeps a running transition scheduled and prefers an in-service job over one waiting for its first dispatch, so an equal-priority peer cannot preempt it; `arbitrary` enumerates every equal-priority choice, including equal-priority preemption (worst case over tie-breaks) |
+| `--no-exact-wcrt` | Disable the exact completion observation: WCRT values fall back to sound dwell-DP bounds. Faster on models with many tasks (the release clocks add a DBM column per in-flight job), but `wcrt_exact` is `false` and deadline verdicts become conservative |
 | `--no-analysis` | Skip state-class reachability analysis |
 | `--diagnostics json` | Emit the versioned JSON diagnostics envelope on stdout and reserve stdout for it (available on `check`, `tdg`, `rtsl`, `ptpn`, and `allocate`; see [diagnostics.md](diagnostics.md)) |
 | `--diagnostics-file PATH` | Write the same envelope to `PATH` |
@@ -156,6 +157,46 @@ reported before the transport is engaged and use CLI11's own codes (for example
 `106` and `105`); they are not diagnostic categories. See
 [diagnostics.md](diagnostics.md) for the full priority rules. Models using
 `core any` must go through `ptpn allocate`.
+
+## Metrics and verdicts (`--export-metrics`)
+
+The metrics JSON is written by `--export-metrics PATH`; the same per-task
+verdicts also appear in the `--diagnostics json` envelope under
+`result.analysis`. Report level:
+
+| Field | Meaning |
+|-------|---------|
+| `exact` | the state-class graph is the complete, unreduced graph (equality canonicalization; no extrapolation, merging, symmetry or cut) |
+| `wcrt_exact` | every observed task's `wcrt` is the exact worst-case response time |
+| `schedulable` | `true` only when the system is proven schedulable; `null` when a horizon cut makes the verdict uncertified |
+| `schedulability` | tri-state: `schedulable`, `unschedulable` (a proven counterexample exists), or `unknown` |
+| `states`, `transitions`, `bounded`, `deadlock_states`, `horizon`, ... | structural facts |
+
+Per task:
+
+| Field | Meaning |
+|-------|---------|
+| `wcrt` | worst-case response time: the exact value when `wcrt_exact` is true, otherwise a sound upper bound (`null` = unbounded) |
+| `wcrt_lb` | certified lower bound (`null` when the reduction makes it uncertified) |
+| `wcrt_exact` | `true` when `wcrt` is the exact value |
+| `wcrt_capped` | `true` when the observation hit the analysis cap (deadline + 1): the true WCRT is at least `wcrt_lb` and the miss is proven |
+| `verdict` | tri-state `meets` / `misses` / `unknown` (present only for tasks with a deadline) |
+| `deadline_missed` | `true` only for a **proven** miss (`verdict == "misses"`) |
+| `slack` | `deadline - wcrt` (`null` when the response is unbounded) |
+| `worst_case_path` | transition names from a release to the worst completion (the witness of a proven miss) |
+
+With the default settings the analyzer observes each job's release clock at
+completion, so `wcrt` is the **exact** response time for tasks that run one job
+at a time (`wcrt_exact: true`). The observation is disabled — and the values
+fall back to sound dwell-DP bounds — under `--extrapolation`,
+`--reduction upper-bound` or `symmetry`, a non-equality canonicalization,
+`--tie arbitrary`, `--no-exact-wcrt`, or when a task can have overlapping
+releases (its period is shorter than its response). A response beyond the task's
+deadline is reported as `wcrt_capped` (a certified lower bound) instead of a
+possibly misleading exact number; the verdict stays exact. The observation adds
+a release clock per in-flight job to the state-class zones, which slows the
+DBM closure on models with many tasks (`--no-exact-wcrt` trades that back for
+bounds).
 
 ## Reduction modes and defaults
 

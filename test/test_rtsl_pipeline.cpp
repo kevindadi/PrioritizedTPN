@@ -347,6 +347,107 @@ TEST(RtslPipelineCli, AllocateAcceptsTdgJsonInput) {
   EXPECT_EQ(envelope.at("exit_code"), 0);
 }
 
+TEST(RtslPipelineCli, ExactWcrtIgnoresUnrelatedCoreTasks) {
+  // Regression: the dwell DP summed per-edge maxima along a path, so an
+  // unrelated task on another core inflated a's WCRT (4 -> 5) while `exact`
+  // stayed true. The completion observation reads the release clock when the
+  // job completes and reports the exact value.
+  const std::string path = write_temp_file(".rtsl", R"(system wcrt {
+  cpus 2
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+
+  task a: periodic {
+    period 100ms
+    deadline 100ms
+    core 0
+    locks mutex1
+    time [ [1, 1], [1, 2], [1, 1] ] estimated
+  }
+
+  task u: periodic {
+    period 3ms
+    deadline 3ms
+    core 1
+    time [1, 1] estimated
+  }
+
+  start a
+  start u
+}
+)");
+  const std::string metrics_path = test_artifact_name(".wcrt.metrics.json");
+  const CliResult result =
+      run_cli({"rtsl", "-f", path, "--export-metrics", metrics_path, "--diagnostics", "json"});
+  ASSERT_EQ(result.exit_code, 0) << result.stderr_text;
+
+  const nlohmann::json envelope = parse_envelope(result.stdout_text);
+  const nlohmann::json& analysis = envelope.at("result").at("analysis");
+  EXPECT_EQ(analysis.at("wcrt_exact"), true);
+  EXPECT_EQ(analysis.at("schedulability"), "schedulable");
+
+  const auto& tasks = analysis.at("tasks");
+  const auto task_named = [&tasks](const std::string& name) {
+    return std::find_if(tasks.begin(), tasks.end(), [&name](const nlohmann::json& task) {
+      return task.value("task", "") == name;
+    });
+  };
+  const auto a = task_named("a");
+  ASSERT_NE(a, tasks.end());
+  EXPECT_EQ(a->at("wcrt"), 4);  // not 5: the unrelated core adds nothing
+  EXPECT_EQ(a->at("wcrt_lb"), 4);
+  EXPECT_EQ(a->at("wcrt_exact"), true);
+  EXPECT_EQ(a->at("verdict"), "meets");
+
+  const auto u = task_named("u");
+  ASSERT_NE(u, tasks.end());
+  EXPECT_EQ(u->at("wcrt"), 1);
+  EXPECT_EQ(u->at("verdict"), "meets");
+}
+
+TEST(RtslPipelineCli, DeadlineMissReportsVerdictWitnessAndExitCode) {
+  // [3, 5] with deadline 4: the completion observation certifies the miss
+  // (response reaches the deadline cap), exit 6, R-ANA-002 with a witness path.
+  const std::string path = write_temp_file(".rtsl", R"(system miss {
+  cpus 1
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+
+  task a: periodic {
+    period 10ms
+    deadline 4ms
+    core 0
+    time [3, 5] estimated
+  }
+
+  start a
+}
+)");
+  const CliResult result = run_cli({"rtsl", "-f", path, "--diagnostics", "json"});
+  ASSERT_EQ(result.exit_code, 6) << result.stderr_text;
+
+  const nlohmann::json envelope = parse_envelope(result.stdout_text);
+  EXPECT_NE(find_diagnostic(envelope, "R-ANA-002"), nullptr);
+  const nlohmann::json& analysis = envelope.at("result").at("analysis");
+  EXPECT_EQ(analysis.at("counterexample"), "deadline");
+  EXPECT_EQ(analysis.at("schedulability"), "unschedulable");
+
+  const auto& misses = analysis.at("deadline_misses");
+  ASSERT_EQ(misses.size(), 1U);
+  EXPECT_EQ(misses.at(0).at("task"), "a");
+  EXPECT_EQ(misses.at(0).at("deadline"), 4);
+  EXPECT_EQ(misses.at(0).at("wcrt_lb"), 5);
+  EXPECT_EQ(misses.at(0).at("wcrt_capped"), true);
+  EXPECT_FALSE(misses.at(0).at("witness").empty());
+
+  const auto& tasks = analysis.at("tasks");
+  ASSERT_EQ(tasks.size(), 1U);
+  EXPECT_EQ(tasks.at(0).at("verdict"), "misses");
+  EXPECT_EQ(tasks.at(0).at("deadline"), 4);
+}
+
 TEST(RtslPipelineCli, TieModeSelectsEqualPrioritySemantics) {
   // a is a three-segment locked task started at t=0; b is a same-priority
   // periodic task whose first release is at t=1.

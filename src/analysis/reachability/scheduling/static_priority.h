@@ -20,6 +20,10 @@ class StaticPriorityRule : public FiringRule {
     return mode_;
   }
 
+  bool supports_completion_observation() const override {
+    return true;
+  }
+
  private:
   PreemptionMode mode_;
 };

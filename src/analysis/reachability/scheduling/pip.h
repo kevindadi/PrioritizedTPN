@@ -53,6 +53,10 @@ class PipFiringRule : public FiringRule {
     return PreemptionMode::RESUME;
   }
 
+  bool supports_completion_observation() const override {
+    return true;
+  }
+
   // Chain positions mirrored from converter::detail::TaskChainLayout (the
   // analysis layer must not depend on the lowering headers).
   static constexpr size_t kLockAcquireBase = detail::TaskLockTopology::kLockAcquireBase;

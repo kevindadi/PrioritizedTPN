@@ -126,6 +126,48 @@ StateClass StateClassReachabilityGraph::time_elapse(const StateClass& state) con
   }
 
   out.zone.minimize();
+
+  // Completion-observation saturation: an observation release clock whose sup
+  // reaches its cap proves the job has already been in flight for longer than
+  // its deadline, so the response is at least the cap (a certified miss). The
+  // clock is then abstracted to ">= cap, otherwise unconstrained" instead of
+  // being clamped: clamping would restrict time advance through the clock's
+  // relations to other clocks (a saturated job could deadlock the state class),
+  // while dropping the relations leaves every other clock's reachable set
+  // exactly as before. The lower bound >= cap is kept so the metrics layer can
+  // read the certified floor, and it merges every saturated history into one
+  // canonical column, keeping the zone space finite.
+  if (observation_active() && !firing_rule_->uses_release_clocks()) {
+    bool abstracted = false;
+    for (size_t ordinal = 0; ordinal < out.release_clock_of_task.size(); ++ordinal) {
+      const int idx = out.release_index(ordinal);
+      if (idx <= 0) {
+        continue;
+      }
+      const int cap = observation_cap(ordinal);
+      if (cap == INF_TIME) {
+        continue;
+      }
+      const size_t cidx = static_cast<size_t>(idx);
+      const int sup = out.zone.get_constraint(cidx, 0);
+      if (sup != INF_TIME && sup < cap) {
+        continue;  // not saturated yet
+      }
+      out.zone.set_constraint(cidx, 0, INF_TIME);  // no upper bound
+      out.zone.set_constraint(0, cidx, -cap);      // r >= cap
+      for (size_t j = 1; j < n; ++j) {
+        if (j == cidx) {
+          continue;
+        }
+        out.zone.set_constraint(cidx, j, INF_TIME);
+        out.zone.set_constraint(j, cidx, INF_TIME);
+      }
+      abstracted = true;
+    }
+    if (abstracted) {
+      out.zone.minimize();
+    }
+  }
   return out;
 }
 
@@ -249,7 +291,7 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
   // difference constraints.
   StateClass prepared;
   prepared.marking = marking;
-  if (firing_rule_->uses_job_clocks()) {
+  if (job_clock_layout()) {
     recompute_sets(prepared, struct_enabled);
     build_layout(prepared);
     build_successor_zone(prepared, fired, elapsed, t);

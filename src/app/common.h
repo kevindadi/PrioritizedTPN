@@ -60,6 +60,10 @@ struct PipelineOptions {
   // analysis layer converts it with parse_tie_mode. See TieMode in
   // model/types.h.
   std::string tie_mode = "fifo";
+  // Disable the exact completion observation (release clocks) and keep the
+  // dwell-DP WCRT bounds. Faster on models with many tasks, but the values are
+  // bounds and deadline verdicts become conservative.
+  bool no_exact_wcrt = false;
   DiagnosticsOptions diagnostics;
   ExportTargets exports;
 };

@@ -68,6 +68,7 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
   out << "{\n";
   out << "  \"exact\": " << (report.exact ? "true" : "false") << ",\n";
   out << "  \"wcrt_lb_valid\": " << (report.wcrt_lb_valid ? "true" : "false") << ",\n";
+  out << "  \"wcrt_exact\": " << (report.wcrt_exact ? "true" : "false") << ",\n";
   out << "  \"states\": " << report.states << ",\n";
   out << "  \"transitions\": " << report.transitions << ",\n";
   out << "  \"bounded\": " << (report.bounded ? "true" : "false") << ",\n";
@@ -81,6 +82,7 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
     out << (report.schedulable ? "true" : "false");
   }
   out << ",\n";
+  out << "  \"schedulability\": \"" << schedulability_to_string(report.schedulability) << "\",\n";
   out << "  \"has_steady_cycle\": " << (report.has_steady_cycle ? "true" : "false") << ",\n";
   out << "  \"recurrent_scc_size\": " << report.recurrent_scc_size << ",\n";
   out << "  \"hyperperiod\": " << report.hyperperiod << ",\n";
@@ -122,6 +124,8 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
         << (report.wcrt_lb_valid ? time_json(t.wcrt_lb) : std::string("null")) << ",\n";
     out << "      \"wcrt_interval_tight\": "
         << ((report.wcrt_lb_valid && t.wcrt_interval_tight) ? "true" : "false") << ",\n";
+    out << "      \"wcrt_exact\": " << (t.wcrt_exact ? "true" : "false") << ",\n";
+    out << "      \"wcrt_capped\": " << (t.wcrt_capped ? "true" : "false") << ",\n";
     out << "      \"bcrt\": " << time_json(t.bcrt) << ",\n";
     out << "      \"jitter\": " << time_json(t.jitter) << ",\n";
     out << "      \"worst_interference\": " << time_json(t.worst_interference) << ",\n";
@@ -131,6 +135,19 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
     out << "      \"slack\": " << (t.has_deadline ? time_json(t.slack) : std::string("null"))
         << ",\n";
     out << "      \"deadline_missed\": " << (t.deadline_missed ? "true" : "false") << ",\n";
+    if (t.has_deadline) {
+      out << "      \"verdict\": \"" << deadline_verdict_to_string(t.verdict) << "\",\n";
+    }
+    if (!t.worst_case_path.empty()) {
+      out << "      \"worst_case_path\": [";
+      for (size_t step = 0; step < t.worst_case_path.size(); ++step) {
+        if (step) {
+          out << ", ";
+        }
+        out << "\"" << json_escape(t.worst_case_path[step]) << "\"";
+      }
+      out << "],\n";
+    }
     out << "      \"local_deadlock\": " << (t.local_deadlock ? "true" : "false") << ",\n";
     out << "      \"local_deadlock_scc_size\": " << t.local_deadlock_scc_size << ",\n";
     out << "      \"jobs_per_hyperperiod\": " << t.jobs_per_hyperperiod << "\n";

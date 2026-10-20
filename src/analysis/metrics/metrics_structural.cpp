@@ -24,8 +24,11 @@ void MetricsAnalyzer::compute_structural(MetricsReport& report) {
 
   // Illegitimate sinks: no successor while a task chain still holds a token.
   // Under horizon truncation a boundary class has no out-edges by construction,
-  // so sink detection would report false deadlocks; it is disabled instead.
-  if (!report.deadlock_analysis_certified) {
+  // so sink detection would report false deadlocks. A max-states cut has the
+  // same artifact: successors dropped at the cap leave the source without
+  // out-edges. Both cases disable sink detection instead of reporting a false
+  // counterexample.
+  if (!report.deadlock_analysis_certified || graph_truncated_) {
     return;
   }
   for (size_t v = 0; v < num_vertices_; ++v) {
@@ -46,18 +49,34 @@ void MetricsAnalyzer::compute_structural(MetricsReport& report) {
 }
 
 void MetricsAnalyzer::compute_schedulability(MetricsReport& report) {
-  // The paper's definition is WCRT(a) <= DL(a) for every task, together with
-  // the absence of reachable deadlocks. `deadline_missed` uses the sound WCRT
-  // upper bound, so a schedulable verdict is conservative.
-  report.schedulable = report.deadlock_states.empty();
+  // Schedulable requires every observed deadline to be met on a complete
+  // analysis; unschedulable requires a proven counterexample (a certified
+  // miss, starvation, or a reachable deadlock). Everything else is unknown.
+  bool unschedulable = !report.deadlock_states.empty();
+  bool unknown = !report.deadlock_analysis_certified;
   for (const auto& task : report.tasks) {
-    if (task.has_deadline && task.deadline_missed) {
-      report.schedulable = false;
-    }
     if (task.local_deadlock) {
-      report.schedulable = false;
+      unschedulable = true;
+      continue;
+    }
+    if (!task.has_deadline) {
+      continue;
+    }
+    switch (task.verdict) {
+      case DeadlineVerdict::Misses:
+        unschedulable = true;
+        break;
+      case DeadlineVerdict::Unknown:
+        unknown = true;
+        break;
+      case DeadlineVerdict::Meets:
+        break;
     }
   }
+  report.schedulability = unschedulable ? Schedulability::Unschedulable
+                                        : (unknown ? Schedulability::Unknown
+                                                   : Schedulability::Schedulable);
+  report.schedulable = report.schedulability == Schedulability::Schedulable;
 }
 
 }  // namespace state_class

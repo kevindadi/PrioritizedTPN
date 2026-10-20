@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "analysis/dbm/clock_state.h"
+#include "analysis/metrics/metrics_internal.h"
 
 namespace state_class {
 
@@ -50,6 +51,14 @@ void MetricsAnalyzer::set_horizon_info(HorizonInfo info) {
   horizon_ = info;
 }
 
+void MetricsAnalyzer::set_completion_observation(bool enabled) {
+  observation_ = enabled;
+}
+
+void MetricsAnalyzer::set_graph_truncated(bool truncated) {
+  graph_truncated_ = truncated;
+}
+
 void MetricsAnalyzer::flatten_graph() {
   num_vertices_ = boost::num_vertices(graph_);
   out_edges_.assign(num_vertices_, {});
@@ -75,6 +84,7 @@ void MetricsAnalyzer::flatten_graph() {
     e.transition_id = fe.transition_id;
     e.dwell_min = fe.dwell_min;
     e.dwell_max = fe.dwell_max;
+    e.observed_response = fe.observed_response;
     out_edges_[sid].push_back(e);
   }
 }
@@ -286,12 +296,16 @@ void MetricsAnalyzer::apply_symmetry_groups(MetricsReport& report) {
       task.worst_interference = pooled_interference;
       task.worst_blocking = pooled_blocking;
       task.wcrt_interval_tight = is_time_equal(pooled_wcrt, pooled_wcrt_lb);
+      // The observation is disabled under symmetry, so exactness can only come
+      // from a collapsed certified interval on the pooled values.
+      task.wcrt_exact = task.wcrt_interval_tight;
       task.jitter.infinite = pooled_wcrt.infinite;
       if (!pooled_wcrt.infinite && !pooled_bcrt.infinite) {
         task.jitter.value = std::max<long long>(0, pooled_wcrt.value - pooled_bcrt.value);
       }
       if (task.has_deadline) {
-        task.deadline_missed = pooled_wcrt.infinite || pooled_wcrt.value > task.deadline;
+        task.verdict = deadline_verdict_from_bounds(task, graph_complete(), wcrt_lb_valid_);
+        task.deadline_missed = task.verdict == DeadlineVerdict::Misses;
         task.slack.infinite = pooled_wcrt.infinite;
         if (!pooled_wcrt.infinite) {
           task.slack.value = static_cast<long long>(task.deadline) - pooled_wcrt.value;
@@ -305,8 +319,7 @@ MetricsReport MetricsAnalyzer::analyze() {
   MetricsReport report;
   report.exact = exact_;
   report.wcrt_lb_valid = wcrt_lb_valid_;
-  report.horizon = horizon_;
-  // A horizon-pruned graph is missing the successors of boundary classes.
+  report.horizon = horizon_;  // A horizon-pruned graph is missing the successors of boundary classes.
   // Deadlocks, schedulability, local deadlocks and SCC statistics computed on
   // it would be artifacts of the cut, so they are skipped and flagged. WCRT
   // values are still produced, but they are approximate unless the caller's
@@ -326,19 +339,26 @@ MetricsReport MetricsAnalyzer::analyze() {
 
   compute_structural(report);
   compute_task_timing(report);
-  if (report.deadlock_analysis_certified) {
+  if (report.deadlock_analysis_certified && !graph_truncated_) {
+    // Local deadlocks need the complete graph; a cut could miss the completion
+    // path and report a false starvation.
     compute_local_deadlocks(report);
-    // Pool timing (and local-deadlock flags) within verified symmetry groups
-    // before deadlines and schedulability are evaluated.
-    apply_symmetry_groups(report);
-    compute_schedulability(report);
-  } else {
-    // Symmetric members still share the same true timing, so pool what was
-    // computed before reporting; deadlock-derived fields remain uncertified.
-    apply_symmetry_groups(report);
-    // Conservative: schedulability is not proven for the truncated graph.
-    // `deadlock_analysis_certified` tells consumers why this is false.
-    report.schedulable = false;
+  }
+  // Pool timing (and local-deadlock flags) within verified symmetry groups
+  // before deadlines and schedulability are evaluated. The schedulability
+  // verdict is safe on a cut graph: the per-task verdicts are already
+  // conservative (Unknown unless proven), so a proven miss still yields
+  // Unschedulable.
+  apply_symmetry_groups(report);
+  compute_schedulability(report);
+  // Report-level exactness of the WCRT values: true when every observed task
+  // has an exact WCRT.
+  report.wcrt_exact = true;
+  for (const auto& task : report.tasks) {
+    if (task.observed && !task.wcrt_exact) {
+      report.wcrt_exact = false;
+      break;
+    }
   }
   compute_locks(report);
   compute_utilisation(report);

@@ -84,6 +84,23 @@ engaged, redirects logs to stderr, writes stdout/file, and returns the envelope
 exit code. `src/app/` records diagnostics but never chooses a stream or a
 process exit code.
 
+### Completion observation (exact WCRT)
+
+The state-class metrics read the worst-case response time from an observation
+release clock instead of accumulating per-edge dwell maxima along a path (that
+sum ignores cross-state DBM correlation and over-approximates). The reachability
+builder adds a scheduling-irrelevant release clock to the layout for the
+scalar-priority rules (`FiringRule::supports_completion_observation`), and every
+completion edge records the sup of that clock in the fired zone
+(`FiringEdge::observed_response`). The clock is capped at the task's deadline + 1
+(or a structural fallback): when the sup reaches the cap, the clock is abstracted
+to ">= cap, otherwise unconstrained" (a relaxation that keeps every other clock
+exact and the zone space finite) and the metrics layer reports the task as
+`wcrt_capped` with a certified lower bound — which also proves the deadline miss.
+The observation is disabled under extrapolation, upper-bound merging, symmetry,
+non-equality canonicalization, `--tie arbitrary`, and per task when a release
+overlaps an in-flight job (one column cannot time two jobs).
+
 ## Build targets
 
 The CMake targets follow the same direction:

@@ -147,6 +147,16 @@ class FiringRule {
     return false;
   }
 
+  // True when completion edges can be observed with a release clock to obtain
+  // the exact response time of the completing job (metrics only). The graph
+  // then adds a scheduling-irrelevant release clock to the layout. Only the
+  // scalar-priority rules declare it: EDF/FIFO/LLF select successors through
+  // clock constraints on the successor zone, so their completion observation
+  // is not exact and stays a DP bound.
+  virtual bool supports_completion_observation() const {
+    return false;
+  }
+
   // True iff either per-job clock kind is tracked. Such states reject
   // extrapolation and symmetry reduction.
   bool uses_job_clocks() const {

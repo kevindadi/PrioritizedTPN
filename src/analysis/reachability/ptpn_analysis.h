@@ -138,6 +138,27 @@ class StateClassReachabilityGraph {
   // Returns the number of state classes discovered.
   size_t build(size_t max_states = std::numeric_limits<size_t>::max());
 
+  // Exact completion observation (metrics only). When enabled and the firing
+  // rule supports it, the layout carries a scheduling-irrelevant release clock
+  // for every in-flight job (EDF/FIFO already have one) and every completion
+  // edge records the sup of that clock in its `observed_response`: the
+  // worst-case response time of the completing job, measured from its release.
+  //
+  // The observation clocks are capped at the task's deadline + 1 (or a global
+  // structural cap for deadline-less tasks) so a starved job cannot make the
+  // state space infinite. A response below the cap is exact; a response that
+  // reaches the cap is only a lower bound and the metrics layer reports it as
+  // capped. The observation never changes scheduling decisions.
+  void set_completion_observation(bool enabled);
+
+  [[nodiscard]] bool completion_observation() const {
+    return completion_observation_;
+  }
+
+  // True when observation clocks are actually part of the layout (requested and
+  // supported by the firing rule).
+  [[nodiscard]] bool observation_active() const;
+
   [[nodiscard]] const SCGraph& get_graph() const {
     return graph_;
   }
@@ -219,6 +240,7 @@ class StateClassReachabilityGraph {
   ReductionMode reduction_mode_ = ReductionMode::NONE;
   bool extrapolation_enabled_ = false;
   bool suspension_clock_projection_ = true;
+  bool completion_observation_ = false;
   int extrapolation_k_ = -1;  // computed lazily from the net's static intervals
   bool horizon_enabled_ = false;
   int horizon_ = 0;
@@ -257,6 +279,22 @@ class StateClassReachabilityGraph {
 
   [[nodiscard]] int effective_earliest(size_t transition) const;
   [[nodiscard]] int effective_latest(size_t transition) const;
+
+  // True when the clock layout includes release clocks: the rule uses them for
+  // scheduling (EDF/FIFO) or the completion observation requested them.
+  [[nodiscard]] bool include_release_clocks() const;
+  // True when any per-job clock (release or laxity) is part of the layout.
+  // Replaces FiringRule::uses_job_clocks() in the engine: observation clocks
+  // need the same prepared-state and layout handling.
+  [[nodiscard]] bool job_clock_layout() const;
+  // Observation cap for `task` (deadline + 1, or the global structural cap), or
+  // INF_TIME when the task must not be capped.
+  [[nodiscard]] int observation_cap(size_t task) const;
+  // Observed response of the job that `transition` moves into its exit place,
+  // read from the fired zone (elapsed zone intersected with h_t >= downSI(t)).
+  // INF_TIME when no task completes or the response is unbounded.
+  [[nodiscard]] int observe_completion(const StateClass& elapsed, size_t transition,
+                                       const petri::Marking& target_marking) const;
 
   // Task chains of the net, cached for the LLF rate law and laxity reset.
   [[nodiscard]] const std::vector<TaskChain>& task_chains() const;

@@ -41,7 +41,7 @@ categories.
 | `3` | model validation failure | `validation` (`E-VAL-`) |
 | `4` | unsupported model/feature/policy class | `unsupported` (`E-UNS-`) |
 | `5` | partial results: truncation without a counterexample | `performance` (`E-PERF-`) |
-| `6` | analysis counterexample: deadlock, local deadlock, or `wcrt_lb > deadline` | `analysis` (`R-ANA-`) |
+| `6` | analysis counterexample: deadlock, local deadlock, or a proven deadline miss | `analysis` (`R-ANA-`) |
 
 Rules:
 
@@ -180,7 +180,7 @@ user ran.
 | `E-PERF-001` | performance/**warning** | analysis (`tdg`, `rtsl`, `ptpn`, full and cone) | state-class graph reached `--max-states` | `system:max_states` / none | with a counterexample: fix the design, do not raise `-m`; otherwise raising `-m` may help |
 | `E-PERF-002` | performance/**warning** | analysis (`tdg`, `rtsl`, `ptpn`, full graph only) | `--horizon` actually pruned expansion | `system:horizon` / none | same as above; otherwise raise/disable `--horizon` |
 | `R-ANA-001` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`; not cone) | a certified reachable deadlock exists | `system:deadlock` / none | fix dependency/lock structure or policy |
-| `R-ANA-002` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`) | `wcrt_lb` is finite, the task is observed, and `wcrt_lb > deadline` | `task:<name>` / none | adjust priorities, cores, or periods |
+| `R-ANA-002` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`) | the task is observed and its verdict is `misses`: a certified lower bound above the deadline, an observed response that reached the deadline cap, or a complete graph with no completion edge (starvation) | `task:<name>` / none | adjust priorities, cores, or periods |
 | `R-ANA-003` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`) | certified periodic local deadlock | `task:<name>` / none | change period, priority, or core assignment |
 | `E-SYN-002` | syntax/error | input open: JSON, PTPN, RTSL, check | input file cannot be opened | none / file only | `check that the input path exists and is readable` |
 | `E-SYN-001` | syntax/error | TDG JSON parse | nlohmann parse error | none / precise file:line:column | fix JSON syntax near the reported position |
@@ -344,6 +344,7 @@ The envelope's `result.analysis` is the machine-readable verdict for
 {
   "analysis": {
     "exact": true,
+    "wcrt_exact": true,
     "truncated": false,
     "max_states": 10000,
     "horizon_truncated": false,
@@ -352,8 +353,13 @@ The envelope's `result.analysis` is the machine-readable verdict for
     "deadlock": false,
     "deadlock_states": 0,
     "schedulable": true,
+    "schedulability": "schedulable",
     "local_deadlocks": [],
     "deadline_misses": [],
+    "tasks": [
+      {"task": "a", "wcrt": 4, "wcrt_lb": 4, "wcrt_exact": true,
+       "deadline": 100, "verdict": "meets", "slack": 96}
+    ],
     "counterexample": null
   }
 }
@@ -362,20 +368,34 @@ The envelope's `result.analysis` is the machine-readable verdict for
 - `counterexample` is `"deadlock"`, `"local-deadlock"`, `"deadline"`, or
   `null`. A non-null value is a decisive negative result found in the explored
   prefix and exits `6`.
-- `schedulable` is `null` when horizon truncation makes deadlock/SCC analysis
-  uncertified; do not read `null` as success.
+- `schedulability` is the authoritative tri-state: `schedulable`,
+  `unschedulable` (a proven counterexample exists), or `unknown` (neither
+  proven). `schedulable` is the legacy boolean form and is `null` when horizon
+  truncation makes deadlock/SCC analysis uncertified.
+- `tasks` lists every observed task with its WCRT, certified lower bound,
+  `wcrt_exact`, deadline, `verdict` (`meets` / `misses` / `unknown`), slack and
+  — for a proven miss — the witness transition path. `wcrt_capped: true` means
+  the response reached the analysis cap (deadline + 1): the true WCRT is at
+  least `wcrt_lb` and the miss is proven.
 - `E-PERF-001/002` mean the explored graph is incomplete. If a counterexample
   is already present, raising `-m` cannot change the verdict; fix the design.
   Without a counterexample, raising `-m` may turn a partial result into a
-  complete one.
-- An **upper-bound** `wcrt` greater than a deadline is not a counterexample and
-  does not produce exit `6`. `R-ANA-002` requires the *lower bound*
-  (`wcrt_lb`) to exceed the deadline. Upper-bound zone merging makes
-  `wcrt_lb` unavailable.
+  complete one. A max-states cut no longer manufactures deadlock
+  counterexamples from dropped successors.
+- `R-ANA-002` fires only for a **proven** miss: the certified lower bound
+  exceeds the deadline, the observed response reached the deadline cap, or a
+  complete graph shows the job never completes. An upper-bound `wcrt` greater
+  than a deadline is not a counterexample and does not produce exit `6`.
 - `exact` is `false` under upper-bound merging, extrapolation, horizon pruning,
   truncation, or symmetry reduction. In that case timing values are bounds,
   not certified exact values. Canonicalization other than `equality` also
   makes the run inexact.
+- `wcrt_exact` is the per-value exactness flag: with the default settings the
+  analyzer observes each job's release clock at completion, so WCRTs are exact
+  for tasks that run one job at a time. The observation is disabled (values
+  fall back to sound dwell-DP bounds) under `--extrapolation`,
+  `--reduction upper-bound|symmetry`, non-equality canonicalization,
+  `--tie arbitrary`, or when a task can have overlapping releases.
 
 ### 6.1 Timing provenance
 

@@ -64,6 +64,10 @@ class PcpFiringRule : public FiringRule {
     return PreemptionMode::RESUME;
   }
 
+  bool supports_completion_observation() const override {
+    return true;
+  }
+
   // Maximum base priority among `TaskInfo::locks` users of `lock`; std::nullopt
   // when no task uses it.
   [[nodiscard]] std::optional<int> lock_ceiling(const std::string& lock) const;

@@ -81,6 +81,11 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts,
                   "every equal-priority choice, including equal-priority "
                   "preemption (worst case over tie-breaks)")
       ->check(CLI::IsMember({"fifo", "arbitrary"}));
+  cmd->add_flag("--no-exact-wcrt", opts.no_exact_wcrt,
+                "Disable the exact completion observation (release clocks): WCRT "
+                "values fall back to sound dwell-DP bounds, which is faster on "
+                "models with many tasks but makes deadline verdicts conservative "
+                "(default: observation on)");
   add_diagnostics_options(cmd, opts.diagnostics);
   add_export_target_options(cmd, opts.exports, tdg_export_is_json);
 }

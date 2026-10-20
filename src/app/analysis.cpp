@@ -112,6 +112,12 @@ bool analyze_task_cones(const petri::PTPN& ptpn, const PipelineOptions& opts,
     if (opts.extrapolation) {
       graph.set_extrapolation(true);
     }
+    // Mirror the full-graph analysis: the exact completion observation is
+    // available for the cone graph too (it shares the policy and tie mode).
+    if (canonicalization == state_class::CanonicalizationMode::EQUALITY &&
+        !opts.extrapolation && opts.tie_mode != "arbitrary" && !opts.no_exact_wcrt) {
+      graph.set_completion_observation(true);
+    }
     graph.build(opts.max_states);
     const auto& stats = graph.get_statistics();
     const bool cone_exact = canonicalization == state_class::CanonicalizationMode::EQUALITY &&
@@ -124,6 +130,8 @@ bool analyze_task_cones(const petri::PTPN& ptpn, const PipelineOptions& opts,
     state_class::MetricsAnalyzer analyzer(graph.get_graph(), cone, graph.get_initial_vertices(),
                                           cone_exact,
                                           /*wcrt_lb_valid=*/true);
+    analyzer.set_completion_observation(graph.observation_active());
+    analyzer.set_graph_truncated(stats.truncated);
     state_class::MetricsReport cone_report = analyzer.analyze();
     merged.bounded = merged.bounded && cone_report.bounded;
     merged.overflow_places.insert(merged.overflow_places.end(), cone_report.overflow_places.begin(),
@@ -185,10 +193,27 @@ bool analyze_task_cones(const petri::PTPN& ptpn, const PipelineOptions& opts,
   // Whole-net deadlock discovery is intentionally not approximated from the
   // cones; schedulability keeps the per-task part.
   merged.deadlock_states.clear();
-  merged.schedulable = true;
+  bool cone_unschedulable = false;
+  bool cone_unknown = merged.truncated;
   for (const auto& metrics : merged.tasks) {
-    if ((metrics.has_deadline && metrics.deadline_missed) || metrics.local_deadlock) {
-      merged.schedulable = false;
+    if (metrics.local_deadlock || (metrics.has_deadline && metrics.deadline_missed)) {
+      cone_unschedulable = true;
+      continue;
+    }
+    if (metrics.has_deadline && metrics.verdict == state_class::DeadlineVerdict::Unknown) {
+      cone_unknown = true;
+    }
+  }
+  merged.schedulability = cone_unschedulable
+                              ? state_class::Schedulability::Unschedulable
+                              : (cone_unknown ? state_class::Schedulability::Unknown
+                                              : state_class::Schedulability::Schedulable);
+  merged.schedulable = merged.schedulability == state_class::Schedulability::Schedulable;
+  merged.wcrt_exact = true;
+  for (const auto& metrics : merged.tasks) {
+    if (metrics.observed && !metrics.wcrt_exact) {
+      merged.wcrt_exact = false;
+      break;
     }
   }
 
@@ -347,6 +372,28 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
             opts.canonicalization_mode);
       }
     }
+    // Exact completion observation: metrics read the WCRT from the release
+    // clocks at job completion instead of the per-edge dwell DP. It needs an
+    // exact graph, so any relaxation (extrapolation, zone merging, non-equality
+    // canonicalization), the symmetry quotient, or the worst-case tie-break
+    // mode (whose tie enumeration multiplies the observation-clock states)
+    // disables it and the values stay bounds.
+    const bool need_metrics = !opts.exports.metrics_json.empty() || diagnostics != nullptr;
+    const bool observation_exact_graph =
+        canonicalization == state_class::CanonicalizationMode::EQUALITY &&
+        !opts.extrapolation && !upper_bound_merging && opts.reduction_mode != "symmetry" &&
+        opts.tie_mode != "arbitrary" && !opts.no_exact_wcrt;
+    if (need_metrics && observation_exact_graph) {
+      reachability_graph.set_completion_observation(true);
+    } else if (need_metrics && opts.tie_mode == "arbitrary") {
+      spdlog::info(
+          "[SCG] Completion observation disabled: --tie arbitrary keeps the "
+          "dwell-DP bounds so the worst-case tie enumeration stays tractable");
+    } else if (need_metrics && opts.no_exact_wcrt) {
+      spdlog::info(
+          "[SCG] Completion observation disabled: --no-exact-wcrt keeps the "
+          "dwell-DP bounds (WCRT values are bounds, verdicts conservative)");
+    }
     const auto scg_start = detail::PipelineClock::now();
     const size_t state_count = reachability_graph.build(opts.max_states);
     const auto& reachability_stats = reachability_graph.get_statistics();
@@ -399,7 +446,6 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
 
     // Metrics feed both the optional JSON export and the diagnostics analysis
     // facts. They are computed when either consumer needs them.
-    const bool need_metrics = !opts.exports.metrics_json.empty() || diagnostics != nullptr;
     if (need_metrics) {
       // Metrics are exact only for the complete, un-abstracted graph. Zone
       // extrapolation preserves reachable markings but relaxes timing bounds,
@@ -435,6 +481,8 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
       state_class::MetricsAnalyzer analyzer(reachability_graph.get_graph(), ptpn,
                                             reachability_graph.get_initial_vertices(), exact,
                                             /*wcrt_lb_valid=*/!upper_bound_merging);
+      analyzer.set_completion_observation(reachability_graph.observation_active());
+      analyzer.set_graph_truncated(reachability_stats.truncated);
       state_class::HorizonInfo horizon_info;
       if (opts.time_horizon.has_value()) {
         horizon_info.enabled = true;
@@ -556,6 +604,7 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
 
   std::vector<std::string> local_deadlocks;
   nlohmann::json deadline_misses = nlohmann::json::array();
+  nlohmann::json task_results = nlohmann::json::array();
   for (const auto& task : report.tasks) {
     if (report.deadlock_analysis_certified && task.local_deadlock) {
       local_deadlocks.push_back(task.name);
@@ -563,14 +612,58 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
                        "task:" + task.name, std::nullopt,
                        "change the task's period, priority, or core assignment so it can complete");
     }
-    if (report.wcrt_lb_valid && task.observed && task.has_deadline && !task.wcrt_lb.infinite &&
-        task.wcrt_lb.value > task.deadline) {
-      deadline_misses.push_back(
-          {{"task", task.name}, {"wcrt_lb", task.wcrt_lb.value}, {"deadline", task.deadline}});
+
+    // Compact per-task result so consumers do not have to parse the metrics
+    // JSON for the verdict and the WCRT.
+    if (task.observed) {
+      nlohmann::json entry;
+      entry["task"] = task.name;
+      entry["wcrt"] = task.wcrt.infinite ? nlohmann::json(nullptr) : nlohmann::json(task.wcrt.value);
+      if (report.wcrt_lb_valid && !task.wcrt_lb.infinite) {
+        entry["wcrt_lb"] = task.wcrt_lb.value;
+      }
+      entry["wcrt_exact"] = task.wcrt_exact;
+      if (task.wcrt_capped) {
+        entry["wcrt_capped"] = true;
+      }
+      if (task.has_deadline) {
+        entry["deadline"] = task.deadline;
+        entry["verdict"] = state_class::deadline_verdict_to_string(task.verdict);
+        entry["slack"] = task.slack.infinite ? nlohmann::json(nullptr) : nlohmann::json(task.slack.value);
+      }
+      if (!task.worst_case_path.empty()) {
+        entry["witness"] = task.worst_case_path;
+      }
+      task_results.push_back(std::move(entry));
+    }
+
+    // A proven miss: the certified lower bound exceeds the deadline, the
+    // observed response reached the deadline cap, or the job provably never
+    // completes.
+    if (task.observed && task.has_deadline &&
+        task.verdict == state_class::DeadlineVerdict::Misses) {
+      nlohmann::json miss;
+      miss["task"] = task.name;
+      miss["deadline"] = task.deadline;
+      if (!task.wcrt_lb.infinite) {
+        miss["wcrt_lb"] = task.wcrt_lb.value;
+      }
+      if (task.wcrt_capped) {
+        miss["wcrt_capped"] = true;
+      }
+      if (!task.worst_case_path.empty()) {
+        miss["witness"] = task.worst_case_path;
+      }
+      deadline_misses.push_back(std::move(miss));
+
+      const std::string evidence =
+          task.wcrt_lb.infinite
+              ? "the job provably never completes"
+              : "a certified worst-case response of at least " +
+                    std::to_string(task.wcrt_lb.value);
       diagnostics->add("R-ANA-002",
-                       "task '" + task.name + "' has a certified response-time lower bound " +
-                           std::to_string(task.wcrt_lb.value) + " exceeding its deadline " +
-                           std::to_string(task.deadline),
+                       "task '" + task.name + "' misses its deadline " +
+                           std::to_string(task.deadline) + ": " + evidence,
                        "task:" + task.name, std::nullopt,
                        "adjust priorities, cores, or periods so the task can meet its deadline");
     }
@@ -614,6 +707,7 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
 
   nlohmann::json analysis = nlohmann::json::object();
   analysis["exact"] = report.exact;
+  analysis["wcrt_exact"] = report.wcrt_exact;
   analysis["truncated"] = truncated;
   analysis["max_states"] = max_states;
   analysis["horizon_truncated"] = horizon_truncated;
@@ -623,8 +717,10 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
   analysis["deadlock_states"] = report.deadlock_states.size();
   analysis["schedulable"] = report.deadlock_analysis_certified ? nlohmann::json(report.schedulable)
                                                                : nlohmann::json(nullptr);
+  analysis["schedulability"] = state_class::schedulability_to_string(report.schedulability);
   analysis["local_deadlocks"] = local_deadlocks;
   analysis["deadline_misses"] = std::move(deadline_misses);
+  analysis["tasks"] = std::move(task_results);
   analysis["counterexample"] =
       counterexample_kind.empty() ? nlohmann::json(nullptr) : nlohmann::json(counterexample_kind);
   diagnostics->set_result(nlohmann::json{{"analysis", std::move(analysis)}});
