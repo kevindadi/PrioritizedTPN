@@ -159,10 +159,11 @@ semantics to remove them:
 - `analysis/allocation/` is grouped under `analysis/` but depends on
   `lower/tdg2pn/` to evaluate candidates. It is orchestration above the
   analysis core.
-- `analysis/reachability/scheduling/task_lock_topology.h` mirrors the task-chain layout
-  constants defined by `lower/tdg2pn/tdg2pn_common.h`. The analysis layer
-  deliberately does not include lowering headers, so the constants are
-  duplicated with comments; a shared header would remove the silent-drift risk.
+- The task-chain layout (chain indices and the lock acquire/release formulas)
+  lives in `common/task_chain_layout.h`. Both `lower/tdg2pn/tdg2pn_common.h`
+  and `analysis/reachability/scheduling/task_lock_topology.h` include it, so the
+  lowering and the analysis cannot drift apart; keep the numbers there and do
+  not reintroduce a local copy.
 - TDG JSON validation diagnostics have no source locations (the format has no
   positions), and PTPN validation locations are file-only.
 - Supported-class rejection is a typed exception (`ptpn::UnsupportedClassError`)

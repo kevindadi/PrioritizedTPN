@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "analysis/reachability/state_class.h"
+#include "common/task_chain_layout.h"
 #include "model/petri.h"
 
 namespace state_class {
@@ -27,11 +28,13 @@ namespace detail {
 //      lock-hold places. A supported state has exactly one token in the chain;
 //      zero or multiple tokens make the task unsupported (defensive fallback:
 //      it keeps its base priority and contributes no holder claim).
-//   2. The chain layout mirrors `converter::detail::TaskChainLayout`: entry=0,
-//      get_core=1, ready=2, first exec=3. Lock i is acquired by the transition
-//      at position `5 + 4*i` and released by the transition at
-//      `chain.size() - 4 - 2*i` (the execution segment that ends the critical
-//      section; its post arc returns the lock token).
+//   2. The chain layout comes from common/task_chain_layout.h (the header the
+//      lowering builds the chains with): entry=0, get_core=1, ready=2, first
+//      exec=3. Lock i is acquired by the transition at
+//      `TaskChainLayout::lock_acquire_transition(i)` and released by the
+//      transition at `lock_release_transition(chain.size(), i)` (the execution
+//      segment that ends the critical section; its post arc returns the lock
+//      token).
 //   3. A task holds lock i when its token position `p` satisfies
 //      `acquire_position + 1 <= p <= release_position - 1` and the shared lock
 //      place is empty. The range covers the complete critical section.
@@ -41,10 +44,10 @@ namespace detail {
 //      available and the ceiling rule decides admission).
 class TaskLockTopology {
  public:
-  // Mirrored from converter::detail::TaskChainLayout.
-  static constexpr size_t kLockAcquireBase = 5;
-  static constexpr size_t kLockStride = 4;
-  static constexpr size_t kLockReleaseSuffix = 4;
+  // From the shared layout header (ptpn::TaskChainLayout).
+  static constexpr size_t kLockAcquireBase = ptpn::TaskChainLayout::kLockAcquireBase;
+  static constexpr size_t kLockStride = ptpn::TaskChainLayout::kLockStride;
+  static constexpr size_t kLockReleaseSuffix = ptpn::TaskChainLayout::kLockReleaseSuffix;
   // Sentinel for MarkingState::token_position when the task is unsupported.
   static constexpr size_t kNoChainPosition = std::numeric_limits<size_t>::max();
 

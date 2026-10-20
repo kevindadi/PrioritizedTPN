@@ -13,20 +13,18 @@ namespace state_class {
 
 namespace {
 
-// Mirrors converter::detail::TaskChainLayout. The analysis layer deliberately
-// does not include lowering headers. Lock i is acquired by the transition at
-// position `5 + 4*i` and released by the transition at
-// `chain.size() - 4 - 2*i`.
+// Layout from common/task_chain_layout.h (the same header TDG2PN lowering
+// builds the chains with). Lock i is acquired by the transition at
+// `lock_acquire_transition(i)` and released by the transition at
+// `lock_release_transition(chain.size(), i)`.
 bool valid_lock_binding(const std::vector<petri::NodeRef>& chain, size_t lock_index) {
   const size_t minimum = detail::TaskLockTopology::kLockReleaseSuffix + 2 * lock_index + 1;
   if (chain.size() < minimum) {
     return false;  // also prevents underflow in the release calculation
   }
 
-  const size_t acquire = detail::TaskLockTopology::kLockAcquireBase +
-                         detail::TaskLockTopology::kLockStride * lock_index;
-  const size_t release =
-      chain.size() - detail::TaskLockTopology::kLockReleaseSuffix - 2 * lock_index;
+  const size_t acquire = ptpn::TaskChainLayout::lock_acquire_transition(lock_index);
+  const size_t release = ptpn::TaskChainLayout::lock_release_transition(chain.size(), lock_index);
   if (acquire == 0 || acquire + 1 >= chain.size() || release >= chain.size()) {
     return false;
   }
@@ -125,9 +123,10 @@ void detail::TaskLockTopology::build(const petri::PTPN& net) {
         LockBinding binding;
         binding.lock = info->locks[lock_index];
         binding.lock_place = lock_it->second.index();
-        binding.acquire_position = kLockAcquireBase + kLockStride * lock_index;
+        binding.acquire_position = ptpn::TaskChainLayout::lock_acquire_transition(lock_index);
         binding.acquire_transition = chain[binding.acquire_position].as_transition().index();
-        binding.release_position = chain.size() - kLockReleaseSuffix - 2 * lock_index;
+        binding.release_position =
+            ptpn::TaskChainLayout::lock_release_transition(chain.size(), lock_index);
         acquire_transitions_[binding.acquire_transition] = {ordinal, lock_index};
         task.locks.push_back(std::move(binding));
       }

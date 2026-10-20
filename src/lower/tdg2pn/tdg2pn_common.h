@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <string>
 
+#include "common/task_chain_layout.h"
+
 #include "model/petri.h"
 #include "model/types.h"
 
@@ -11,23 +13,10 @@ namespace converter::detail {
 
 constexpr int kControlTransitionPriority = 0;
 
-// Indices into the per-task place/transition chain stored in node_pn_map.
-struct TaskChainLayout {
-  static constexpr size_t kEntry = 0;
-  static constexpr size_t kGetCore = 1;
-  static constexpr size_t kReady = 2;
-  static constexpr size_t kFirstExec = 3;
-  static constexpr size_t kFirstSegDone = 4;
-  static constexpr size_t kMinLength = 5;
-
-  static size_t lock_acquire_transition(size_t lock_index) {
-    return 5 + 4 * lock_index;
-  }
-
-  static size_t lock_release_transition(size_t chain_length, size_t lock_index) {
-    return chain_length - 4 - 2 * lock_index;
-  }
-};
+// Indices into the per-task place/transition chain stored in node_pn_map. The
+// layout lives in common/task_chain_layout.h so the analysis layer reads the
+// same constants instead of mirroring them.
+using TaskChainLayout = ptpn::TaskChainLayout;
 
 inline petri::TimeInterval immediate_interval() {
   return petri::TimeInterval(0, 0);
