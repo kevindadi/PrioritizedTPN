@@ -28,7 +28,8 @@ Reference docs (use these instead of guessing syntax or codes):
    `certified` (safe user-supplied bound), `estimated` (informal figure), or
    `measured by llm` (a placeholder whose time is filled in later). Do not
    invent numbers.
-2. **Write RTSL v1** as documented in `docs/rtsl.md` and
+2. **Write RTSL v1** as documented in `docs/rtsl.md` (the complete grammar
+   is `docs/rtsl.ebnf`) and
    `example/introduction/demo.rtsl`. The base unit is milliseconds; `us` is
    rejected (`E-UNS-004`). Periodic tasks need `period`; `sporadic` is
    rejected by validation (`E-UNS-003`). A locked task needs

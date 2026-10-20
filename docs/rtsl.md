@@ -9,7 +9,9 @@ This page describes the **implemented** language. Where a construct is accepted
 by the grammar but has no runtime semantics yet, that is called out explicitly
 (see [§11](#11-supported-classes-and-limitations)). Diagnostic codes and
 actions are in [diagnostics.md](diagnostics.md); the CLI workflow is in
-[usage.md](usage.md).
+[usage.md](usage.md). The complete grammar is [rtsl.ebnf](rtsl.ebnf)
+(keywords are checked against the lexer by `test/test_rtsl_grammar.cpp`), which
+is the compact reference to hand to a code generator or an LLM.
 
 ## 1. Lexical rules
 

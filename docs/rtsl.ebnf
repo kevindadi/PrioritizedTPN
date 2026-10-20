@@ -1,0 +1,82 @@
+(* RTSL v1 grammar, as accepted by `ptpn check`, `ptpn rtsl`, `ptpn allocate`,
+   `ptpn describe` and `ptpn fill`.
+
+   Notation: ISO-style EBNF. `{ x }` is zero or more, `[ x ]` is optional,
+   `|` is an alternative, `"x"` is a terminal, and `(* ... *)` is a comment.
+   Whitespace, `//` line comments, `/* ... */` block comments and the optional
+   separator `;` may appear between any two tokens and are not repeated in the
+   productions below.
+
+   This grammar describes what the parser accepts. The semantic rules that
+   reject a syntactically valid model (required attributes, duplicate
+   declarations, numeric ranges, interval counts, the `E-VAL-2xx` family) live
+   in the validator; see docs/rtsl.md and docs/diagnostics.md. *)
+
+program           = "system" , identifier , "{" , { system_item } , "}" , eof ;
+
+system_item       = cpus_decl
+                  | cores_per_cpu_decl
+                  | time_unit_decl
+                  | policy_decl
+                  | task_decl
+                  | binding_decl
+                  | edge_stmt ;
+
+cpus_decl         = "cpus" , integer ;
+cores_per_cpu_decl = "cores_per_cpu" , integer ;
+time_unit_decl    = "time_unit" , identifier ;   (* "ms" or "s"; "us" is E-UNS-004 *)
+policy_decl       = "policy" , identifier ;      (* fixed, rm, dm, edf, fifo, llf, pip, pcp, srp, ... *)
+binding_decl      = ( "start" | "end" ) , identifier ;
+
+task_decl         = "task" , identifier , [ ":" , task_kind ] , "{" , { task_attr } , "}" ;
+task_kind         = "normal" | "periodic" | "aperiodic" | "sporadic" | "interrupt" ;
+
+task_attr         = period_attr
+                  | deadline_attr
+                  | mit_attr
+                  | priority_attr
+                  | core_attr
+                  | locks_attr
+                  | time_attr ;
+
+period_attr       = "period" , time_value ;
+deadline_attr     = "deadline" , time_value ;
+mit_attr          = "mit" , time_value ;
+priority_attr     = "priority" , integer ;
+core_attr         = "core" , ( integer | "any" | core_set ) ;
+core_set          = "{" , integer , { "," , integer } , "}" ;
+locks_attr        = "locks" , identifier , { "," , identifier } ;
+
+(* `time` carries the execution segments and their provenance. A `measured`
+   declaration without intervals is a pending measurement that `ptpn check`
+   reports and `ptpn fill` completes. *)
+time_attr         = "time" , [ intervals ] , provenance ;
+intervals         = "[" , time_value , "," , time_value , "]"                        (* one segment *)
+                  | "[" , segment , { "," , segment } , "]" ;                        (* 2*L+1 segments *)
+segment           = "[" , time_value , "," , time_value , "]" ;
+provenance        = "estimated" , [ "by" , string ]
+                  | "certified" , "by" , string , [ "{" , "artifact" , string , "}" ]
+                  | "measured" , "by" , "llm" , "{" , measure_item , { "," , measure_item } , "}" ;
+measure_item      = "runs" , integer | "timeout" , integer | "artifact" , string ;
+
+(* One statement is one dependency edge. `a -> {b, c}` is an AND fork and
+   `{a, b} -> c` is an AND join; two separate statements that share a source or
+   target use the token-consuming alternative/OR semantics (E-VAL-225 hints
+   this). Both sides braced is E-VAL-216. *)
+edge_stmt         = endpoint , "->" , endpoint ;
+endpoint          = identifier | "{" , identifier , { "," , identifier } , "}" ;
+
+time_value        = integer , [ "ms" | "s" ] ;   (* bare integers use the system time_unit *)
+integer           = digit , { digit } ;          (* non-negative; -1 is E-SYN-101 *)
+identifier        = ( letter | "_" ) , { letter | digit | "_" } ;
+string            = '"' , { character | escape } , '"' ;
+escape            = "\" , ( '"' | "\" | "n" ) ;  (* anything else is E-SYN-101 *)
+
+(* Reserved words: none of these may be used as an identifier. Kept in sync
+   with the lexer by test/test_rtsl_grammar.cpp. *)
+keyword           = "system" | "cpus" | "cores_per_cpu" | "time_unit" | "policy"
+                  | "task" | "normal" | "periodic" | "aperiodic" | "sporadic"
+                  | "interrupt" | "period" | "deadline" | "mit" | "priority"
+                  | "core" | "any" | "locks" | "time" | "measured" | "estimated"
+                  | "certified" | "by" | "llm" | "runs" | "timeout" | "artifact"
+                  | "start" | "end" ;
