@@ -172,8 +172,8 @@ above the deadline, a capped observation, or proven starvation).
   model's semantics. Show the exact diff and the before/after diagnostics and
   metrics, and let the user decide. Do not silently rewrite the design to make
   a diagnostic disappear.
-- **Spin locks are not a reliable preemption guarantee.** The current lowering
-  marks the wrong execution segment for a single spin lock (the pre-critical
-  segment is non-suspendable and the critical section is suspendable). Do not
-  claim that spin-lock critical sections keep the CPU; see `docs/rtsl.md` §7
-  and `example/diagnostics/spin-lock.rtsl`.
+- **Spin locks keep the CPU.** A `spin` lock's critical section (and every
+  segment nested inside it) is lowered non-suspendable, so the analysis never
+  preempts a spin-lock holder; `mutex` locks may suspend and rely on the
+  selected protocol (PIP/PCP/SRP). See `docs/rtsl.md` §7/§12.2 and
+  `example/diagnostics/spin-lock.rtsl`.

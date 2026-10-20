@@ -207,22 +207,21 @@ task fusion: aperiodic {
 - Lock names are global: two tasks that list `mutex1` contend on the same lock.
   Duplicate names within a task are deduplicated in declaration order; no
   duplicate-lock diagnostic is emitted.
-- **Known lowering limitation (spin locks).** The intended rule is that a
-  spin-lock critical section keeps the CPU, but the current lowering does not
-  enforce it correctly. `vertex_lowering.cpp` maps the `locks` index directly
-  to the execution-segment index: in a one-spin-lock, three-segment task the
-  lock is acquired after segment 1 and released by segment 2, yet the generated
-  PTPN marks the segments `suspendable = false, true, true`. Segment 1
-  (pre-critical) is therefore non-suspendable and segment 2 (the actual
-  critical section) is suspendable. Do not rely on spin-lock preemption
-  behavior. A dedicated lock-semantics fix is a separate follow-up.
-  Reproduction: `example/diagnostics/spin-lock.rtsl` with
-  `--debug --export-ptpn`; the debug PTPN shows `worker_exec_1 suspendable=no`
-  and `worker_exec_2/3 suspendable=yes`, while the lock arcs
+- **Spin-lock critical sections keep the CPU.** A task's `spin` lock marks
+  every execution segment that runs inside its critical section as
+  non-suspendable (the analysis cannot preempt or freeze those segments), so a
+  spin lock is never held across a preemption. With `L` locks acquired in
+  order and released in reverse, lock `i` is held from the end of segment `i`
+  until the end of the segment that returns it, which covers the nested
+  critical sections described above. `mutex` locks may suspend; the analysis
+  then applies the selected policy (for example PIP/PCP/SRP priority
+  inheritance).
+  Evidence: `example/diagnostics/spin-lock.rtsl` lowers to `worker_exec_1`
+  suspendable, `worker_exec_2` (the critical section) non-suspendable and
+  `worker_exec_3` suspendable; the lock arcs
   `worker_seg_1_done -> worker_lock_1`, `spin1 -> worker_lock_1`,
-  `worker_hold_1 -> worker_exec_2`, `worker_exec_2 -> spin1` enclose segment 2.
-- `mutex` locks may suspend. The `spin` marker currently has no reliable
-  preemption effect beyond the limitation above.
+  `worker_hold_1 -> worker_exec_2`, `worker_exec_2 -> spin1` enclose exactly
+  that segment.
 - `locks` may appear once per task; multiple `locks` attributes are
   `E-VAL-219`. Multiple names in one `locks` list are allowed.
 
@@ -548,10 +547,11 @@ The reproduction command is:
     --debug --export-ptpn /tmp/spin.ptpn.dot
 ```
 
-The debug PTPN prints `worker_exec_1` as `suspendable=no` and `worker_exec_2`
-and `worker_exec_3` as `suspendable=yes`, while the DOT arcs place the lock
-between `worker_exec_1` and `worker_exec_2`. That is the existing lowering bug
-described in §7; it is not a supported guarantee.
+In the exported DOT the execution transitions are colour-coded: `worker_exec_2`
+(the critical section, the segment enclosed by `worker_hold_1 ->
+worker_exec_2` and `worker_exec_2 -> spin1`) is drawn non-suspendable, while
+`worker_exec_1` and `worker_exec_3` are suspendable. Replacing `spin1` with
+`mutex1` makes all three segments suspendable.
 
 ## 13. Related documentation
 

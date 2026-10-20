@@ -122,3 +122,61 @@ TEST(Tdg2pnLoweringTest, PeriodicReleaseAppliesDespiteSelfLoopEdge) {
   EXPECT_NE(find_place(net, "A_period"), SIZE_MAX);
   EXPECT_NE(find_transition(net, "A_fire"), SIZE_MAX);
 }
+
+TEST(Tdg2pnLoweringTest, SpinLockCriticalSectionIsNotSuspendable) {
+  // One spin lock -> three execution segments. The lock is acquired after
+  // segment 1 and returned by segment 2, so segment 2 is the critical section
+  // and only it must keep the CPU.
+  const std::string spin_lock = R"({
+    "graph": {"name": "SpinLock"},
+    "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed"},
+    "nodes": [
+      {"id": "W", "type": "task", "priority": 1, "core": 0,
+       "time": [[1, 1], [2, 2], [1, 1]], "locks": ["spin1"]}
+    ],
+    "edges": []
+  })";
+  const petri::PTPN spin_net = lower(spin_lock);
+  EXPECT_TRUE(spin_net.get_transition(petri::TransitionId{find_transition(spin_net, "W_exec_1")})
+                  .suspendable);
+  EXPECT_FALSE(spin_net.get_transition(petri::TransitionId{find_transition(spin_net, "W_exec_2")})
+                   .suspendable);
+  EXPECT_TRUE(spin_net.get_transition(petri::TransitionId{find_transition(spin_net, "W_exec_3")})
+                  .suspendable);
+
+  // The same chain with a mutex keeps every segment suspendable.
+  std::string mutex_lock = spin_lock;
+  const std::size_t position = mutex_lock.find("spin1");
+  ASSERT_NE(std::string::npos, position);
+  mutex_lock.replace(position, 5, "mutex1");
+  const petri::PTPN mutex_net = lower(mutex_lock);
+  for (const char* name : {"W_exec_1", "W_exec_2", "W_exec_3"}) {
+    EXPECT_TRUE(mutex_net.get_transition(petri::TransitionId{find_transition(mutex_net, name)})
+                    .suspendable)
+        << name;
+  }
+}
+
+TEST(Tdg2pnLoweringTest, NestedLocksKeepEveryCoveredSegmentNonSuspendable) {
+  // Two locks are acquired in order and released in reverse (LIFO): the outer
+  // spin lock covers segments 2, 3 and 4 of the five-segment chain, the inner
+  // mutex only segment 3. Every segment covered by the spin lock must keep the
+  // CPU.
+  const std::string nested = R"({
+    "graph": {"name": "NestedLocks"},
+    "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed"},
+    "nodes": [
+      {"id": "W", "type": "task", "priority": 1, "core": 0,
+       "time": [[1, 1], [2, 2], [3, 3], [2, 2], [1, 1]], "locks": ["spin1", "mutex1"]}
+    ],
+    "edges": []
+  })";
+  const petri::PTPN net = lower(nested);
+  const bool expected[] = {true, false, false, false, true};
+  for (std::size_t index = 0; index < 5; ++index) {
+    const std::string name = "W_exec_" + std::to_string(index + 1);
+    EXPECT_EQ(expected[index],
+              net.get_transition(petri::TransitionId{find_transition(net, name)}).suspendable)
+        << name;
+  }
+}

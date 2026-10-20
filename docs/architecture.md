@@ -170,11 +170,11 @@ semantics to remove them:
   app maps that type to `E-UNS-001`; metadata/index/clock-layout invariants
   remain ordinary internal exceptions. Do not widen the mapping to every
   `std::invalid_argument`.
-- Spin-lock suspendable marking is wrong for the single-lock chain: the
-  current lowering marks the first execution segment non-suspendable and the
-  actual critical section suspendable. See `docs/rtsl.md` §7/§12.2 and
-  `example/diagnostics/spin-lock.rtsl`; a lock-semantics fix is a separate
-  follow-up.
+- Spin locks keep the CPU: `vertex_lowering.cpp` marks every execution segment
+  inside a `spin` critical section non-suspendable, derived from the actual
+  chain layout (lock `i` acquired after segment `i`, returned by the segment
+  that closes its nested critical section). See `docs/rtsl.md` §7/§12.2 and
+  `example/diagnostics/spin-lock.rtsl`.
 
 See [diagnostics.md](diagnostics.md) for the code table and envelope contract,
 [rtsl.md](rtsl.md) for the language, and [usage.md](usage.md) for commands and

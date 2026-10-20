@@ -338,14 +338,6 @@ are zero) even when a file name is present.
   `std::runtime_error` / `std::logic_error` and surface as internal
   (`E-INT-003` in lowering, `E-INT-001` from the CLI top-level handler). Do not
   broaden the mapping to all `invalid_argument`.
-- **Known lowering limitation: spin-lock segment marking.** For a single spin
-  lock, `vertex_lowering.cpp` indexes `locks` with the execution-segment index,
-  producing `suspendable = false, true, true` while the lock's actual critical
-  section is the second execution segment. Segment 1 (pre-critical) is marked
-  non-suspendable and the critical section is suspendable. This is an existing
-  lowering bug; see `docs/rtsl.md` §7/§12.2 and
-  `example/diagnostics/spin-lock.rtsl`. A lock-semantics fix is a separate
-  follow-up.
 - **Allocation swallows candidate exceptions.** `allocation.cpp` catches every
   `std::exception` per candidate, marks it infeasible, and continues; this
   preserves the existing candidate-level rejection protocol, including for the

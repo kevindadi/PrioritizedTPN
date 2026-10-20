@@ -33,6 +33,8 @@ std::vector<petri::NodeRef> add_execution_chain(petri::PTPN& ptpn, const std::st
   const bool saturate = true;
 
   std::vector<petri::NodeRef> chain;
+  std::vector<petri::TransitionId> exec_transitions;
+  std::vector<std::size_t> exec_chain_indices;
   chain.reserve(times.size() * 4 + locks.size() * 2 + 3);
 
   const petri::PlaceId entry = ptpn.add_place(task_name + "entry", capacity, saturate);
@@ -55,18 +57,14 @@ std::vector<petri::NodeRef> add_execution_chain(petri::PTPN& ptpn, const std::st
                                       ? task_name + "exec"
                                       : task_name + "_exec_" + std::to_string(segment_index + 1);
     // In resume mode the engine models preemption by freezing the execution
-    // clock, so execution segments are suspendable. The spin-lock check below
-    // indexes `locks` with the *execution-segment* index. That mapping does not
-    // match the generated chain: for one lock the critical section is the
-    // second execution segment, while this check marks the first one. The
-    // current marking is therefore `false, true, true` for a single spin lock;
-    // see docs/rtsl.md's known-limitation note. Fixing the mapping is tracked
-    // separately and must not be baked into tests as correct behavior.
-    const bool segment_holds_spin_lock =
-        segment_index < locks.size() && locks[segment_index].find("spin") != std::string::npos;
-    const bool exec_suspendable = resume_mode && !segment_holds_spin_lock;
+    // clock, so execution segments are suspendable by default. Spin-lock
+    // critical sections are cleared below, once the whole chain (and therefore
+    // the acquire/release positions) is known.
+    const bool exec_suspendable = resume_mode;
+    exec_chain_indices.push_back(chain.size());
     const petri::TransitionId exec = ptpn.add_transition(exec_name, petri::TimeInterval(start, end),
                                                          encoded_priority, core, exec_suspendable);
+    exec_transitions.push_back(exec);
 
     const bool is_last_segment = segment_index + 1 == times.size();
     const std::string next_place_name =
@@ -92,6 +90,28 @@ std::vector<petri::NodeRef> add_execution_chain(petri::PTPN& ptpn, const std::st
       chain.insert(chain.end(),
                    {petri::NodeRef::of(lock_transition), petri::NodeRef::of(hold_place)});
       current_place = petri::NodeRef::of(hold_place);
+    }
+  }
+
+  // Locks are acquired in the order listed and released in reverse (LIFO,
+  // nested critical sections): lock `i` is acquired after execution segment
+  // `i` (chain index `lock_acquire_transition(i)`) and returned by the
+  // execution transition at `lock_release_transition(...)`. A segment runs
+  // inside that critical section when its execution transition lies in
+  // `(acquire, release]`; a spin lock must keep the CPU for the whole critical
+  // section, so every covered segment is marked non-suspendable.
+  const std::size_t chain_length = chain.size();
+  for (std::size_t lock_index = 0; lock_index < locks.size(); ++lock_index) {
+    if (locks[lock_index].find("spin") == std::string::npos) {
+      continue;
+    }
+    const std::size_t acquire = TaskChainLayout::lock_acquire_transition(lock_index);
+    const std::size_t release = TaskChainLayout::lock_release_transition(chain_length, lock_index);
+    for (std::size_t segment_index = 0; segment_index < exec_chain_indices.size(); ++segment_index) {
+      const std::size_t exec_index = exec_chain_indices[segment_index];
+      if (exec_index > acquire && exec_index <= release) {
+        ptpn.set_suspendable(exec_transitions[segment_index], false);
+      }
     }
   }
 
