@@ -39,6 +39,7 @@ std::unique_ptr<Command> make_ptpn_command();
 std::unique_ptr<Command> make_check_command();
 std::unique_ptr<Command> make_describe_command();
 std::unique_ptr<Command> make_fill_command();
+std::unique_ptr<Command> make_explain_command();
 std::unique_ptr<Command> make_allocate_command();
 
 }  // namespace cli

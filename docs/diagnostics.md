@@ -150,6 +150,7 @@ Stage coverage by command:
 | `ptpn check` | RTSL | no | no | `E-SYN-002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..226` (not `E-VAL-213`), CLI `E-INT-001/002` |
 | `ptpn describe` | RTSL | no | no | `E-SYN-002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..225` (not `E-VAL-213`), CLI `E-INT-001/002` |
 | `ptpn fill` | RTSL + values JSON | no | no | `E-SYN-001/002`, `E-SYN-101/102`, `E-UNS-003/004/005`, `E-VAL-201..226` (not `E-VAL-213`), `E-INT-001/002` |
+| `ptpn explain` | none | no | no | `E-SYN-003`, CLI `E-INT-001/002` |
 | `ptpn rtsl` | RTSL | yes | yes | `check` codes and `E-VAL-213`, lowering `E-VAL-011/014/015`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-001/002/003/004`, `E-PERF-001/002/003/004`, `E-INT-002` |
 | `ptpn allocate` | RTSL or JSON | via TDG2PN per candidate | no protocol diagnostics | input codes, RTSL lowering `E-VAL-011/014/015`; **not** `E-UNS-001`/`E-INT-003`/`R-ANA-*`/`E-PERF-*`; `E-INT-002` for the report |
 | `ptpn tdg` | TDG JSON | yes | yes | `E-SYN-001/002`, `E-VAL-001..033`, `E-UNS-001` (lowering or analysis), `E-INT-003`, `R-ANA-*`, `E-PERF-*`, `E-INT-002` |
@@ -171,6 +172,12 @@ the category default; `warning`, `hint` and `info` are explicit overrides.
 “Stage” is the layer that creates the entry, not necessarily the command the
 user ran.
 
+The tables below are the single source of truth for the catalog: `ptpn
+explain` serves the same rows (`ptpn explain` lists them, `ptpn explain CODE`
+prints one), `src/common/diagnostic_codes.inc` is generated from them by
+`tools/gen_diagnostic_codes.py`, and `test/test_explain.cpp` fails when the
+three drift apart.
+
 ### 5.1 Shared, application and analysis codes
 
 | Code | Cat./sev. | Stage / commands | Trigger | Subject / location | Fix |
@@ -189,6 +196,7 @@ user ran.
 | `R-ANA-003` | analysis/error | analysis result (`tdg`, `rtsl`, `ptpn`) | certified periodic local deadlock | `task:<name>` / none | change period, priority, or core assignment |
 | `R-ANA-004` | **hint** | analysis result (`tdg`, `rtsl`, `ptpn`) | the task is never released in the reachable state space (no `start` binding and no incoming dependency edge), so it never executes | `task:<name>` / none | add a `start` binding or an incoming edge, or remove the task |
 | `E-SYN-002` | syntax/error | input open: JSON, PTPN, RTSL, check, fill values | input file cannot be opened | none / file only | `check that the input path exists and is readable` |
+| `E-SYN-003` | syntax/error | `explain` | an argument value is not in the diagnostic catalog | `argument:<value>` / none | run `ptpn explain` for the full catalog |
 | `E-SYN-001` | syntax/error | TDG JSON parse, fill values parse | nlohmann parse error | none / precise file:line:column | fix JSON syntax near the reported position |
 | `E-VAL-033` | validation/error | TDG JSON parse/type conversion | non-parse exception, usually a field type/shape mismatch | none / file only for file input | check every JSON field's type and shape |
 

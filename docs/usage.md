@@ -30,6 +30,7 @@ tick is 1 ms). TDG JSON integers remain unit-agnostic engine ticks.
 | `ptpn check` | Lex, parse, and validate RTSL (no lowering or analysis) |
 | `ptpn describe` | Restate an RTSL model's actual analysis semantics in plain text |
 | `ptpn fill` | Fill pending `measured by llm` timing into the RTSL source |
+| `ptpn explain` | List the diagnostic catalog, or explain one or more codes |
 | `ptpn ptpn` | Load `.ptpn` source, analyze and/or export |
 | `ptpn allocate` | Search core allocations from TDG JSON or RTSL (`core any` is expanded) |
 
@@ -73,6 +74,15 @@ found by `ptpn check`:
 - Without `--in-place`/`--output` the patched source goes to stdout; with
   `--diagnostics json` it is `result.source` instead, and `result` also
   carries `filled` and `remaining_pending`.
+
+### `ptpn explain`
+
+`ptpn explain` lists every documented diagnostic code grouped by documentation
+section; `ptpn explain E-VAL-226 R-ANA-002` prints the category/severity,
+stage, trigger, subject form and fix for each requested code. The catalog is
+generated from `docs/diagnostics.md` (`tools/gen_diagnostic_codes.py`), so the
+CLI and the documentation cannot disagree; an unknown code is `E-SYN-003`
+(exit `2`). With `--diagnostics json` the entries are `result.codes`.
 
 ## Common options (`tdg` / `rtsl` / `ptpn`)
 

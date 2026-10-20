@@ -156,6 +156,7 @@ target_include_directories(ptpn_platform PUBLIC src)
 # serialization is part of this library's API.
 add_library(ptpn_diagnostics STATIC
     src/common/diagnostics.cpp
+    src/common/diagnostic_codes.cpp
 )
 target_include_directories(ptpn_diagnostics PUBLIC src)
 target_link_libraries(ptpn_diagnostics
@@ -544,6 +545,7 @@ add_library(ptpn_cli STATIC
     src/cli/commands/check_cmd.cpp
     src/cli/commands/describe_cmd.cpp
     src/cli/commands/fill_cmd.cpp
+    src/cli/commands/explain_cmd.cpp
     src/cli/commands/allocate_cmd.cpp
 )
 target_include_directories(ptpn_cli PUBLIC src)
