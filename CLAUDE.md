@@ -44,6 +44,21 @@ Tests are discovered with `gtest_discover_tests` and `WORKING_DIRECTORY` = repo 
 
 Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/golden/*`; the header comment documents the exact commands that regenerate each golden file. Golden comparison is skipped when not compiled with libstdc++ (`__GLIBCXX__` guard) — regenerate goldens only on libstdc++ builds.
 
+### Webapp
+
+```bash
+python3 webapp/server.py              # local workbench at http://127.0.0.1:8765
+python3 webapp/server.py --demo        # precomputed showcase
+python3 webapp/make_demo.py            # regenerate webapp/demo/demo-data.js
+python3 webapp/build_standalone.py     # single-file demo (no server)
+```
+
+`webapp/server.py` is a zero-dependency Python 3.9 stdlib HTTP wrapper around
+`build/ptpn`; the front-end is plain HTML/CSS/JS under `webapp/static/`.
+`webapp/static/index.html` is a skeleton-free fragment that the server wraps
+into a document. PTPN/SCG graph layouts use Graphviz `dot`/`neato`. Demo data is
+generated from bundled examples; do not edit `webapp/demo/demo-data.js` by hand.
+
 ## Architecture
 
 The pipeline is `parse → model → lowering → analysis`, mirrored one-to-one by the static-library layering in `CMakeLists.txt` (each target declares only the deps it uses; `PTPN_core` is the INTERFACE aggregate for tests). The CLI is its own layer and depends one-way on the application layer:

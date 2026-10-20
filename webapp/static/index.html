@@ -1,0 +1,374 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>PTPN Chronograph</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+
+<div class="app">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#overview" aria-label="PTPN Chronograph home">
+        <span class="brand-dial" aria-hidden="true"></span>
+        <span class="brand-copy">
+          <span class="brand-title">PTPN <em>Chronograph</em></span>
+          <span class="brand-sub">Priority Timed Petri Net · state-class workbench</span>
+        </span>
+      </a>
+      <div class="topbar-meta" aria-label="Runtime status">
+        <span class="pill" id="pill-mode">LOCAL</span>
+        <span class="pill dim" id="pill-binary">build/ptpn</span>
+        <span class="pill dim mono" id="pill-clock">--:--:--</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="btn-rail" type="button" aria-label="Models and options" aria-expanded="false" title="Models and options">☰</button>
+        <button class="btn ghost" id="btn-check" type="button">Check <kbd>⌘⇧↵</kbd></button>
+        <button class="btn primary" id="btn-analyze" type="button">Analyze <kbd>⌘↵</kbd></button>
+        <button class="icon-btn" id="btn-help" type="button" aria-label="Help and keyboard shortcuts">?</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="rail" aria-label="Models and run options">
+      <section class="rail-block">
+        <div class="rail-head">
+          <h2>Models</h2>
+          <button class="link-btn" id="btn-new" type="button">+ New</button>
+        </div>
+        <div class="example-list" id="example-list" role="list"></div>
+      </section>
+
+      <section class="rail-block">
+        <div class="rail-head">
+          <h2>Run options</h2>
+          <span class="rail-note" id="options-note">live</span>
+        </div>
+        <div class="options" id="options">
+          <div class="opt">
+            <label for="opt-max-states">max states</label>
+            <input id="opt-max-states" type="number" min="1" max="200000" step="100" value="10000" inputmode="numeric">
+          </div>
+          <div class="opt">
+            <label for="opt-reduction">reduction</label>
+            <select id="opt-reduction">
+              <option value="none">none</option>
+              <option value="upper-bound">upper-bound</option>
+              <option value="cone">cone</option>
+              <option value="symmetry">symmetry</option>
+            </select>
+          </div>
+          <div class="opt">
+            <label for="opt-canon">canonical</label>
+            <select id="opt-canon">
+              <option value="equality">equality</option>
+              <option value="max-lower">max-lower</option>
+              <option value="intersection">intersection</option>
+            </select>
+          </div>
+          <div class="opt">
+            <label for="opt-policy">policy</label>
+            <select id="opt-policy">
+              <option value="">from model</option>
+              <option value="fixed">fixed</option>
+              <option value="fixed_prior_with_resume">resume</option>
+              <option value="fixed_prior_with_restart">restart</option>
+              <option value="rm">rm</option>
+              <option value="dm">dm</option>
+              <option value="pip">pip</option>
+              <option value="pcp">pcp</option>
+              <option value="srp">srp</option>
+              <option value="edf">edf</option>
+              <option value="fifo">fifo</option>
+              <option value="llf">llf</option>
+            </select>
+          </div>
+          <div class="opt">
+            <label for="opt-horizon">horizon</label>
+            <input id="opt-horizon" type="number" min="1" step="1" placeholder="off" inputmode="numeric">
+          </div>
+          <div class="opt opt-check">
+            <input id="opt-extrapolation" type="checkbox">
+            <label for="opt-extrapolation">extrapolate</label>
+          </div>
+          <div class="opt opt-check">
+            <input id="opt-keep-susp" type="checkbox">
+            <label for="opt-keep-susp">keep w_t</label>
+          </div>
+        </div>
+      </section>
+
+      <section class="rail-block">
+        <div class="rail-head">
+          <h2>Signals</h2>
+          <span class="rail-note" id="signals-note">idle</span>
+        </div>
+        <div class="signal-list" id="signal-list"></div>
+      </section>
+
+      <section class="rail-block rail-foot">
+        <p class="foot-note">RTSL 时间统一归一化为毫秒（1 tick = 1 ms）。所有导出均为 opt-in；分析本身不写文件。</p>
+      </section>
+    </aside>
+
+    <main class="work">
+      <section class="pipeline" id="pipeline" aria-label="Analysis pipeline">
+        <button class="stage" type="button" data-stage="source" data-tab="model" aria-current="false">
+          <span class="stage-index">01</span>
+          <span class="stage-name">RTSL / TDG</span>
+          <span class="stage-metric" id="stage-source-metric">—</span>
+          <span class="stage-sub" id="stage-source-sub">source</span>
+        </button>
+        <span class="stage-link" aria-hidden="true"></span>
+        <button class="stage" type="button" data-stage="tdg" data-tab="tdg">
+          <span class="stage-index">02</span>
+          <span class="stage-name">TDG</span>
+          <span class="stage-metric" id="stage-tdg-metric">—</span>
+          <span class="stage-sub" id="stage-tdg-sub">dependency graph</span>
+        </button>
+        <span class="stage-link" aria-hidden="true"></span>
+        <button class="stage" type="button" data-stage="ptpn" data-tab="ptpn">
+          <span class="stage-index">03</span>
+          <span class="stage-name">PTPN</span>
+          <span class="stage-metric" id="stage-ptpn-metric">—</span>
+          <span class="stage-sub" id="stage-ptpn-sub">timed Petri net</span>
+        </button>
+        <span class="stage-link" aria-hidden="true"></span>
+        <button class="stage" type="button" data-stage="scg" data-tab="scg">
+          <span class="stage-index">04</span>
+          <span class="stage-name">SCG</span>
+          <span class="stage-metric" id="stage-scg-metric">—</span>
+          <span class="stage-sub" id="stage-scg-sub">state classes</span>
+        </button>
+      </section>
+
+      <div class="runbar">
+        <div class="runbar-left">
+          <span class="status-dot" id="run-dot" aria-hidden="true"></span>
+          <span id="run-label">Ready</span>
+          <span class="run-meta mono" id="run-meta"></span>
+        </div>
+        <div class="runbar-right">
+          <span class="chip" id="chip-exit">exit —</span>
+          <span class="chip" id="chip-duration">— ms</span>
+        </div>
+      </div>
+
+      <nav class="tabs" id="tabs" role="tablist" aria-label="Workbench views">
+        <button class="tab" type="button" id="tabbtn-overview" role="tab" data-tab="overview" aria-controls="tab-overview" aria-selected="true">01 Overview</button>
+        <button class="tab" type="button" id="tabbtn-model" role="tab" data-tab="model" aria-controls="tab-model" aria-selected="false">02 Model</button>
+        <button class="tab" type="button" id="tabbtn-tdg" role="tab" data-tab="tdg" aria-controls="tab-tdg" aria-selected="false">03 TDG</button>
+        <button class="tab" type="button" id="tabbtn-ptpn" role="tab" data-tab="ptpn" aria-controls="tab-ptpn" aria-selected="false">04 PTPN</button>
+        <button class="tab" type="button" id="tabbtn-scg" role="tab" data-tab="scg" aria-controls="tab-scg" aria-selected="false">05 SCG</button>
+        <button class="tab" type="button" id="tabbtn-metrics" role="tab" data-tab="metrics" aria-controls="tab-metrics" aria-selected="false">06 Metrics</button>
+      </nav>
+
+      <section class="tab-page" id="tab-overview" role="tabpanel" aria-labelledby="tabbtn-overview">
+        <div class="overview-hero">
+          <article class="panel dial-panel">
+            <div class="screws" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            <div class="panel-eyebrow">Response ratio</div>
+            <div class="dial" id="dial" aria-label="Worst response ratio dial"></div>
+            <div class="dial-caption">
+              <span id="dial-label">WCRT / deadline</span>
+              <span class="stamp" id="dial-stamp">NO DATA</span>
+            </div>
+            <div class="dial-complications" id="dial-complications"></div>
+          </article>
+          <div class="stat-grid" id="stat-grid"></div>
+        </div>
+
+        <div class="overview-grid">
+          <article class="panel chart-panel">
+            <div class="panel-head">
+              <div><div class="panel-eyebrow">Timing</div><h3>Response vs execution</h3></div>
+              <div class="legend" id="wcrt-legend"></div>
+            </div>
+            <div class="chart" id="wcrt-chart"></div>
+          </article>
+          <article class="panel chart-panel">
+            <div class="panel-head">
+              <div><div class="panel-eyebrow">Loading</div><h3>Core utilization</h3></div>
+              <div class="legend" id="core-legend"></div>
+            </div>
+            <div class="chart" id="core-chart"></div>
+          </article>
+        </div>
+
+        <div class="overview-grid lower">
+          <article class="panel">
+            <div class="panel-head">
+              <div><div class="panel-eyebrow">Contention</div><h3>Locks</h3></div>
+            </div>
+            <div class="mini-table" id="lock-table"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div><div class="panel-eyebrow">Diagnostics</div><h3>Run signals</h3></div>
+              <button class="link-btn" id="btn-goto-model" type="button">open model</button>
+            </div>
+            <div class="diag-list compact" id="overview-diagnostics"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="tab-page" id="tab-model" role="tabpanel" aria-labelledby="tabbtn-model" hidden>
+        <div class="pending-banner" id="pending-banner" hidden></div>
+        <article class="panel editor-panel">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">Source</div><h3 id="editor-title">model.rtsl</h3></div>
+            <div class="editor-tools">
+              <span class="chip mono" id="editor-kind">RTSL</span>
+              <span class="chip mono" id="editor-lines">0 lines</span>
+              <button class="link-btn" id="btn-reset-source" type="button">reset</button>
+            </div>
+          </div>
+          <div class="editor-wrap" id="editor-wrap">
+            <div class="gutter" id="gutter" aria-hidden="true"><div class="gutter-inner" id="gutter-inner"></div></div>
+            <pre class="code-view" id="code-view" aria-hidden="true"></pre>
+            <textarea class="code-input" id="code-input" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Model source editor"></textarea>
+          </div>
+        </article>
+
+        <div class="model-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div><div class="panel-eyebrow">Validation</div><h3>Diagnostics</h3></div>
+              <span class="chip" id="diag-count">0</span>
+            </div>
+            <div class="diag-list" id="diagnostics"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div><div class="panel-eyebrow">Pending</div><h3>Measurements</h3></div>
+            </div>
+            <div class="pending-list" id="pending-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="tab-page" id="tab-tdg" role="tabpanel" aria-labelledby="tabbtn-tdg" hidden>
+        <article class="panel">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">Dependency graph</div><h3>TDG</h3></div>
+            <div class="graph-tools" data-graph-tools="tdg">
+              <button class="gtool" type="button" data-action="fit" title="Fit graph">FIT</button>
+              <button class="gtool" type="button" data-action="zoom-in" title="Zoom in">+</button>
+              <button class="gtool" type="button" data-action="zoom-out" title="Zoom out">−</button>
+            </div>
+          </div>
+          <div class="graph-layout">
+            <div class="graph-stage" id="tdg-stage">
+              <div class="graph-hint" id="tdg-hint"><div><strong>NO TDG</strong>Run an analysis to lower the model.</div></div>
+              <div class="graph-legend" id="tdg-legend"></div>
+            </div>
+            <aside class="inspector" id="tdg-inspector" aria-label="TDG node inspector"></aside>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-page" id="tab-ptpn" role="tabpanel" aria-labelledby="tabbtn-ptpn" hidden>
+        <article class="panel">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">Timed Petri net</div><h3>PTPN</h3></div>
+            <div class="graph-tools" data-graph-tools="ptpn">
+              <button class="gtool" type="button" data-action="fit" title="Fit graph">FIT</button>
+              <button class="gtool" type="button" data-action="zoom-in" title="Zoom in">+</button>
+              <button class="gtool" type="button" data-action="zoom-out" title="Zoom out">−</button>
+              <button class="gtool" type="button" data-action="labels" aria-pressed="true" title="Toggle edge labels">LABELS</button>
+            </div>
+          </div>
+          <div class="graph-layout">
+            <div class="graph-stage" id="ptpn-stage">
+              <div class="graph-hint" id="ptpn-hint"><div><strong>NO PTPN</strong>Run an analysis to lower the model.</div></div>
+              <div class="graph-legend" id="ptpn-legend"></div>
+            </div>
+            <aside class="inspector" id="ptpn-inspector" aria-label="PTPN node inspector"></aside>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-page" id="tab-scg" role="tabpanel" aria-labelledby="tabbtn-scg" hidden>
+        <article class="panel">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">State-class reachability</div><h3>SCG</h3></div>
+            <div class="graph-tools" data-graph-tools="scg">
+              <button class="gtool" type="button" data-action="fit" title="Fit graph">FIT</button>
+              <button class="gtool" type="button" data-action="zoom-in" title="Zoom in">+</button>
+              <button class="gtool" type="button" data-action="zoom-out" title="Zoom out">−</button>
+              <button class="gtool" type="button" data-action="deadlocks" aria-pressed="false" title="Emphasize deadlock states">DEADLOCK</button>
+            </div>
+          </div>
+          <div class="graph-layout">
+            <div class="graph-stage" id="scg-stage">
+              <div class="graph-hint" id="scg-hint"><div><strong>NO SCG</strong>Run an analysis to explore state classes.</div></div>
+              <div class="graph-legend" id="scg-legend"></div>
+            </div>
+            <aside class="inspector" id="scg-inspector" aria-label="State class inspector"></aside>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-page" id="tab-metrics" role="tabpanel" aria-labelledby="tabbtn-metrics" hidden>
+        <article class="panel">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">Per task</div><h3>Timing table</h3></div>
+            <div class="editor-tools">
+              <button class="link-btn" id="btn-copy-metrics" type="button">copy metrics JSON</button>
+            </div>
+          </div>
+          <div class="table-wrap" id="task-table"></div>
+        </article>
+
+        <div class="metrics-grid">
+          <article class="panel">
+            <div class="panel-head"><div><div class="panel-eyebrow">Platform</div><h3>Cores</h3></div></div>
+            <div class="table-wrap" id="core-table"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><div><div class="panel-eyebrow">Resources</div><h3>Locks</h3></div></div>
+            <div class="table-wrap" id="lock-table-full"></div>
+          </article>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">Global</div><h3>Run facts</h3></div>
+            <div class="editor-tools">
+              <button class="link-btn" id="btn-copy-wcet" type="button">copy WCET JSON</button>
+              <button class="link-btn" id="btn-copy-diag" type="button">copy diagnostics</button>
+            </div>
+          </div>
+          <div class="fact-grid" id="fact-grid"></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <section class="console" id="console" aria-label="Run log">
+    <div class="console-inner">
+      <button class="console-toggle" id="console-toggle" type="button" aria-expanded="false">
+        <span class="chev">▴</span> RUN LOG <span class="console-summary" id="console-summary"></span>
+      </button>
+      <div class="console-timings" id="console-timings"></div>
+    </div>
+    <div class="console-body" id="console-body" hidden>
+      <pre class="console-log" id="console-log"></pre>
+    </div>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <div><div class="panel-eyebrow" id="modal-eyebrow">Action</div><h3 id="modal-title">Title</h3></div>
+        <button class="modal-close" id="modal-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+</div>
+
+<script src="demo-data.js"></script>
+<script src="app.js"></script>
