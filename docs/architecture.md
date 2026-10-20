@@ -170,6 +170,11 @@ semantics to remove them:
   app maps that type to `E-UNS-001`; metadata/index/clock-layout invariants
   remain ordinary internal exceptions. Do not widen the mapping to every
   `std::invalid_argument`.
+- The static supported class of a policy is one entry in
+  `supported_class_features()` (`src/lower/tdg2pn/tdg2pn.cpp`): EDF/FIFO/LLF
+  share the independent-task class (LLF adds deterministic segments), PIP/PCP/
+  SRP require a single job token per chain. Add a policy there instead of
+  copying a validator; the run-time (analysis-side) guards stay separate.
 - Spin locks keep the CPU: `vertex_lowering.cpp` marks every execution segment
   inside a `spin` critical section non-suspendable, derived from the actual
   chain layout (lock `i` acquired after segment `i`, returned by the segment
