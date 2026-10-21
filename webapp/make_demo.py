@@ -60,6 +60,63 @@ STORY_POLICIES = [
     ("fifo", "fifo"),
 ]
 
+STORY_REPAIRS = {
+    "multicore": """// LLM Revision Option A: Dual-core isolation + feasible deadline for task a
+system deadline_miss_fixed_multicore {
+  cpus 2
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+
+  task a: periodic {
+    period 10ms
+    deadline 6ms
+    core 0
+    priority 101
+    time [3, 5] estimated by "profiler"
+  }
+
+  task b: periodic {
+    period 2ms
+    deadline 2ms
+    core 1
+    priority 100
+    time [1, 1] estimated by "profiler"
+  }
+
+  start a
+  start b
+}
+""",
+    "priority": """// LLM Revision Option B: Rate-Monotonic priority assignment on single core
+system deadline_miss_fixed_priority {
+  cpus 1
+  cores_per_cpu 1
+  time_unit ms
+  policy fixed
+
+  task a: periodic {
+    period 10ms
+    deadline 10ms
+    core 0
+    priority 100
+    time [3, 5] estimated by "profiler"
+  }
+
+  task b: periodic {
+    period 2ms
+    deadline 2ms
+    core 0
+    priority 102
+    time [1, 1] estimated by "profiler"
+  }
+
+  start a
+  start b
+}
+""",
+}
+
 
 def _policy_summary(response) -> dict:
     """Compact analyzer result used by the story's policy comparison."""
@@ -203,7 +260,7 @@ def generate(output_path: Path = None) -> int:
     # The story compares the same hw model under several firing rules.  Keep
     # only the compact verdict fields here; the full responses stay in
     # ``examples`` above.
-    story = {"policies": {}}
+    story = {"policies": {}, "repairs": {}}
     hw = next((example for example in examples if example["id"] == "hw"), None)
     if hw is not None:
         for label, policy in STORY_POLICIES:
@@ -220,6 +277,21 @@ def generate(output_path: Path = None) -> int:
                     story["policies"][label].get("states"),
                 )
             )
+    for repair_id, repair_source in STORY_REPAIRS.items():
+        response = server.run_analysis(
+            repair_source, "repaired.rtsl", "rtsl", "analyze", {}
+        )
+        story["repairs"][repair_id] = {
+            "source": repair_source,
+            "summary": _policy_summary(response),
+        }
+        print(
+            "[story] repair={:<10} exit={:<3} sched={}".format(
+                repair_id,
+                response.get("exit_code"),
+                story["repairs"][repair_id]["summary"].get("schedulability"),
+            )
+        )
 
     payload = {
         "generated_at": _utc_timestamp(),

@@ -69,7 +69,7 @@ DEFAULT_OPTIONS = {
 OPTION_KEYS = set(DEFAULT_OPTIONS)
 CANONICALIZATION_VALUES = {"equality", "max-lower", "intersection"}
 REDUCTION_VALUES = {"none", "upper-bound", "cone", "symmetry"}
-KIND_VALUES = {"rtsl", "tdg"}
+KIND_VALUES = {"rtsl", "tdg", "ptpn"}
 MODE_VALUES = {"check", "analyze"}
 
 # Demo examples that need a mode other than "analyze".
@@ -228,6 +228,60 @@ EXAMPLE_SPECS = [
         "options": _base_options(),
     },
     {
+        "id": "hw-ptpn",
+        "name": "hw.ptpn",
+        "path": "example/motivating-examples/hw.ptpn",
+        "title": "Direct PTPN net (A/B/F)",
+        "kind": "ptpn",
+        "demo": True,
+        "source": (
+            "// Direct PTPN model of the 3-task priority preemption system (A, B, F)\n"
+            "// Bypasses TDG/RTSL lowering and defines places, transitions, arcs & @init directly.\n\n"
+            "places\n"
+            "  Fentry:1, Fready:1, Fexit:1\n"
+            "  Bentry:1, Bready:1, Bexit:1\n"
+            "  Aentry:1, Aready:1, Aexit:1\n"
+            "  A_period:1\n\n"
+            "transitions\n"
+            "  Fget_core [0, 0]   @priority=96, core=0\n"
+            "  Fexec     [2, 10]  @priority=96, core=0, suspendable\n"
+            "  Bget_core [0, 0]   @priority=98, core=0\n"
+            "  Bexec     [2, 3]   @priority=98, core=0, suspendable\n"
+            "  Aget_core [0, 0]   @priority=97, core=0\n"
+            "  Aexec     [4, 6]   @priority=97, core=0, suspendable\n"
+            "  A_to_B    [1, 1]   @priority=0,  core=-1\n"
+            "  A_fire    [20, 20] @priority=0,  core=-1\n"
+            "  B_consume [0, 0]   @priority=0,  core=-1\n"
+            "  F_consume [0, 0]   @priority=0,  core=-1\n\n"
+            "Fentry -> Fget_core\n"
+            "Fget_core -> Fready\n"
+            "Fready -> Fexec\n"
+            "Fexec -> Fexit\n"
+            "Fexit -> F_consume\n\n"
+            "Bentry -> Bget_core\n"
+            "Bget_core -> Bready\n"
+            "Bready -> Bexec\n"
+            "Bexec -> Bexit\n"
+            "Bexit -> B_consume\n\n"
+            "Aentry -> Aget_core\n"
+            "Aget_core -> Aready\n"
+            "Aready -> Aexec\n"
+            "Aexec -> Aexit\n"
+            "Aexit -> A_to_B\n"
+            "A_to_B -> Bentry\n\n"
+            "A_period -> A_fire\n"
+            "A_fire -> Aentry\n"
+            "A_fire -> A_period\n\n"
+            "@init Fentry:1, Aentry:1, A_period:1\n"
+        ),
+        "description": (
+            "The exact same 3-task preemption model written directly in native PTPN syntax "
+            "(places, timed transitions, arcs, @init) without RTSL or TDG lowering."
+        ),
+        "tags": ["PTPN", "native net", "fixed priority", "17 states"],
+        "options": _base_options(),
+    },
+    {
         "id": "deadlock",
         "path": "example/p-bench/single-core-diff-priority.json",
         "title": "Priority contention / deadlock",
@@ -279,20 +333,26 @@ EXAMPLE_SPECS = [
 
 
 def list_examples() -> list:
-    """Return every bundled example that exists on disk, with its source."""
+    """Return every bundled example that exists on disk (or inline), with its source."""
     examples = []
     for spec in EXAMPLE_SPECS:
+        inline_source = spec.get("source")
         source_path = REPO_ROOT / spec["path"]
-        if not source_path.is_file():
-            continue
-        try:
-            source = source_path.read_text(encoding="utf-8")
-        except OSError:
-            continue
+        if inline_source is not None:
+            source = inline_source
+            name = spec.get("name") or source_path.name
+        else:
+            if not source_path.is_file():
+                continue
+            try:
+                source = source_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            name = source_path.name
         examples.append(
             {
                 "id": spec["id"],
-                "name": source_path.name,
+                "name": name,
                 "title": spec["title"],
                 "kind": spec["kind"],
                 "path": spec["path"],
@@ -519,7 +579,13 @@ def normalize_options(raw) -> dict:
 
 
 def _sanitize_filename(filename, kind: str) -> str:
-    default = "model.rtsl" if kind == "rtsl" else "model.json"
+    default = (
+        "model.rtsl"
+        if kind == "rtsl"
+        else "model.ptpn"
+        if kind == "ptpn"
+        else "model.json"
+    )
     if filename is None:
         return default
     if not isinstance(filename, str):
@@ -1334,7 +1400,7 @@ def _rewrite_location(location, temp_input: Path, client_filename: str) -> None:
     candidate = Path(file_value)
     if (
         file_value == str(temp_input)
-        or candidate.name in ("model.rtsl", "model.json")
+        or candidate.name in ("model.rtsl", "model.json", "model.ptpn")
         or candidate.resolve() == temp_input.resolve()
     ):
         location["file"] = client_filename
@@ -1398,7 +1464,7 @@ def run_analysis(source, filename, kind, mode, options) -> dict:
     if _utf8_size(source) > MAX_SOURCE_BYTES:
         raise ValueError("source exceeds the 2 MB limit")
     if not isinstance(kind, str) or kind not in KIND_VALUES:
-        raise ValueError("kind must be 'rtsl' or 'tdg'")
+        raise ValueError("kind must be 'rtsl', 'tdg', or 'ptpn'")
     if not isinstance(mode, str) or mode not in MODE_VALUES:
         raise ValueError("mode must be 'check' or 'analyze'")
     if mode == "check" and kind != "rtsl":
@@ -1415,7 +1481,13 @@ def run_analysis(source, filename, kind, mode, options) -> dict:
 
     notices = []
     temp_dir = Path(tempfile.mkdtemp(prefix="ptpn-web-"))
-    temp_input = temp_dir / ("model.rtsl" if kind == "rtsl" else "model.json")
+    temp_input = temp_dir / (
+        "model.rtsl"
+        if kind == "rtsl"
+        else "model.ptpn"
+        if kind == "ptpn"
+        else "model.json"
+    )
     tdg_json_path = temp_dir / "tdg.json"
     ptpn_dot_path = temp_dir / "ptpn.dot"
     scg_dot_path = temp_dir / "scg.dot"
@@ -1437,7 +1509,7 @@ def run_analysis(source, filename, kind, mode, options) -> dict:
         else:
             command = [
                 str(binary),
-                "rtsl" if kind == "rtsl" else "tdg",
+                "rtsl" if kind == "rtsl" else "ptpn" if kind == "ptpn" else "tdg",
                 "-f",
                 str(temp_input),
                 "--diagnostics",
@@ -1461,7 +1533,7 @@ def run_analysis(source, filename, kind, mode, options) -> dict:
                 "--reduction",
                 opts["reduction"],
             ]
-            if opts["policy"]:
+            if opts["policy"] and kind != "ptpn":
                 command += ["--policy", opts["policy"]]
             if opts["horizon"] is not None:
                 command += ["--horizon", str(opts["horizon"])]
@@ -1570,12 +1642,14 @@ def run_analysis(source, filename, kind, mode, options) -> dict:
             tdg = _read_json_file(tdg_json_path)
             if not isinstance(tdg, dict):
                 tdg = None
-        else:
+        elif kind == "tdg":
             try:
                 parsed_tdg = json.loads(source)
             except ValueError:
                 parsed_tdg = None
             tdg = parsed_tdg if isinstance(parsed_tdg, dict) else None
+        else:
+            tdg = None
 
         shared_locks = _shared_lock_names(tdg)
         deadlock_states = _deadlock_state_set(metrics)
@@ -1977,14 +2051,14 @@ class PTPNRequestHandler(BaseHTTPRequestHandler):
             kind = body.get("kind")
             if kind is None:
                 filename_hint = body.get("filename")
-                kind = (
-                    "tdg"
-                    if isinstance(filename_hint, str)
-                    and filename_hint.lower().endswith(".json")
-                    else "rtsl"
-                )
+                if isinstance(filename_hint, str) and filename_hint.lower().endswith(".json"):
+                    kind = "tdg"
+                elif isinstance(filename_hint, str) and filename_hint.lower().endswith(".ptpn"):
+                    kind = "ptpn"
+                else:
+                    kind = "rtsl"
             if not isinstance(kind, str) or kind not in KIND_VALUES:
-                raise ValueError("kind must be 'rtsl' or 'tdg'")
+                raise ValueError("kind must be 'rtsl', 'tdg', or 'ptpn'")
 
             mode = body.get("mode", "analyze")
             if not isinstance(mode, str) or mode not in MODE_VALUES:

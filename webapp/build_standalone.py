@@ -40,8 +40,8 @@ def build(output: Path, page: str = "workbench") -> int:
     page_file = "story.html" if story else "index.html"
     css_file = "story.css" if story else "style.css"
     script_file = "story.js" if story else "app.js"
-    title = "PTPN — A Schedule Is a Sequence of Firings" if story else "PTPN Chronograph"
-    lang = "en" if story else "zh-CN"
+    title = "PTPN - A Schedule Is a Sequence of Firings" if story else "PTPN Workbench"
+    lang = "en"
 
     page_html = _read(ROOT / "static" / page_file)
     css = _read(ROOT / "static" / css_file)

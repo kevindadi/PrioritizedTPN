@@ -1,4 +1,4 @@
-/* PTPN Chronograph — browser workbench.
+/* PTPN Chronograph - browser workbench.
    Runs live against webapp/server.py, or against precomputed responses in the
    published demo (window.PTPN_DEMO_DATA). No external libraries. */
 (() => {
@@ -19,6 +19,8 @@
 
   const state = {
     demo: DEMO,
+    lang: localStorage.getItem("ptpn_lang") || "zh",
+    theme: localStorage.getItem("ptpn_theme") || "dark",
     status: null,
     examples: [],
     current: null,
@@ -73,28 +75,28 @@
     return v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v));
   }
 
-  function fmtInt(v, fallback = "—") {
+  function fmtInt(v, fallback = "-") {
     return isNum(v) ? Math.round(Number(v)).toLocaleString("en-US") : fallback;
   }
 
-  function fmtNum(v, digits = 1, fallback = "—") {
+  function fmtNum(v, digits = 1, fallback = "-") {
     if (!isNum(v)) return fallback;
     const n = Number(v);
     return Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : n.toFixed(digits);
   }
 
   function fmtPct(v, digits = 1) {
-    return isNum(v) ? `${(Number(v) * 100).toFixed(digits)}%` : "—";
+    return isNum(v) ? `${(Number(v) * 100).toFixed(digits)}%` : "-";
   }
 
   function fmtMs(v) {
-    if (!isNum(v)) return "—";
+    if (!isNum(v)) return "-";
     const n = Number(v);
     return n < 1 ? "<1 ms" : `${Math.round(n)} ms`;
   }
 
   function fmtDuration(ms) {
-    if (!isNum(ms)) return "—";
+    if (!isNum(ms)) return "-";
     const n = Number(ms);
     if (n < 1000) return `${Math.round(n)} ms`;
     return `${(n / 1000).toFixed(2)} s`;
@@ -130,7 +132,7 @@
 
   function truncate(text, max) {
     const s = String(text ?? "");
-    return s.length > max ? `${s.slice(0, Math.max(0, max - 1))}…` : s;
+    return s.length > max ? `${s.slice(0, Math.max(0, max - 1))}...` : s;
   }
 
   function wrapName(text, max = 15, maxLines = 2) {
@@ -148,7 +150,7 @@
         cur = next;
       }
       if (lines.length === maxLines - 1 && cur) {
-        lines.push(cur.length > max + 3 ? `${cur.slice(0, max)}…` : cur);
+        lines.push(cur.length > max + 3 ? `${cur.slice(0, max)}...` : cur);
         cur = "";
         break;
       }
@@ -204,14 +206,15 @@
   }
 
   function normalizeExample(ex) {
+    const kind = ex.kind === "tdg" ? "tdg" : ex.kind === "ptpn" ? "ptpn" : "rtsl";
     return {
       ...ex,
-      kind: ex.kind === "tdg" ? "tdg" : "rtsl",
+      kind,
       options: { ...defaultOptions(), ...(ex.options || {}) },
       demo: !!ex.demo,
       response: ex.response || null,
       source: ex.source || "",
-      name: ex.name || (ex.kind === "tdg" ? "model.json" : "model.rtsl"),
+      name: ex.name || (kind === "tdg" ? "model.json" : kind === "ptpn" ? "model.ptpn" : "model.rtsl"),
     };
   }
 
@@ -219,6 +222,7 @@
     const p = String(ex.path || "");
     if (p.includes("/diagnostics/")) return "Diagnostics";
     if (p.includes("/introduction/")) return "Introduction";
+    if (p.includes("/motivating-examples/")) return "Core Preemption (A/B/F)";
     if (p.includes("/symmetry/")) return "Reductions";
     if (p.includes("/l-bench/") || p.includes("/p-bench/") || p.includes("/s-bench/") || p.includes("/t-bench/")) return "Benchmarks";
     return "Examples";
@@ -233,7 +237,7 @@
     renderOptions(state.options, false);
     renderAllEmpty();
     setRunbar({
-      label: state.demo ? "Loading demo…" : "Connecting to analyzer…",
+      label: state.demo ? "Loading demo..." : "Connecting to analyzer...",
       dot: "busy",
       exit: null,
       duration: null,
@@ -288,7 +292,7 @@
     const offline = !state.demo && (!state.status || state.status.ok === false || state.status.binary_exists === false);
 
     if (state.demo) {
-      mode.textContent = "DEMO · PRECOMPUTED";
+      mode.textContent = "DEMO | PRECOMPUTED";
       mode.className = "pill accent";
       binary.textContent = "no backend";
       note.textContent = "precomputed";
@@ -299,7 +303,7 @@
       binary.textContent = "binary missing";
       note.textContent = "offline";
     } else {
-      mode.textContent = "LOCAL · LIVE";
+      mode.textContent = "LOCAL | LIVE";
       mode.className = "pill live";
       mode.style.color = "";
       binary.textContent = state.status.version ? truncate(state.status.version, 28) : "build/ptpn";
@@ -364,8 +368,9 @@
         btn.className = "ex";
         btn.dataset.id = ex.id;
         btn.setAttribute("aria-current", state.current && state.current.id === ex.id ? "true" : "false");
+        const kindBadge = ex.kind === "tdg" ? "TDG JSON" : ex.kind === "ptpn" ? "PTPN" : "RTSL";
         btn.innerHTML = `
-          <span class="ex-top"><span class="ex-title">${esc(ex.title || ex.name)}</span><span class="ex-kind">${ex.kind === "tdg" ? "TDG" : "RTSL"}${state.demo && ex.demo ? " · D" : ""}</span></span>
+          <span class="ex-top"><span class="ex-title">${esc(ex.title || ex.name)}</span><span class="ex-kind">${kindBadge}${state.demo && ex.demo ? " | D" : ""}</span></span>
           <span class="ex-file">${esc(ex.name)}</span>
           <span class="ex-desc">${esc(ex.description || "")}</span>`;
         btn.addEventListener("click", () => selectExample(ex.id));
@@ -420,8 +425,12 @@
     $("#opt-horizon").value = options.horizon == null ? "" : options.horizon;
     $("#opt-extrapolation").checked = !!options.extrapolation;
     $("#opt-keep-susp").checked = !!options.keep_suspension_clocks;
+    if ($("#toolbar-policy")) $("#toolbar-policy").value = options.policy || "";
+    if ($("#toolbar-reduction")) $("#toolbar-reduction").value = options.reduction || "none";
     $("#options").classList.toggle("locked", !!locked);
-    $$("#options input, #options select").forEach((el) => { el.disabled = !!locked; });
+    $$("#options input, #options select, #toolbar-policy, #toolbar-reduction").forEach((el) => {
+      if (el) el.disabled = !!locked;
+    });
   }
 
   function collectOptions() {
@@ -441,7 +450,7 @@
     state.options = collectOptions();
     if (state.response) {
       // Options no longer match the rendered result; mark it visually.
-      setRunMeta("Options changed · run again to update");
+      setRunMeta("Options changed | run again to update");
     }
   }
 
@@ -493,7 +502,7 @@
     state.pending = [];
     setBusy(true);
     startPipelineAnimation();
-    setRunbar({ label: mode === "check" ? "Checking…" : "Exploring state classes…", dot: "busy", exit: null, duration: null, meta: "" });
+    setRunbar({ label: mode === "check" ? "Checking..." : "Exploring state classes...", dot: "busy", exit: null, duration: null, meta: "" });
     const started = performance.now();
     try {
       const body = {
@@ -511,8 +520,8 @@
         const states = resp.metrics && resp.metrics.states;
         showToast(
           mode === "check"
-            ? `Check complete · ${resp.exit_code === 0 ? "passed" : `exit ${resp.exit_code}`}`
-            : `Analysis complete · ${states != null ? `${fmtInt(states)} states · ` : ""}${fmtDuration(resp.client_duration_ms || resp.duration_ms)}`,
+            ? `Check complete | ${resp.exit_code === 0 ? "passed" : `exit ${resp.exit_code}`}`
+            : `Analysis complete | ${states != null ? `${fmtInt(states)} states | ` : ""}${fmtDuration(resp.client_duration_ms || resp.duration_ms)}`,
           resp.exit_code === 0 ? "ok" : "err"
         );
       } else if (!(resp.diagnostics || []).length) {
@@ -534,7 +543,7 @@
     state.busy = true;
     setBusy(true);
     startPipelineAnimation();
-    setRunbar({ label: checkOnly ? "Checking (precomputed)…" : "Replaying precomputed run…", dot: "busy", exit: null, duration: null, meta: "" });
+    setRunbar({ label: checkOnly ? "Checking (precomputed)..." : "Replaying precomputed run...", dot: "busy", exit: null, duration: null, meta: "" });
     const delay = REDUCED ? 0 : 520;
     setTimeout(() => {
       stopPipelineAnimation(true);
@@ -549,14 +558,14 @@
     const analyze = $("#btn-analyze");
     const check = $("#btn-check");
     analyze.disabled = busy || (!state.demo && state.status && state.status.binary_exists === false);
-    check.disabled = analyze.disabled;
-    analyze.textContent = busy ? "Running…" : "Analyze";
+    check.disabled = analyze.disabled || state.kind !== "rtsl";
+    analyze.textContent = busy ? "Running..." : "Analyze";
     if (!busy) {
-      analyze.innerHTML = `Analyze <kbd>⌘↵</kbd>`;
-      check.innerHTML = `Check <kbd>⌘⇧↵</kbd>`;
+      analyze.innerHTML = `Analyze <kbd>Cmd+Enter</kbd>`;
+      check.innerHTML = `Check <kbd>Cmd+Shift+Enter</kbd>`;
     }
     if (busy) {
-      analyze.textContent = "Running…";
+      analyze.textContent = "Running...";
       check.textContent = "Check";
     }
   }
@@ -630,10 +639,10 @@
       exitEl.textContent = `exit ${exit}`;
       exitEl.style.color = exit === 0 ? "var(--good)" : exit === 6 ? "var(--critical)" : "var(--warn)";
     } else {
-      exitEl.textContent = "exit —";
+      exitEl.textContent = "exit -";
       exitEl.style.color = "";
     }
-    setText($("#chip-duration"), duration != null ? fmtDuration(duration) : "— ms");
+    setText($("#chip-duration"), duration != null ? fmtDuration(duration) : "- ms");
   }
 
   function renderRunbar(resp) {
@@ -668,7 +677,12 @@
       dot,
       exit: resp.exit_code,
       duration: resp.client_duration_ms != null ? resp.client_duration_ms : resp.duration_ms,
-      meta: parts.join(" · "),
+      meta: parts.join(" | "),
+    });
+    const showRepair = !resp.ok || errors > 0 || resp.exit_code === 6 || (metrics && schedulabilityOf(metrics) === "unschedulable");
+    ["#btn-llm-repair", "#btn-overview-repair", "#btn-model-repair"].forEach((sel) => {
+      const btn = $(sel);
+      if (btn) btn.hidden = !showRepair;
     });
   }
 
@@ -715,16 +729,17 @@
     const ptpn = resp && resp.graphs && resp.graphs.ptpn;
     const scg = resp && resp.graphs && resp.graphs.scg;
 
+    const kindLabel = state.kind === "tdg" ? "TDG JSON" : state.kind === "ptpn" ? "Native PTPN" : "RTSL";
     setText($("#stage-source-metric"), `${countLines(state.source)} lines`);
-    setText($("#stage-source-sub"), `${state.filename || "model"} · ${state.kind === "tdg" ? "TDG JSON" : "RTSL"}`);
+    setText($("#stage-source-sub"), `${state.filename || "model"} | ${kindLabel}`);
 
     if (tdg && Array.isArray(tdg.nodes)) {
       const tasks = tdg.nodes.filter((n) => (n.type || "task") === "task").length;
       const edges = Array.isArray(tdg.edges) ? tdg.edges.length : 0;
       setText($("#stage-tdg-metric"), `${fmtInt(tasks)} tasks`);
-      setText($("#stage-tdg-sub"), `${fmtInt(tdg.nodes.length)} nodes · ${fmtInt(edges)} edges`);
+      setText($("#stage-tdg-sub"), `${fmtInt(tdg.nodes.length)} nodes | ${fmtInt(edges)} edges`);
     } else {
-      setText($("#stage-tdg-metric"), "—");
+      setText($("#stage-tdg-metric"), "-");
       setText($("#stage-tdg-sub"), "dependency graph");
     }
 
@@ -733,20 +748,20 @@
       const places = ptpn.nodes.filter((n) => PLACE_KINDS.has(n.kind)).length;
       const trans = ptpn.nodes.length - places;
       setText($("#stage-ptpn-metric"), `${fmtInt(places)} places`);
-      setText($("#stage-ptpn-sub"), `${fmtInt(trans)} transitions · ${fmtInt(ptpn.edges ? ptpn.edges.length : 0)} arcs`);
+      setText($("#stage-ptpn-sub"), `${fmtInt(trans)} transitions | ${fmtInt(ptpn.edges ? ptpn.edges.length : 0)} arcs`);
     } else {
-      setText($("#stage-ptpn-metric"), "—");
+      setText($("#stage-ptpn-metric"), "-");
       setText($("#stage-ptpn-sub"), "timed Petri net");
     }
 
     if (metrics) {
       setText($("#stage-scg-metric"), fmtInt(metrics.states));
-      setText($("#stage-scg-sub"), `${fmtInt(metrics.transitions)} edges · ${metrics.exact ? "exact" : "approx"}`);
+      setText($("#stage-scg-sub"), `${fmtInt(metrics.transitions)} edges | ${metrics.exact ? "exact" : "approx"}`);
     } else if (scg) {
       setText($("#stage-scg-metric"), fmtInt(scg.node_count));
       setText($("#stage-scg-sub"), `${fmtInt(scg.edge_count)} edges`);
     } else {
-      setText($("#stage-scg-metric"), "—");
+      setText($("#stage-scg-metric"), "-");
       setText($("#stage-scg-sub"), "state classes");
     }
   }
@@ -768,10 +783,10 @@
     const grid = $("#stat-grid");
     if (!metrics) {
       grid.innerHTML = `
-        ${statTile("Schedulability", "—", "RUN ANALYSIS", "neutral")}
-        ${statTile("State classes", "—", "no result", "neutral")}
-        ${statTile("Tasks", "—", "no result", "neutral")}
-        ${statTile("Max WCRT", "—", "no result", "neutral")}`;
+        ${statTile("Schedulability", "-", "RUN ANALYSIS", "neutral")}
+        ${statTile("State classes", "-", "no result", "neutral")}
+        ${statTile("Tasks", "-", "no result", "neutral")}
+        ${statTile("Max WCRT", "-", "no result", "neutral")}`;
       return;
     }
     const tasks = metrics.tasks || [];
@@ -793,7 +808,7 @@
     const minDeadline = tasks.map((t) => Number(t.deadline) || 0).filter((d) => d > 0).sort((a, b) => a - b)[0];
     grid.innerHTML = `
       ${statTile("Schedulability", schedLabel, schedSub, status)}
-      ${statTile("State classes", fmtInt(metrics.states), `${fmtInt(metrics.transitions)} firing edges · ${metrics.bounded ? "bounded" : "unbounded"}`, "accent")}
+      ${statTile("State classes", fmtInt(metrics.states), `${fmtInt(metrics.transitions)} firing edges | ${metrics.bounded ? "bounded" : "unbounded"}`, "accent")}
       ${statTile("Tasks", fmtInt(taskCount), `${periods.length ? `hyperperiod ${fmtInt(metrics.hyperperiod)} ms` : "aperiodic set"}`, "neutral")}
       ${statTile("Max WCRT", `${fmtNum(maxWcrt)}<small> ms</small>`, minDeadline ? `min deadline ${fmtInt(minDeadline)} ms` : "no declared deadlines", maxWcrt > 0 ? "ok" : "neutral")}`;
   }
@@ -851,7 +866,7 @@
       label,
       needle: mode !== "wcrt",
       zones: mode !== "wcrt",
-      readoutMain: mode === "wcrt" ? fmtNum(maxWcrt) : (metrics && tasks.length ? Number(ratio).toFixed(2) : "—"),
+      readoutMain: mode === "wcrt" ? fmtNum(maxWcrt) : (metrics && tasks.length ? Number(ratio).toFixed(2) : "-"),
       readoutUnit: mode === "wcrt" ? "ms" : "",
       sub: mode === "wcrt" ? "MAX WCRT" : "RATIO",
     });
@@ -861,7 +876,7 @@
       if (!metrics) {
         comp.innerHTML = "";
       } else {
-        const hp = Number(metrics.hyperperiod) > 0 ? `${fmtInt(metrics.hyperperiod)}<small> ms</small>` : "—";
+        const hp = Number(metrics.hyperperiod) > 0 ? `${fmtInt(metrics.hyperperiod)}<small> ms</small>` : "-";
         comp.innerHTML = `
           <dl class="dial-comp"><dt>exact</dt><dd>${metrics.exact ? "yes" : "no"}</dd></dl>
           <dl class="dial-comp"><dt>deadlocks</dt><dd>${fmtInt(deadlockCount(metrics))}</dd></dl>
@@ -872,64 +887,51 @@
   }
 
   function dialSvg(ratio, opts) {
-    const W = 230;
-    const cx = 115;
-    const cy = 118;
-    const R = 84;
+    const W = 280;
+    const H = 74;
     const maxRatio = 1.25;
     const hasNeedle = opts.needle !== false;
     const tClamped = clamp(Number(ratio) || 0, 0, maxRatio);
-    const angleFor = (t) => -135 + (clamp(t, 0, maxRatio) / maxRatio) * 270;
-    const rad = (d) => (d - 90) * Math.PI / 180;
-    const pt = (r, d) => [cx + r * Math.cos(rad(d)), cy + r * Math.sin(rad(d))];
-    const arc = (r, t0, t1) => {
-      const [x0, y0] = pt(r, angleFor(t0));
-      const [x1, y1] = pt(r, angleFor(t1));
-      const large = Math.abs(angleFor(t1) - angleFor(t0)) > 180 ? 1 : 0;
-      return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
-    };
-    const needleAngle = angleFor(tClamped);
-    const parts = [];
+    const barX = 8;
+    const barY = 44;
+    const barW = W - 16;
+    const barH = 10;
+    const fillW = hasNeedle ? (tClamped / maxRatio) * barW : (opts.hasData ? barW * 0.65 : 0);
+    const limitX = barX + (1.0 / maxRatio) * barW;
+    const warnX = barX + (0.75 / maxRatio) * barW;
+    const main = opts.readoutMain != null
+      ? opts.readoutMain
+      : (opts.hasData ? (Number(ratio) > 99 ? "99+" : Number(ratio).toFixed(2)) : "-");
+    const unit = opts.readoutUnit ? ` ${opts.readoutUnit}` : "";
+    const barColor = !opts.hasData
+      ? "var(--line-2)"
+      : !hasNeedle
+        ? "var(--viz-1)"
+        : ratio > 1.0001
+          ? "var(--critical)"
+          : ratio > 0.75
+            ? "var(--warn)"
+            : "var(--good)";
+
     const aria = opts.hasData
-      ? `${opts.label || "response ratio"}: ${hasNeedle ? tClamped.toFixed(2) : `${opts.readoutMain || ""} ${opts.readoutUnit || ""}`.trim()}`
+      ? `${opts.label || "response ratio"}: ${hasNeedle ? tClamped.toFixed(2) : `${main}${unit}`}`
       : "no data";
-    parts.push(`<svg viewBox="0 0 ${W} ${W}" role="img" aria-label="${esc(aria)}">`);
-    parts.push(`<circle cx="${cx}" cy="${cy}" r="${R + 12}" fill="none" stroke="var(--line)" stroke-width="1"/>`);
-    parts.push(`<circle cx="${cx}" cy="${cy}" r="${R + 5}" fill="none" stroke="var(--line-2)" stroke-width="0.6"/>`);
-    if (opts.zones !== false) {
-      parts.push(`<path d="${arc(R, 0, 0.75)}" fill="none" stroke="var(--good)" stroke-width="3" stroke-linecap="round" opacity="0.42"/>`);
-      parts.push(`<path d="${arc(R, 0.75, 1)}" fill="none" stroke="var(--warn)" stroke-width="3" stroke-linecap="round" opacity="0.5"/>`);
-      parts.push(`<path d="${arc(R, 1, 1.25)}" fill="none" stroke="var(--critical)" stroke-width="3" stroke-linecap="round" opacity="0.55"/>`);
-    } else {
-      parts.push(`<path d="${arc(R, 0, 1.25)}" fill="none" stroke="var(--line-2)" stroke-width="3" stroke-linecap="round" opacity="0.5"/>`);
-    }
-    for (let i = 0; i <= 25; i += 1) {
-      const t = i * 0.05;
-      const a = angleFor(t);
-      const major = i % 5 === 0;
-      const [x0, y0] = pt(R - 2, a);
-      const [x1, y1] = pt(R - (major ? 12 : 7), a);
-      parts.push(`<line x1="${x0.toFixed(2)}" y1="${y0.toFixed(2)}" x2="${x1.toFixed(2)}" y2="${y1.toFixed(2)}" stroke="${major ? "var(--ink-2)" : "var(--line-3)"}" stroke-width="${major ? 1.2 : 0.7}" opacity="${major ? 0.8 : 0.55}"/>`);
-      if (major && hasNeedle) {
-        const [lx, ly] = pt(R - 24, a);
-        const label = i === 25 ? "1.25" : (t === 0 ? "0" : t.toFixed(2).replace(/0$/, ""));
-        parts.push(`<text x="${lx.toFixed(2)}" y="${(ly + 2.5).toFixed(2)}" text-anchor="middle" fill="var(--muted)" font-size="7" font-family="var(--font-mono)">${label}</text>`);
-      }
-    }
-    if (hasNeedle) {
-      parts.push(`<g class="dial-needle" style="transform: rotate(${needleAngle.toFixed(2)}deg); transform-origin: ${cx}px ${cy}px;">`);
-      parts.push(`<line x1="${cx}" y1="${cy + 8}" x2="${cx}" y2="${cy - R + 24}" stroke="var(--brass-hi)" stroke-width="1.6" stroke-linecap="round"/>`);
-      parts.push(`<line x1="${cx}" y1="${cy - R + 24}" x2="${cx}" y2="${cy - R + 16}" stroke="var(--critical)" stroke-width="1.6" stroke-linecap="round" opacity="0.85"/>`);
-      parts.push(`</g>`);
-    }
-    parts.push(`<circle cx="${cx}" cy="${cy}" r="5.5" fill="var(--panel-2)" stroke="var(--brass)" stroke-width="1.2"/>`);
-    parts.push(`<circle cx="${cx}" cy="${cy}" r="1.8" fill="var(--brass-hi)"/>`);
-    const main = opts.readoutMain != null ? opts.readoutMain : (opts.hasData ? (Number(ratio) > 99 ? "99+" : Number(ratio).toFixed(2)) : "—");
-    const unit = opts.readoutUnit ? `<tspan font-size="9" fill="var(--muted)"> ${esc(opts.readoutUnit)}</tspan>` : "";
-    parts.push(`<text x="${cx}" y="${cy + 46}" text-anchor="middle" fill="var(--ink)" font-size="22" font-family="var(--font-mono)" font-variant-numeric="tabular-nums">${esc(main)}${unit}</text>`);
-    parts.push(`<text x="${cx}" y="${cy + 60}" text-anchor="middle" fill="var(--faint)" font-size="7" letter-spacing="1.6" font-family="var(--font-mono)">${esc(opts.sub || "RATIO")}</text>`);
-    parts.push(`</svg>`);
-    return parts.join("");
+
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">
+      <text x="${barX}" y="24" fill="var(--ink)" font-size="22" font-weight="600" font-family="var(--font-mono)">${esc(main)}<tspan font-size="11" fill="var(--muted)">${esc(unit)}</tspan></text>
+      <text x="${W - 8}" y="22" text-anchor="end" fill="var(--faint)" font-size="9.5" font-family="var(--font-mono)">${esc(opts.sub || "RATIO")}</text>
+      <rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="3" fill="var(--viz-track)"/>
+      ${fillW > 0 ? `<rect x="${barX}" y="${barY}" width="${fillW.toFixed(1)}" height="${barH}" rx="3" fill="${barColor}"/>` : ""}
+      ${hasNeedle ? `
+        <line x1="${warnX.toFixed(1)}" y1="${barY - 2}" x2="${warnX.toFixed(1)}" y2="${barY + barH + 2}" stroke="var(--line-3)" stroke-width="1" stroke-dasharray="2 2"/>
+        <line x1="${limitX.toFixed(1)}" y1="${barY - 4}" x2="${limitX.toFixed(1)}" y2="${barY + barH + 4}" stroke="var(--critical)" stroke-width="1.5"/>
+        <text x="${barX}" y="${H - 4}" fill="var(--faint)" font-size="8.5" font-family="var(--font-mono)">0.0</text>
+        <text x="${warnX.toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="var(--faint)" font-size="8.5" font-family="var(--font-mono)">0.75</text>
+        <text x="${limitX.toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="var(--critical)" font-size="8.5" font-family="var(--font-mono)">1.00 (deadline)</text>
+      ` : `
+        <text x="${barX}" y="${H - 4}" fill="var(--faint)" font-size="8.5" font-family="var(--font-mono)">Aperiodic bound (no relative deadline declared)</text>
+      `}
+    </svg>`;
   }
 
   function renderWcrtChart(metrics) {
@@ -971,14 +973,14 @@
       const wcet = Number(t.wcet) || 0;
       const deadline = Number(t.deadline) || 0;
       const slack = isNum(t.slack) ? Number(t.slack) : null;
-      const tip = `${t.name} · C${t.core} · π${t.priority}\nWCRT ${fmtNum(lb)}–${fmtNum(wcrt)} ms · WCET ${fmtNum(wcet)} ms` +
-        `${deadline ? `\ndeadline ${fmtNum(deadline)} ms · slack ${fmtNum(slack)} ms` : "\nno deadline"}` +
+      const tip = `${t.name} | C${t.core} | pi${t.priority}\nWCRT ${fmtNum(lb)}-${fmtNum(wcrt)} ms | WCET ${fmtNum(wcet)} ms` +
+        `${deadline ? `\ndeadline ${fmtNum(deadline)} ms | slack ${fmtNum(slack)} ms` : "\nno deadline"}` +
         `${t.worst_interference ? `\ninterference ${fmtNum(t.worst_interference)} ms` : ""}` +
-        `${t.worst_blocking ? ` · blocking ${fmtNum(t.worst_blocking)} ms` : ""}`;
+        `${t.worst_blocking ? ` | blocking ${fmtNum(t.worst_blocking)} ms` : ""}`;
       parts.push(`<g class="row" data-tip="${esc(tip)}">`);
       parts.push(`<rect class="row-hit" x="0" y="${y - 2}" width="${W}" height="${rowH - 2}"/>`);
       parts.push(`<text class="row-label" x="${left - 10}" y="${y + 12}" text-anchor="end">${esc(truncate(t.name, 15))}</text>`);
-      const sub = `C${t.core} · π${t.priority}` + (deadline && slack != null ? ` · slack ${fmtNum(slack)}` : "");
+      const sub = `C${t.core} | pi${t.priority}` + (deadline && slack != null ? ` | slack ${fmtNum(slack)}` : "");
       parts.push(`<text class="row-sub" x="${left - 10}" y="${y + 23}" text-anchor="end">${esc(sub)}</text>`);
       parts.push(`<rect class="track" x="${left}" y="${y + 6}" width="${plotW}" height="8" rx="1"/>`);
       const x0 = x(lb);
@@ -1033,7 +1035,7 @@
       const min = Number(c.util_min) || 0;
       const max = Number(c.util_max) || 0;
       const busy = Number(c.graph_busy_fraction) || 0;
-      const tip = `core ${c.core}\nutilization ${fmtPct(min)}–${fmtPct(max)}\ngraph busy fraction ${fmtPct(busy, 2)}`;
+      const tip = `core ${c.core}\nutilization ${fmtPct(min)}-${fmtPct(max)}\ngraph busy fraction ${fmtPct(busy, 2)}`;
       parts.push(`<g class="row" data-tip="${esc(tip)}">`);
       parts.push(`<rect class="row-hit" x="0" y="${y - 2}" width="${W}" height="${rowH - 2}"/>`);
       parts.push(`<text class="row-label" x="${left - 10}" y="${y + 12}" text-anchor="end">core ${esc(c.core)}</text>`);
@@ -1047,7 +1049,7 @@
         parts.push(`<rect class="bar-series" x="${bx0.toFixed(1)}" y="${y + 6}" width="${(bx1 - bx0).toFixed(1)}" height="8" rx="1"/>`);
       }
       parts.push(`<line x1="${x(busy).toFixed(1)}" y1="${y + 2}" x2="${x(busy).toFixed(1)}" y2="${y + 18}" stroke="var(--viz-2)" stroke-width="1.8"/>`);
-      parts.push(`<text class="value-label" x="${W - 2}" y="${y + 13}" text-anchor="end">${fmtPct(min, 0)}–${fmtPct(max, 1)}</text>`);
+      parts.push(`<text class="value-label" x="${W - 2}" y="${y + 13}" text-anchor="end">${fmtPct(min, 0)}-${fmtPct(max, 1)}</text>`);
       parts.push(`</g>`);
     });
     parts.push(`</svg>`);
@@ -1074,7 +1076,7 @@
       return;
     }
     if (!state.diagnostics.length && !state.pending.length) {
-      root.innerHTML = `<div class="signal ok"><i></i><span class="signal-text">CLEAN · no diagnostics</span></div>`;
+      root.innerHTML = `<div class="signal ok"><i></i><span class="signal-text">CLEAN | no diagnostics</span></div>`;
       return;
     }
     const items = [];
@@ -1112,7 +1114,7 @@
       return;
     }
     if (!state.diagnostics.length) {
-      root.innerHTML = `<div class="signal ok"><i></i><span class="signal-text">CLEAN · no diagnostics</span></div>`;
+      root.innerHTML = `<div class="signal ok"><i></i><span class="signal-text">CLEAN | no diagnostics</span></div>`;
       return;
     }
     root.innerHTML = state.diagnostics.map(diagHtml).join("");
@@ -1139,7 +1141,7 @@
     const warnings = state.diagnostics.filter((d) => d.severity === "warning").length;
     const pending = state.pending.length;
     if (!state.lastResponse) {
-      root.innerHTML = `<div class="signal"><i></i><span class="signal-text">idle — no run yet</span></div>`;
+      root.innerHTML = `<div class="signal"><i></i><span class="signal-text">idle - no run yet</span></div>`;
       note.textContent = "idle";
       return;
     }
@@ -1148,7 +1150,7 @@
     if (warnings) items.push(`<div class="signal warning"><i></i><span class="signal-text">warnings</span><span class="count">${warnings}</span></div>`);
     if (pending) items.push(`<div class="signal pending"><i></i><span class="signal-text">pending measurements</span><span class="count">${pending}</span></div>`);
     if (!items.length) {
-      items.push(`<div class="signal ok"><i></i><span class="signal-text">clean — no diagnostics</span><span class="count">0</span></div>`);
+      items.push(`<div class="signal ok"><i></i><span class="signal-text">clean - no diagnostics</span><span class="count">0</span></div>`);
       if (state.response && state.response.metrics) {
         const schedState = schedulabilityOf(state.response.metrics);
         const schedText = schedState === "schedulable" ? "schedulable" : schedState === "unschedulable" ? "not schedulable" : "schedulability unknown";
@@ -1162,6 +1164,12 @@
   function renderPending() {
     const root = $("#pending-list");
     const banner = $("#pending-banner");
+    setText($("#pending-count-badge"), `${state.pending.length}`);
+    if (state.pending.length && !state.diagnostics.length) {
+      switchTray("pending");
+    } else if (state.diagnostics.length) {
+      switchTray("diagnostics");
+    }
     if (!state.pending.length) {
       root.innerHTML = `<div class="pending-empty">No pending measurements. ${state.lastResponse ? "" : "Run Check to inspect pending_measurements."}</div>`;
       if (banner) {
@@ -1174,21 +1182,21 @@
       const first = state.pending[0];
       const segs = first.expected_segments || 1;
       const loc = first.inject ? `line ${first.inject.line}` : "source";
-      const extra = state.pending.length > 1 ? ` · ${state.pending.length - 1} more` : "";
+      const extra = state.pending.length > 1 ? ` | ${state.pending.length - 1} more` : "";
       banner.hidden = false;
-      banner.innerHTML = `<div class="pb-text"><span class="pb-eyebrow">Pending measurement</span><strong>${esc(first.task || "task")}</strong> needs ${segs} execution segments${extra} · ${esc(loc)}</div><button class="btn primary" type="button" data-pending-banner>Fill measurements</button>`;
+      banner.innerHTML = `<div class="pb-text"><span class="pb-eyebrow">Pending measurement</span><strong>${esc(first.task || "task")}</strong> needs ${segs} execution segments${extra} | ${esc(loc)}</div><button class="btn primary" type="button" data-pending-banner>Fill measurements</button>`;
       const btn = banner.querySelector("[data-pending-banner]");
       if (btn) btn.addEventListener("click", () => openPendingModal(first));
     }
     root.innerHTML = state.pending.map((pm, idx) => {
       const segs = pm.expected_segments || 1;
-      const loc = pm.inject ? `${pm.inject.line}:${pm.inject.column}` : "—";
+      const loc = pm.inject ? `${pm.inject.line}:${pm.inject.column}` : "-";
       return `<div class="pending-card">
         <div class="pending-title"><strong>${esc(pm.task || "task")}</strong><span class="chip mono">${segs} segment${segs > 1 ? "s" : ""}</span></div>
-        <div class="pending-meta">measured by llm · runs ${esc(pm.runs ?? "—")} · timeout ${esc(pm.timeout ?? "—")} · line ${esc(loc)}</div>
+        <div class="pending-meta">measured by llm | runs ${esc(pm.runs ?? "-")} | timeout ${esc(pm.timeout ?? "-")} | line ${esc(loc)}</div>
         <div class="pending-actions">
           <button class="btn ghost" type="button" data-pending="${idx}">Fill measurements</button>
-          <span class="note">or replace directly in the source <code class="code-inline">time measured by llm {…}</code></span>
+          <span class="note">or replace directly in the source <code class="code-inline">time measured by llm {...}</code></span>
         </div>
       </div>`;
     }).join("");
@@ -1213,8 +1221,13 @@
 
   function updateEditorMeta() {
     setText($("#editor-title"), state.filename || "model.rtsl");
-    setText($("#editor-kind"), state.kind === "tdg" ? "TDG JSON" : "RTSL");
-    setText($("#editor-lines"), `${countLines(state.source)} lines${state.dirty ? " · edited" : ""}`);
+    const kindBadge = state.kind === "tdg" ? "TDG JSON" : state.kind === "ptpn" ? "NATIVE PTPN" : "RTSL";
+    setText($("#editor-kind"), kindBadge);
+    setText($("#editor-lines"), `${countLines(state.source)} lines${state.dirty ? " | edited" : ""}`);
+    const check = $("#btn-check");
+    if (check && !state.busy) {
+      check.disabled = state.kind !== "rtsl" || (!state.demo && state.status && state.status.binary_exists === false);
+    }
   }
 
   const RTSL_KEYWORDS = new Set([
@@ -1222,6 +1235,7 @@
     "core", "time", "locks", "start", "end", "measured", "by", "estimated", "certified",
     "runs", "timeout", "any", "periodic", "aperiodic", "normal", "fixed", "rm", "dm",
     "pip", "pcp", "srp", "edf", "fifo", "llf", "resume", "restart", "ms", "s",
+    "places", "transitions", "suspendable", "priority", "init", "capacity",
   ]);
 
   function highlightLine(line, kind) {
@@ -1335,20 +1349,49 @@
     const segs = Math.max(1, Number(pm.expected_segments) || 1);
     const rows = Array.from({ length: segs }, (_, i) => `
       <div class="seg-row">
-        <span>seg ${i + 1}</span>
-        <input type="number" min="0" step="1" id="seg-min-${i}" placeholder="min ms" inputmode="numeric">
-        <input type="number" min="0" step="1" id="seg-max-${i}" placeholder="max ms" inputmode="numeric">
+        <span>Seg ${i + 1}</span>
+        <input type="number" min="0" step="1" id="seg-min-${i}" value="1" placeholder="min ms" inputmode="numeric">
+        <input type="number" min="0" step="1" id="seg-max-${i}" value="${i === 1 ? 2 : 1}" placeholder="max ms" inputmode="numeric">
       </div>`).join("");
     const html = `
       <p>Task <code class="code-inline">${esc(pm.task || "task")}</code> declares <code class="code-inline">measured by llm</code>.
-      It needs <strong>${segs}</strong> execution segments (2 × locks + 1); enter the measured interval for each segment (ms).</p>
+      It requires <strong>${segs}</strong> execution segment(s) (2 * locks + 1). Select the timing confirmation method:</p>
+      <div class="template-cards" id="modal-timing-sources">
+        <button type="button" class="template-card selected" data-tsrc="manual">
+          <strong>01. User Manual Bound</strong>
+          <small>Supply datasheet or trusted bounds (<code class="code-inline">estimated by "user"</code> or <code class="code-inline">certified by "user"</code>)</small>
+        </button>
+        <button type="button" class="template-card" data-tsrc="llm">
+          <strong>02. LLM Single-Core Benchmark Run</strong>
+          <small>Run single-core benchmark code generated by the LLM and preserve <code class="code-inline">measured by llm</code> provenance</small>
+        </button>
+        <button type="button" class="template-card" data-tsrc="tool">
+          <strong>03. LLM Single-Core Harness + External WCET Analyzer</strong>
+          <small>Measure LLM-generated harness with an external timing tool (<code class="code-inline">estimated/certified by "external-tool"</code>)</small>
+        </button>
+      </div>
       <div class="seg-grid">${rows}</div>
-      <p class="note">The generated provenance is <code class="code-inline">estimated by "measurement"</code>. Only <code class="code-inline">certified by</code> denotes a certified WCET upper bound.</p>
+      <label class="opt-check" id="modal-certify-row" style="margin-top:8px">
+        <input type="checkbox" id="modal-certified">
+        <span>Certify these intervals as a verified safe WCET upper bound (writes <code class="code-inline">certified by</code>)</span>
+      </label>
       <div class="modal-actions">
         <button class="btn ghost" type="button" id="pending-cancel">Cancel</button>
-        <button class="btn primary" type="button" id="pending-apply">Fill and check</button>
+        <button class="btn primary" type="button" id="pending-apply">Fill Timing and Analyze</button>
       </div>`;
-    openModal({ eyebrow: "Pending measurement", title: `Fill timing for ${pm.task || "task"}`, html, onMount: () => {
+    let chosenSource = "manual";
+    openModal({ eyebrow: "Timing Skill Confirmation", title: `Confirm timing for task: ${pm.task || "task"}`, html, onMount: () => {
+      $$("#modal-timing-sources .template-card").forEach((card) => {
+        card.addEventListener("click", () => {
+          chosenSource = card.dataset.tsrc;
+          $$("#modal-timing-sources .template-card").forEach((c) => c.classList.toggle("selected", c === card));
+          const certInput = $("#modal-certified");
+          if (certInput) {
+            certInput.disabled = chosenSource === "llm";
+            if (chosenSource === "llm") certInput.checked = false;
+          }
+        });
+      });
       $("#pending-cancel").addEventListener("click", closeModal);
       $("#pending-apply").addEventListener("click", () => {
         const values = [];
@@ -1362,14 +1405,23 @@
           const min = parseInt(minRaw, 10);
           const max = parseInt(maxRaw, 10);
           if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max < min) {
-            showToast(`Segment ${i + 1} has an invalid interval (require 0 ≤ min ≤ max).`, "err");
+            showToast(`Segment ${i + 1} has an invalid interval (require 0 <= min <= max).`, "err");
             return;
           }
           values.push([min, max]);
         }
+        const certified = $("#modal-certified") && $("#modal-certified").checked;
+        let prov = 'estimated by "user"';
+        if (chosenSource === "llm") {
+          prov = `measured by llm { runs ${pm.runs || 10}, timeout ${pm.timeout || 2} }`;
+        } else if (chosenSource === "manual") {
+          prov = certified ? 'certified by "user"' : 'estimated by "user"';
+        } else {
+          prov = certified ? 'certified by "wcet-tool"' : 'estimated by "external-tool"';
+        }
         const repl = values.length === 1
-          ? `time [${values[0][0]}, ${values[0][1]}] estimated by "measurement"`
-          : `time [ ${values.map(([a, b]) => `[${a}, ${b}]`).join(", ")} ] estimated by "measurement"`;
+          ? `time [${values[0][0]}, ${values[0][1]}] ${prov}`
+          : `time [ ${values.map(([a, b]) => `[${a}, ${b}]`).join(", ")} ] ${prov}`;
         let start = pm.inject ? byteToCharIndex(state.source, pm.inject.byte_start) : -1;
         let end = pm.inject ? byteToCharIndex(state.source, pm.inject.byte_end) : -1;
         if (start < 0 || end < start) {
@@ -1378,21 +1430,73 @@
             showToast("No replaceable time statement was found; edit the source directly.", "err");
             return;
           }
+          const lineEnd = state.source.indexOf("\n", idx);
           start = idx;
-          end = idx + "time measured by llm".length;
+          end = lineEnd > idx ? lineEnd : idx + "time measured by llm".length;
         }
         const next = state.source.slice(0, start) + repl + state.source.slice(end);
         closeModal();
         setEditorSource(next);
         state.dirty = state.source !== state.originalSource;
         updateEditorMeta();
-        setActiveTab("model");
-        showToast("Measurement intervals filled. Run Check to validate the model.", "ok");
-        if (!state.demo) runAnalysis("check", { keepTab: true });
-        else showToast("The demo source was updated; the local server can analyze it again.", "ok");
+        showToast("Execution timing intervals injected. Running analysis...", "ok");
+        if (!state.demo) runAnalysis("analyze", { keepTab: false });
+        else showToast("Demo source updated. Start the local server to re-analyze.", "ok");
       });
     } });
     setTimeout(() => { const first = $("#seg-min-0"); if (first) first.focus(); }, 30);
+  }
+
+  function openLlmRepairModal() {
+    const resp = state.lastResponse || state.response || {};
+    const analysis = resp.analysis || {};
+    const metrics = resp.metrics || {};
+    const diags = state.diagnostics || [];
+    const tasks = analysis.tasks || metrics.tasks || [];
+    const codes = diags.map((d) => `${d.code}${d.subject ? ` (${d.subject})` : ""}: ${d.message || ""}`).join("\n  - ") || "none";
+    const taskLines = tasks.map((t) => {
+      const name = t.task || t.name;
+      const witness = Array.isArray(t.witness) && t.witness.length ? ` | witness: ${t.witness.join(" -> ")}` : "";
+      return `  - task ${name}: verdict=${t.verdict || "-"}, WCRT=${t.wcrt ?? "-"}ms, WCET=${t.wcet ?? "-"}ms, deadline=${t.deadline ?? "-"}ms, priority=${t.priority ?? "-"}, core=${t.core ?? "-"}${witness}`;
+    }).join("\n") || "  - (no per-task metrics)";
+
+    const promptText = [
+      "Revise the real-time architecture model below based on the formal PTPN verification report:",
+      "",
+      "=== 1. FACTS FROM THE PTPN ANALYZER ===",
+      `- File and format: ${state.filename} (${state.kind.toUpperCase()})`,
+      `- Exit code: ${resp.exit_code ?? "-"}`,
+      `- System schedulability: ${analysis.schedulability || schedulabilityOf(metrics)}`,
+      `- Exact / truncated: exact=${metrics.exact ?? analysis.exact ?? "-"}, truncated=${analysis.truncated ?? metrics.truncated ?? false}`,
+      `- Diagnostics:\n  - ${codes}`,
+      `- Per-task verdicts and counterexample witness paths:\n${taskLines}`,
+      "",
+      "=== 2. CURRENT MODEL SOURCE ===",
+      state.source,
+      "",
+      "=== 3. REVISION REQUIREMENTS ===",
+      "- Do NOT silently alter measured/estimated [BCET, WCET] execution intervals or fabricate certified provenance;",
+      "- Propose a concrete architectural fix addressing the witness path (e.g., core allocation, priority adjustment, or period/deadline change with user confirmation) and provide the updated source.",
+    ].join("\n");
+
+    const html = `
+      <p>The analyzer's exit code, diagnostics, per-task WCRT bounds, and counterexample witness paths have been packaged into a structured prompt for LLM revision:</p>
+      <pre class="zone" id="llm-repair-prompt-pre" style="max-height:320px;margin:10px 0;white-space:pre-wrap">${esc(promptText)}</pre>
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" id="repair-modal-close">Close</button>
+        <button class="btn primary" type="button" id="repair-modal-copy">Copy LLM Repair Prompt</button>
+      </div>`;
+    openModal({
+      eyebrow: "LLM Architecture Feedback Loop",
+      title: "Formal Verification Repair Prompt",
+      html,
+      onMount: () => {
+        $("#repair-modal-close").addEventListener("click", closeModal);
+        $("#repair-modal-copy").addEventListener("click", () => {
+          copyText(promptText, "LLM Repair Prompt");
+        });
+      },
+    });
   }
 
   /* ------------------------------------------------------------------ modal */
@@ -1440,9 +1544,9 @@
       html: `
         <p>PTPN Chronograph sends RTSL/TDG models to <code class="code-inline">build/ptpn</code> and displays TDG, PTPN, SCG and WCRT metrics. The demo only replays precomputed data.</p>
         <div class="help-keys">
-          <div class="help-key"><span>Analyze</span><kbd>⌘ / Ctrl + Enter</kbd></div>
-          <div class="help-key"><span>Check (parse + validate)</span><kbd>⌘ / Ctrl + Shift + Enter</kbd></div>
-          <div class="help-key"><span>Switch view</span><kbd>1 – 6</kbd></div>
+          <div class="help-key"><span>Analyze</span><kbd>Cmd+ / Ctrl + Enter</kbd></div>
+          <div class="help-key"><span>Check (parse + validate)</span><kbd>Cmd+ / Ctrl + Shift + Enter</kbd></div>
+          <div class="help-key"><span>Switch view</span><kbd>1 - 6</kbd></div>
           <div class="help-key"><span>Pan graph</span><kbd>drag</kbd></div>
           <div class="help-key"><span>Zoom graph</span><kbd>wheel</kbd></div>
         </div>
@@ -1550,7 +1654,7 @@
       <span class="legend-item"><i class="legend-swatch viz3"></i>fork / join</span>
       <span class="legend-item"><i class="legend-swatch" style="background:var(--brass)"></i>start / end</span>
       <span class="legend-item"><i class="legend-swatch" style="background:var(--brass-dim)"></i>lock holder</span>
-      <span class="legend-item">Core color bar C0–C2</span>`;
+      <span class="legend-item">Core color bar C0-C2</span>`;
     view.setData(graph, "tdg");
     if (state.selected.tdg) view.select(state.selected.tdg);
     renderTdgInspector(state.selected.tdg);
@@ -1578,7 +1682,7 @@
       <span class="legend-item"><i class="legend-swatch" style="background:var(--brass)"></i>timing / lock</span>
       <span class="legend-item"><i class="legend-swatch" style="background:var(--muted)"></i>control</span>
       <span class="legend-item"><i class="legend-swatch viz3"></i>resource / period</span>
-      <span class="legend-item">Drag to pan · wheel to zoom</span>`;
+      <span class="legend-item">Drag to pan | wheel to zoom</span>`;
     view.setData(graph, "ptpn", { focus: true });
     view.setEdgeLabels(state.filters.ptpnLabels);
     if (state.selected.ptpn) view.select(state.selected.ptpn);
@@ -1605,9 +1709,9 @@
       <span class="legend-item"><i class="legend-swatch viz2"></i>state class</span>
       <span class="legend-item"><i class="legend-swatch err"></i>deadlock</span>
       <span class="legend-item"><i class="legend-swatch" style="background:#3b4654"></i>dwell 0</span>
-      <span class="legend-item"><i class="legend-swatch" style="background:#8a6a45"></i>dwell 1–4</span>
+      <span class="legend-item"><i class="legend-swatch" style="background:#8a6a45"></i>dwell 1-4</span>
       <span class="legend-item"><i class="legend-swatch viz1"></i>dwell 5+</span>
-      <span class="legend-item">Drag to pan · wheel to zoom</span>`;
+      <span class="legend-item">Drag to pan | wheel to zoom</span>`;
     view.setData(graph, "scg");
     view.emphasizeDeadlocks(state.filters.scgDeadlocks);
     if (state.selected.scg) view.select(state.selected.scg);
@@ -1640,21 +1744,21 @@
     const incoming = graph.edges.filter((e) => e.to === id);
     const outgoing = graph.edges.filter((e) => e.from === id);
     const segs = Array.isArray(raw.time) ? raw.time : [];
-    const interval = segs.length ? `[${sumSegments(segs, 0)}, ${sumSegments(segs, 1)}] ms` : "—";
+    const interval = segs.length ? `[${sumSegments(segs, 0)}, ${sumSegments(segs, 1)}] ms` : "-";
     const periodic = graph.meta && graph.meta.periodicMap && graph.meta.periodicMap[id];
     const parts = [];
     parts.push(`<div class="inspector-title"><h4>${esc(id)}</h4><span class="inspector-kind">${esc(kind)}</span></div>`);
     if (kind === "task") {
       parts.push(`<dl class="kv">
         <dt>core</dt><dd>${raw.core === -1 || raw.core == null ? "control" : esc(raw.core)}</dd>
-        <dt>priority</dt><dd>${esc(raw.priority ?? "—")}</dd>
+        <dt>priority</dt><dd>${esc(raw.priority ?? "-")}</dd>
         <dt>segments</dt><dd>${segs.length || 1}</dd>
         <dt>interval</dt><dd>${esc(interval)}</dd>
         <dt>period</dt><dd>${(raw.period || periodic) ? `${esc(raw.period || periodic)} ms` : "aperiodic"}</dd>
-        <dt>deadline</dt><dd>${isNum(raw.deadline) && Number(raw.deadline) > 0 ? `${esc(raw.deadline)} ms` : "—"}</dd>
+        <dt>deadline</dt><dd>${isNum(raw.deadline) && Number(raw.deadline) > 0 ? `${esc(raw.deadline)} ms` : "-"}</dd>
         <dt>locks</dt><dd>${(raw.locks || []).length ? esc((raw.locks || []).join(", ")) : "none"}</dd>
-        <dt>allowed</dt><dd>${(raw.allowed_cores || []).length ? esc((raw.allowed_cores || []).join(", ")) : "—"}</dd>
-        <dt>wcet</dt><dd>${esc(raw.wcet_kind || "—")}${raw.wcet_method ? ` · ${esc(raw.wcet_method)}` : ""}</dd>
+        <dt>allowed</dt><dd>${(raw.allowed_cores || []).length ? esc((raw.allowed_cores || []).join(", ")) : "-"}</dd>
+        <dt>wcet</dt><dd>${esc(raw.wcet_kind || "-")}${raw.wcet_method ? ` | ${esc(raw.wcet_method)}` : ""}</dd>
         <dt>role</dt><dd>${esc((node.roles || []).join(" / ") || "task")}</dd>
       </dl>`);
       if (segs.length > 1) {
@@ -1683,7 +1787,7 @@
     const incoming = graph.edges.filter((e) => e.to === id);
     const outgoing = graph.edges.filter((e) => e.from === id);
     const rows = [];
-    rows.push(`<dt>kind</dt><dd>${esc(node.kind || "—")}</dd>`);
+    rows.push(`<dt>kind</dt><dd>${esc(node.kind || "-")}</dd>`);
     if (node.core !== undefined && node.core !== null) rows.push(`<dt>core</dt><dd>${esc(node.core)}</dd>`);
     if (node.priority !== undefined && node.priority !== null) rows.push(`<dt>priority</dt><dd>${esc(node.priority)}</dd>`);
     if (node.interval) rows.push(`<dt>interval</dt><dd>[${esc(node.interval[0])}, ${esc(node.interval[1])}]</dd>`);
@@ -1702,7 +1806,7 @@
     const root = $("#scg-inspector");
     const graph = state.response && state.response.graphs && state.response.graphs.scg;
     if (!graph || !id) {
-      root.innerHTML = `<div class="inspector-empty"><strong>SELECT A STATE</strong><span>Click a state class to inspect marking, E_pri and the DBM zone.</span></div>`;
+      root.innerHTML = `<div class="inspector-empty"><strong>SELECT A STATE</strong><span>Click a state class to inspect marking M, E_struct, E_pri, R (suspended) and the DBM zone.</span></div>`;
       return;
     }
     const node = graph.nodes.find((n) => n.id === id);
@@ -1713,16 +1817,22 @@
     const detail = node.detail || {};
     const incoming = graph.edges.filter((e) => e.to === id);
     const outgoing = graph.edges.filter((e) => e.from === id);
+    const clocks = detail.clocks || [];
+    const clocksHtml = clocks.length ? `<div class="inspector-section"><h5>DBM Clock Bounds</h5><ul class="edge-list">${
+      clocks.map((c) => `<li><span>${esc(c.name)}</span><span class="dwell">[${esc(c.lower)}, ${c.upper == null ? "inf" : esc(c.upper)}]</span></li>`).join("")
+    }</ul></div>` : "";
     root.innerHTML = `
       <div class="inspector-title"><h4>${esc(node.label || id)}</h4><span class="inspector-kind">${node.kind === "deadlock" ? "deadlock" : "state class"}</span></div>
       <dl class="kv">
-        <dt>elapsed</dt><dd>${esc(detail.elapsed ?? "—")}</dd>
-        <dt>marking</dt><dd>${esc(detail.marking || "—")}</dd>
-        <dt>E_pri</dt><dd>${esc(detail.enabled || "—")}</dd>
-        <dt>suspended</dt><dd>${esc(detail.suspended || "none")}</dd>
+        <dt>elapsed</dt><dd>${esc(detail.elapsed ?? "-")} ms</dd>
+        <dt>marking M</dt><dd>${esc(detail.marking || "-")}</dd>
+        <dt>E_struct</dt><dd>${esc(detail.e_struct || "-")}</dd>
+        <dt>E_pri</dt><dd style="color:var(--brass-hi)">${esc(detail.enabled || "-")}</dd>
+        <dt>R (susp)</dt><dd style="color:var(--warn)">${esc(detail.suspended || "none")}</dd>
         <dt>in / out</dt><dd>${incoming.length} / ${outgoing.length}</dd>
       </dl>
-      ${detail.zone ? `<div class="inspector-section"><h5>Clock zone</h5><pre class="zone">${esc(detail.zone)}</pre></div>` : ""}
+      ${clocksHtml}
+      ${detail.zone ? `<div class="inspector-section"><h5>Raw DBM Zone</h5><pre class="zone">${esc(detail.zone)}</pre></div>` : ""}
       ${edgeSection("Incoming", incoming, "from", true)}
       ${edgeSection("Outgoing", outgoing, "to", true)}`;
   }
@@ -1734,7 +1844,7 @@
         const other = dir === "from" ? e.from : e.to;
         const label = e.transition || e.label || "";
         const dwell = showDwell && e.dwell_min !== undefined ? `[${e.dwell_min}, ${e.dwell_max}]` : "";
-        return `<li><span>${dir === "from" ? "←" : "→"} ${esc(truncate(other, 24))}</span>${label ? `<span class="dim">${esc(truncate(label, 20))}</span>` : ""}${dwell ? `<span class="dwell">${esc(dwell)}</span>` : ""}</li>`;
+        return `<li><span>${dir === "from" ? "<-" : "->"} ${esc(truncate(other, 24))}</span>${label ? `<span class="dim">${esc(truncate(label, 20))}</span>` : ""}${dwell ? `<span class="dwell">${esc(dwell)}</span>` : ""}</li>`;
       }).join("")}
     </ul></div>`;
   }
@@ -2072,7 +2182,7 @@
         if (sub) text.push(`<text class="node-sub" x="0" y="${h / 2 + 11}" text-anchor="middle">${esc(sub)}</text>`);
       }
       const tip = n.tooltip || n.raw_label || `${label}${sub ? `\n${sub}` : ""}`;
-      return `<g class="gnode ${shapeKind}${n.kind === "deadlock" ? " deadlock" : ""}" data-id="${esc(n.id)}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)})" tabindex="0" role="button" aria-label="${esc(tip.replace(/\n/g, " · "))}">${shape}${extra}${text.join("")}</g>`;
+      return `<g class="gnode ${shapeKind}${n.kind === "deadlock" ? " deadlock" : ""}" data-id="${esc(n.id)}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)})" tabindex="0" role="button" aria-label="${esc(tip.replace(/\n/g, " | "))}">${shape}${extra}${text.join("")}</g>`;
     }
 
     nodeLabel(n, graph) {
@@ -2091,9 +2201,9 @@
       if (this.kind === "tdg" && n.type === "task") {
         const raw = n.raw || {};
         const segs = Array.isArray(raw.time) ? raw.time : [];
-        const interval = segs.length ? `[${sumSegments(segs, 0)},${sumSegments(segs, 1)}]` : "—";
-        const locks = (raw.locks || []).length ? ` · L${(raw.locks || []).length}` : "";
-        return `C${raw.core ?? "—"} · π${raw.priority ?? "—"} · ${interval}${locks}`;
+        const interval = segs.length ? `[${sumSegments(segs, 0)},${sumSegments(segs, 1)}]` : "-";
+        const locks = (raw.locks || []).length ? ` | L${(raw.locks || []).length}` : "";
+        return `C${raw.core ?? "-"} | pi${raw.priority ?? "-"} | ${interval}${locks}`;
       }
       if (this.kind === "ptpn") {
         if (["place", "resource", "period", "hold", "segment"].includes(n.kind)) {
@@ -2142,7 +2252,7 @@
       }
       if (e.pseudo) cls += " pseudo";
       const label = e.transition || e.label || "";
-      const tip = label || `${e.from} → ${e.to}`;
+      const tip = label || `${e.from} -> ${e.to}`;
       let labelEl = "";
       if (this.showEdgeLabels && label) {
         const mid = points[Math.floor(points.length / 2)];
@@ -2280,7 +2390,7 @@
       }
       if (this.note) {
         this.note.hidden = !focused;
-        this.note.textContent = "First-chain view · FIT for all · drag to pan";
+        this.note.textContent = "First-chain view | FIT for all | drag to pan";
       }
       this.applyTransform();
       this.userMoved = false;
@@ -2323,7 +2433,7 @@
     } else {
       taskTable.innerHTML = `<table class="data">
         <thead><tr>
-          <th>task</th><th class="num">core</th><th class="num">π</th>
+          <th>task</th><th class="num">core</th><th class="num">pi</th>
           <th class="num">BCET</th><th class="num">WCET</th><th class="num">BCRT</th>
           <th class="num">WCRT</th><th class="num">WCRT_LB</th><th class="num">deadline</th>
           <th class="num">slack</th><th class="num">interf.</th><th class="num">block</th>
@@ -2346,8 +2456,8 @@
             <td class="num">${fmtNum(t.bcrt)}</td>
             <td class="num accent">${fmtNum(t.wcrt)}</td>
             <td class="num">${fmtNum(t.wcrt_lb)}</td>
-            <td class="num ${t.deadline > 0 && t.wcrt > t.deadline ? "err-text" : ""}">${t.deadline > 0 ? fmtNum(t.deadline) : "—"}</td>
-            <td class="num ${isNum(t.slack) && Number(t.slack) < 0 ? "err-text" : ""}">${isNum(t.slack) ? fmtNum(t.slack) : "—"}</td>
+            <td class="num ${t.deadline > 0 && t.wcrt > t.deadline ? "err-text" : ""}">${t.deadline > 0 ? fmtNum(t.deadline) : "-"}</td>
+            <td class="num ${isNum(t.slack) && Number(t.slack) < 0 ? "err-text" : ""}">${isNum(t.slack) ? fmtNum(t.slack) : "-"}</td>
             <td class="num">${fmtNum(t.worst_interference)}</td>
             <td class="num">${fmtNum(t.worst_blocking)}</td>
             <td class="num">${fmtNum(t.max_preemptions)}</td>
@@ -2380,7 +2490,7 @@
 
     const facts = [
       ["exact", metrics.exact ? "true" : "false"],
-      ["wcrt_exact", metrics.wcrt_exact === undefined ? "—" : metrics.wcrt_exact ? "true" : "false"],
+      ["wcrt_exact", metrics.wcrt_exact === undefined ? "-" : metrics.wcrt_exact ? "true" : "false"],
       ["wcrt_lb_valid", metrics.wcrt_lb_valid ? "true" : "false"],
       ["bounded", metrics.bounded ? "true" : "false"],
       ["schedulability", schedulabilityOf(metrics)],
@@ -2406,11 +2516,11 @@
     if (!resp) {
       if (summary) summary.textContent = "";
       if (timings) timings.innerHTML = "";
-      if (log) log.textContent = "Awaiting first run…";
+      if (log) log.textContent = "Awaiting first run...";
       return;
     }
     const lines = state.logs || [];
-    if (summary) summary.textContent = `· exit ${resp.exit_code} · ${fmtDuration(resp.client_duration_ms ?? resp.duration_ms)} · ${lines.length} lines`;
+    if (summary) summary.textContent = `| exit ${resp.exit_code} | ${fmtDuration(resp.client_duration_ms ?? resp.duration_ms)} | ${lines.length} lines`;
     const t = resp.timings || {};
     const chips = [
       ["lower", t.lowering_ms],
@@ -2508,18 +2618,106 @@
 
   /* ----------------------------------------------------------------- events */
 
+  function applyTheme() {
+    document.documentElement.setAttribute("data-theme", state.theme);
+  }
+
+  function switchTray(name) {
+    $$(".tray-tab").forEach((tab) => {
+      const active = tab.dataset.tray === name;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    const diagBody = $("#tray-diagnostics");
+    const pendBody = $("#tray-pending");
+    if (diagBody) diagBody.hidden = name !== "diagnostics";
+    if (pendBody) pendBody.hidden = name !== "pending";
+  }
+
   function bindStatic() {
+    applyTheme();
+
+    const themeBtn = $("#btn-theme");
+    if (themeBtn) {
+      themeBtn.addEventListener("click", () => {
+        state.theme = state.theme === "dark" ? "light" : "dark";
+        localStorage.setItem("ptpn_theme", state.theme);
+        applyTheme();
+      });
+    }
+
+    const splitBtn = $("#btn-split-editor");
+    if (splitBtn) {
+      splitBtn.addEventListener("click", () => {
+        const ws = $("#ide-workspace");
+        if (!ws) return;
+        const collapsed = ws.classList.toggle("editor-collapsed");
+        splitBtn.setAttribute("aria-pressed", collapsed ? "false" : "true");
+        requestAnimationFrame(() => {
+          const view = state.views[state.activeTab];
+          if (view && view.graph && !view.userMoved) view.fit(view.fitMode || "all");
+        });
+      });
+    }
+
+    $$(".tray-tab").forEach((tab) => {
+      tab.addEventListener("click", () => switchTray(tab.dataset.tray));
+    });
+
+    const tbPolicy = $("#toolbar-policy");
+    if (tbPolicy) {
+      tbPolicy.addEventListener("change", () => {
+        $("#opt-policy").value = tbPolicy.value;
+        onOptionsChanged();
+        if (!state.demo) runAnalysis("analyze", { keepTab: true });
+      });
+    }
+
+    const tbRed = $("#toolbar-reduction");
+    if (tbRed) {
+      tbRed.addEventListener("change", () => {
+        $("#opt-reduction").value = tbRed.value;
+        onOptionsChanged();
+        if (!state.demo) runAnalysis("analyze", { keepTab: true });
+      });
+    }
+
+    ["#btn-llm-repair", "#btn-overview-repair", "#btn-model-repair"].forEach((sel) => {
+      const btn = $(sel);
+      if (btn) btn.addEventListener("click", openLlmRepairModal);
+    });
+    const copySrcBtn = $("#btn-copy-source");
+    if (copySrcBtn) {
+      copySrcBtn.addEventListener("click", () => copyText(state.source, "model source"));
+    }
+
     $("#btn-analyze").addEventListener("click", () => runAnalysis("analyze"));
     $("#btn-check").addEventListener("click", () => runAnalysis("check"));
     $("#btn-help").addEventListener("click", openHelp);
     $("#btn-rail").addEventListener("click", () => {
+      const shell = $("#ide-shell");
       const rail = $(".rail");
-      const open = rail.classList.toggle("open");
-      $("#btn-rail").setAttribute("aria-expanded", open ? "true" : "false");
-      if (open) rail.scrollIntoView({ block: "start", behavior: REDUCED ? "auto" : "smooth" });
+      if (window.matchMedia && window.matchMedia("(max-width: 920px)").matches) {
+        const open = rail.classList.toggle("open");
+        $("#btn-rail").setAttribute("aria-expanded", open ? "true" : "false");
+      } else if (shell) {
+        const collapsed = shell.classList.toggle("rail-collapsed");
+        $("#btn-rail").setAttribute("aria-expanded", collapsed ? "false" : "true");
+        requestAnimationFrame(() => {
+          const view = state.views[state.activeTab];
+          if (view && view.graph && !view.userMoved) view.fit(view.fitMode || "all");
+        });
+      }
     });
     $("#btn-new").addEventListener("click", newModel);
-    $("#btn-goto-model").addEventListener("click", () => { setActiveTab("model"); focusLine(1, 1); });
+    $("#btn-goto-model").addEventListener("click", () => {
+      const ws = $("#ide-workspace");
+      if (ws && ws.classList.contains("editor-collapsed")) {
+        ws.classList.remove("editor-collapsed");
+        if ($("#btn-split-editor")) $("#btn-split-editor").setAttribute("aria-pressed", "true");
+      }
+      focusLine(1, 1);
+    });
     $("#btn-reset-source").addEventListener("click", () => {
       setEditorSource(state.originalSource);
       state.dirty = false;
@@ -2635,7 +2833,11 @@
       openDemoHint();
       return;
     }
-    const template = `// New PTPN model — RTSL v1
+    const templates = {
+      rtsl: {
+        filename: "model.rtsl",
+        kind: "rtsl",
+        source: `// New PTPN model - Form 01: RTSL v1
 system new_model {
   cpus 2
   cores_per_cpu 1
@@ -2651,7 +2853,7 @@ system new_model {
 
   task handle: aperiodic {
     core 1
-    time [2, 3] estimated by "spec"
+    time measured by llm { runs 10, timeout 2 }
   }
 
   start ingest
@@ -2659,21 +2861,107 @@ system new_model {
 
   ingest -> handle
 }
-`;
-    state.current = null;
-    state.source = template;
-    state.originalSource = template;
-    state.filename = "model.rtsl";
-    state.kind = "rtsl";
-    state.options = defaultOptions();
-    state.dirty = false;
-    renderOptions(state.options, false);
-    renderExamples();
-    setEditorSource(template);
-    resetRunState();
-    renderAllEmpty("New model: write tasks, then run Check or Analyze.");
-    setActiveTab("model");
-    focusLine(1, 1);
+`,
+      },
+      tdg: {
+        filename: "model.json",
+        kind: "tdg",
+        source: `{
+  "graph": { "name": "NewTDGModel" },
+  "configuration": {
+    "num_cpus": 2,
+    "cores_per_cpu": 1,
+    "shared_locks": [],
+    "policy": "fixed",
+    "start": ["ingest"],
+    "end": ["handle"],
+    "periodic": [{ "task": "ingest", "period": 100 }]
+  },
+  "nodes": [
+    { "id": "ingest", "type": "task", "priority": 100, "core": 0, "time": [[1, 2]], "locks": [] },
+    { "id": "handle", "type": "task", "priority": 100, "core": 1, "time": [[2, 3]], "locks": [] }
+  ],
+  "edges": [
+    { "source": "ingest", "target": "handle", "label": "0" }
+  ]
+}
+`,
+      },
+      ptpn: {
+        filename: "model.ptpn",
+        kind: "ptpn",
+        source: `// New PTPN model - Form 03: Native PTPN Net (.ptpn)
+places
+  P_entry:1, P_ready:1, P_exit:1
+
+transitions
+  T_get_core [0, 0] @priority=100, core=0
+  T_exec     [2, 5] @priority=100, core=0, suspendable
+  T_consume  [0, 0] @priority=0,   core=-1
+
+P_entry -> T_get_core
+T_get_core -> P_ready
+P_ready -> T_exec
+T_exec -> P_exit
+P_exit -> T_consume
+
+@init P_entry:1
+`,
+      },
+    };
+
+    let selectedKind = "rtsl";
+    const html = `
+      <p>Choose the model representation format to create (RTSL, TDG JSON, or native PTPN):</p>
+      <div class="template-cards" id="new-model-cards">
+        <button type="button" class="template-card selected" data-tpl="rtsl">
+          <strong>01. RTSL Domain-Specific Language (.rtsl)</strong>
+          <small>Declarative tasks, units, locks, periods, and <code class="code-inline">measured by llm</code> timing provenance</small>
+        </button>
+        <button type="button" class="template-card" data-tpl="tdg">
+          <strong>02. TDG Task Dependency Graph JSON (.json)</strong>
+          <small>Graph-structured nodes and edges for structured tool and LLM generation</small>
+        </button>
+        <button type="button" class="template-card" data-tpl="ptpn">
+          <strong>03. Native PTPN Net Source (.ptpn)</strong>
+          <small>Direct places, timed transitions, arcs, and <code class="code-inline">@init</code> marking without lowering</small>
+        </button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" id="new-cancel">Cancel</button>
+        <button class="btn primary" type="button" id="new-confirm">Create Model</button>
+      </div>`;
+    openModal({
+      eyebrow: "Create Model",
+      title: "New Real-Time System Model",
+      html,
+      onMount: () => {
+        $$("#new-model-cards .template-card").forEach((card) => {
+          card.addEventListener("click", () => {
+            selectedKind = card.dataset.tpl;
+            $$("#new-model-cards .template-card").forEach((c) => c.classList.toggle("selected", c === card));
+          });
+        });
+        $("#new-cancel").addEventListener("click", closeModal);
+        $("#new-confirm").addEventListener("click", () => {
+          const tpl = templates[selectedKind] || templates.rtsl;
+          closeModal();
+          state.current = null;
+          state.source = tpl.source;
+          state.originalSource = tpl.source;
+          state.filename = tpl.filename;
+          state.kind = tpl.kind;
+          state.options = defaultOptions();
+          state.dirty = false;
+          renderOptions(state.options, false);
+          renderExamples();
+          setEditorSource(tpl.source);
+          resetRunState();
+          renderAllEmpty(`Created ${tpl.filename} template. Run Check or Analyze.`);
+          focusLine(1, 1);
+        });
+      },
+    });
   }
 
   function renderAllEmpty(reason) {
