@@ -72,7 +72,7 @@ struct JsonGraph {
   // tokens saturate at this bound instead of disabling the producing transition.
   int task_place_capacity = 1;
   std::vector<std::string> shared_locks;
-  SchedulePolicy policy = SchedulePolicy::FIXED;  // 调度策略
+  SchedulePolicy policy = SchedulePolicy::FIXED;  // Scheduling policy
   std::vector<StartBinding> start_tasks;
   std::vector<std::string> end_tasks;
   std::vector<PeriodicBinding> periodic_tasks;
@@ -151,7 +151,7 @@ class Parser {
   mutable ptpn::Diagnostics diagnostics_;
 };
 
-// 时间区间计算
+// Execution interval count
 int calculate_time_interval_count(int lock_count);
 
 // TDG loading lives in the parse layer so `model/` does not depend on it.

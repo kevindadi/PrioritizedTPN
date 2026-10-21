@@ -85,8 +85,6 @@ A guided, animated explanation of the method:
 
 ### Workbench (at `/workbench`)
 
-![PTPN Chronograph workbench](webapp/screenshot-overview.png)
-
 The original analysis workbench:
 
 - an RTSL/TDG editor with validation, line diagnostics, and pending

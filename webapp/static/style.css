@@ -673,7 +673,7 @@ kbd {
 }
 
 .options.locked::after {
-  content: "预计算参数";
+  content: "Precomputed parameters";
   grid-column: 1 / -1;
   font-family: var(--font-mono);
   font-size: 8px;

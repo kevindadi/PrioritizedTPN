@@ -106,50 +106,50 @@ EXAMPLE_SPECS = [
     {
         "id": "intro-demo",
         "path": "example/introduction/demo-filled.rtsl",
-        "title": "传感器融合流水线",
+        "title": "Sensor fusion pipeline",
         "kind": "rtsl",
         "demo": True,
         "description": (
-            "三核固定优先级流水线：sensor 经 fork 分发到带互斥锁的 fusion 与 "
-            "logger，再 join 到 display；所有 WCET 区间已填写。"
+            "Three-core fixed-priority pipeline: sensor forks to fusion (mutex) and "
+            "logger, then joins at display; all WCET intervals are filled in."
         ),
-        "tags": ["RTSL", "fork/join", "互斥锁", "周期任务"],
+        "tags": ["RTSL", "fork/join", "mutex", "periodic task"],
         "options": _base_options(),
     },
     {
         "id": "pending-demo",
         "path": "example/introduction/demo.rtsl",
-        "title": "待填写测量",
+        "title": "Pending measurement",
         "kind": "rtsl",
         "demo": True,
         "description": (
-            "与传感器融合示例相同，但 fusion 的时间仍为 measured by llm；"
-            "ptpn check 会在 pending_measurements 中列出待填写的任务。"
+            "Same as the sensor fusion example, but fusion still declares `measured by llm`; "
+            "`ptpn check` lists the task in `pending_measurements`."
         ),
-        "tags": ["RTSL", "待填写", "check", "measured by llm"],
+        "tags": ["RTSL", "pending", "check", "measured by llm"],
         "options": _base_options(),
     },
     {
         "id": "locked",
         "path": "example/introduction/locked.rtsl",
-        "title": "互斥锁分段",
+        "title": "Mutex segments",
         "kind": "rtsl",
         "demo": False,
         "description": (
-            "单核最小互斥锁示例：一个任务按 2*锁数+1 = 3 段执行区间建模临界区。"
+            "Minimal single-core mutex example: one task models its critical section with 2*lock_count+1 = 3 execution intervals."
         ),
-        "tags": ["RTSL", "互斥锁", "执行分段", "最小示例"],
+        "tags": ["RTSL", "mutex", "execution segments", "minimal example"],
         "options": _base_options(),
     },
     {
         "id": "core-any",
         "path": "example/introduction/core-any.rtsl",
-        "title": "Core Any 分配域",
+        "title": "Core-any allocation domain",
         "kind": "rtsl",
         "demo": False,
         "description": (
-            "core any 分配域示例：check 通过并给出提示，rtsl 分析以 "
-            "E-VAL-218 拒绝，需改用 allocate。"
+            "`core any` allocation domain: `check` passes with a hint, while `rtsl` analysis rejects it with "
+            "E-VAL-218; use `allocate` instead."
         ),
         "tags": ["RTSL", "core any", "allocate"],
         "options": _base_options(),
@@ -157,87 +157,87 @@ EXAMPLE_SPECS = [
     {
         "id": "syntax-error",
         "path": "example/diagnostics/syntax-error.rtsl",
-        "title": "语法错误",
+        "title": "Syntax error",
         "kind": "rtsl",
         "demo": True,
-        "description": "任务块缺少右花括号，触发 E-SYN-102 语法错误（退出码 2）。",
-        "tags": ["诊断", "语法错误", "E-SYN-102"],
+        "description": "A task block is missing its closing brace, triggering E-SYN-102 (exit code 2).",
+        "tags": ["diagnostics", "syntax error", "E-SYN-102"],
         "options": _base_options(),
     },
     {
         "id": "validation-error",
         "path": "example/diagnostics/validation-error.rtsl",
-        "title": "校验错误",
+        "title": "Validation error",
         "kind": "rtsl",
         "demo": False,
-        "description": "周期任务的 period 为 0，触发 E-VAL-206 校验错误（退出码 3）。",
-        "tags": ["诊断", "校验错误", "E-VAL-206"],
+        "description": "A periodic task has period 0, triggering E-VAL-206 (exit code 3).",
+        "tags": ["diagnostics", "validation error", "E-VAL-206"],
         "options": _base_options(),
     },
     {
         "id": "deadline-miss",
         "path": "example/diagnostics/deadline-miss.rtsl",
-        "title": "截止期违约证书",
+        "title": "Deadline-miss certificate",
         "kind": "rtsl",
         "demo": True,
         "description": (
-            "单核固定优先级下 b 的截止期被证明违约：分析器给出 R-ANA-002 "
-            "及见证序列，同时在 -m 10 处截断（E-PERF-001）。用于演示报告"
-            "回传 LLM 的修正闭环。"
+            "Single-core fixed priority proves that b misses its deadline: the analyzer reports R-ANA-002 "
+            "with a witness sequence and also truncates at -m 10 (E-PERF-001). Used to demonstrate the "
+            "report-back-to-LLM repair loop."
         ),
-        "tags": ["诊断", "截止期违约", "R-ANA-002", "exit 6", "见证"],
+        "tags": ["diagnostics", "deadline miss", "R-ANA-002", "exit 6", "witness"],
         "options": _base_options(max_states=10),
     },
     {
         "id": "unsupported",
         "path": "example/diagnostics/unsupported-edf-locks.rtsl",
-        "title": "不支持类",
+        "title": "Unsupported class",
         "kind": "rtsl",
         "demo": False,
         "description": (
-            "EDF 策略下任务使用互斥锁，超出支持的静态划分类，lowering 触发 "
-            "E-UNS-001（退出码 4）。"
+            "A task uses a mutex under EDF, outside the supported static-partition class; lowering reports "
+            "E-UNS-001 (exit code 4)."
         ),
-        "tags": ["诊断", "EDF", "不支持类", "E-UNS-001"],
+        "tags": ["diagnostics", "EDF", "unsupported class", "E-UNS-001"],
         "options": _base_options(),
     },
     {
         "id": "spin-lock",
         "path": "example/diagnostics/spin-lock.rtsl",
-        "title": "自旋锁",
+        "title": "Spin lock",
         "kind": "rtsl",
         "demo": False,
         "description": (
-            "单自旋锁最小复现：当前 lowering 把第 1 段标记为不可挂起，"
-            "临界区语义与预期不同（已知限制）。"
+            "Minimal single-spin-lock reproduction: the current lowering marks segment 1 non-suspendable, "
+            "so the critical-section semantics differ from the expectation (known limitation)."
         ),
-        "tags": ["诊断", "自旋锁", "已知限制"],
+        "tags": ["diagnostics", "spin lock", "known limitation"],
         "options": _base_options(),
     },
     {
         "id": "hw",
         "path": "example/motivating-examples/hw.json",
-        "title": "优先级逆转",
+        "title": "Priority inversion",
         "kind": "tdg",
         "demo": True,
         "description": (
-            "单核固定优先级动机示例：周期任务 A 依赖 B，低优先级任务 F 与 A "
-            "同时就绪，展示优先级逆转/阻塞。"
+            "Single-core fixed-priority motivating example: periodic A depends on B, and low-priority F is "
+            "ready at the same time as A, showing priority inversion/blocking."
         ),
-        "tags": ["TDG", "固定优先级", "优先级逆转", "周期任务"],
+        "tags": ["TDG", "fixed priority", "priority inversion", "periodic task"],
         "options": _base_options(),
     },
     {
         "id": "deadlock",
         "path": "example/p-bench/single-core-diff-priority.json",
-        "title": "优先级竞争 / 死锁",
+        "title": "Priority contention / deadlock",
         "kind": "tdg",
         "demo": True,
         "description": (
-            "单核固定优先级竞争：A/B/C 与 D/E/F 两条链在 C 汇合，"
-            "产生 18 个死锁状态并以退出码 6 结束。"
+            "Single-core fixed-priority contention: chains A/B/C and D/E/F merge at C, "
+            "producing 18 deadlock states and exit code 6."
         ),
-        "tags": ["TDG", "死锁", "单核", "退出码 6"],
+        "tags": ["TDG", "deadlock", "single core", "exit code 6"],
         "options": _base_options(max_states=500, render_limit=500),
     },
     {
@@ -246,34 +246,33 @@ EXAMPLE_SPECS = [
         "title": "S-Bench A",
         "kind": "tdg",
         "demo": False,
-        "description": "双核 S-Bench A：周期任务 A、D 各自展开依赖链，并在 C 汇合。",
-        "tags": ["TDG", "基准", "双核", "周期任务"],
+        "description": "Dual-core S-Bench A: periodic tasks A and D each expand a dependency chain and merge at C.",
+        "tags": ["TDG", "benchmark", "dual core", "periodic task"],
         "options": _base_options(),
     },
     {
         "id": "symmetry-4",
         "path": "example/symmetry/symmetric-4t-4c.json",
-        "title": "4 任务对称",
+        "title": "4-task symmetry",
         "kind": "tdg",
         "demo": True,
         "description": (
-            "4 个同构任务分别绑定 4 个核，启用对称性归约；指标为非精确"
-            "（exact=false）。"
+            "Four isomorphic tasks are pinned to four cores with symmetry reduction enabled; metrics are approximate "
+            "(`exact=false`)."
         ),
-        "tags": ["TDG", "对称性", "归约", "exact=false"],
+        "tags": ["TDG", "symmetry", "reduction", "exact=false"],
         "options": _base_options(reduction="symmetry"),
     },
     {
         "id": "pipeline-20",
         "path": "example/l-bench/pipeline-20t-4c.json",
-        "title": "20 任务流水线",
+        "title": "20-task pipeline",
         "kind": "tdg",
         "demo": True,
         "description": (
-            "20 任务双通道流水线，4 核与 1 个共享互斥锁；默认使用 20000 "
-            "状态上限完成分析。"
+            "A 20-task dual-lane pipeline on four cores with one shared mutex; analysis uses a 20000-state cap by default."
         ),
-        "tags": ["TDG", "规模", "流水线", "互斥锁"],
+        "tags": ["TDG", "scale", "pipeline", "mutex"],
         "options": _base_options(max_states=20000),
     },
 ]

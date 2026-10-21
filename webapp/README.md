@@ -1,117 +1,153 @@
-# PTPN Web UI 后端
+# PTPN Web UI backend
 
-![PTPN Chronograph workbench](screenshot-overview.png)
-
-本地 Web 界面，用浏览器浏览和运行 PTPN 分析。后端是一个**零第三方依赖**的
-Python 3.9+ 标准库 HTTP 服务（`ThreadingHTTPServer`），把现有的命令行程序
-`build/ptpn` 包装成结构化 JSON API；前端是 `webapp/static/` 下的静态文件。
+A local web UI for browsing and running PTPN analyses. The backend is a
+**zero-third-party-dependency** Python 3.9+ standard-library HTTP server
+(`ThreadingHTTPServer`) that wraps the `build/ptpn` command-line analyzer in a
+structured JSON API. The front-end is static HTML/CSS/JS under
+`webapp/static/`.
 
 ```
-浏览器  ──HTTP──▶  webapp/server.py  ──argv──▶  build/ptpn
+browser  ──HTTP──▶  webapp/server.py  ──argv──▶  build/ptpn
                           │                         │
-                          └── temp dir：model.rtsl / model.json
-                              TDG / PTPN / SCG / metrics / WCET 导出
+                          └── temp dir: model.rtsl / model.json
+                              TDG / PTPN / SCG / metrics / WCET exports
 ```
 
-## 环境要求
+## Requirements
 
-- Python 3.9 或更新版本（只用标准库，无需 `pip install`）。
-- 已构建的 PTPN 分析器：`build/ptpn`（见仓库根目录 `CLAUDE.md` 的构建说明）。
-- Graphviz（可选）：PTPN 图用 `dot`、SCG 图用 `neato` 计算布局；缺少
-  `neato` 时回退到 `dot`。没有 Graphviz 时 API 仍可用，图会返回节点/边但
-  `"layout": "none"`，并给出 notice。
-- 现代浏览器。
+- Python 3.9 or newer (standard library only; no `pip install`).
+- A built PTPN analyzer at `build/ptpn` (see the repository `CLAUDE.md` for
+  build instructions).
+- Graphviz (optional): `dot` lays out PTPN graphs and `neato` lays out SCG
+  graphs. If `neato` is missing, the server falls back to `dot`. Without
+  Graphviz the API still works; graphs are returned without coordinates
+  (`"layout": "none"`) and a notice is added.
+- A modern browser.
 
-## 启动
+## Start
 
 ```bash
 python3 webapp/server.py
 ```
 
-默认监听 `127.0.0.1:8765`，打印 URL 并自动打开浏览器。按 `Ctrl+C` 退出。
-根路径 `/` 是叙事页（Story），原有工作台在 `/workbench`。
+The server listens on `127.0.0.1:8765` by default, prints the URLs, and opens a
+browser. Press `Ctrl+C` to stop.
+
+- **Story** (default): `/`
+- **Workbench**: `/workbench`
 
 ```bash
-python3 webapp/server.py --port 8799 --no-browser   # 测试 / 无头环境
-python3 webapp/server.py --demo                      # 预计算演示模式
-python3 webapp/build_standalone.py                   # 单文件工作台演示页
-python3 webapp/build_standalone.py --story           # 单文件叙事演示页
+python3 webapp/server.py --port 8799 --no-browser   # test / headless
+python3 webapp/server.py --demo                      # precomputed showcase
+python3 webapp/build_standalone.py                   # single-file workbench demo
+python3 webapp/build_standalone.py --story           # single-file story demo
 ```
 
-| 参数 | 默认值 | 说明 |
+| Option | Default | Description |
 |---|---|---|
-| `--host HOST` | `127.0.0.1` | 绑定地址。请保持 localhost，见“安全说明”。 |
-| `--port PORT` | `8765` | 监听端口；传 `0` 可让系统分配。 |
-| `--no-browser` | 关闭 | 不自动打开浏览器。 |
-| `--demo` | 关闭 | 让 `/demo-data.js`、`/static/demo-data.js` 优先指向生成的 `webapp/demo/demo-data.js`；Story 和 Workbench 都使用这份数据。缺失时回退到 `webapp/static/demo-data.js` 占位文件。 |
+| `--host HOST` | `127.0.0.1` | Bind address. Keep localhost unless LAN access is intended; see the security notes. |
+| `--port PORT` | `8765` | Listen port; pass `0` to let the system assign one. |
+| `--no-browser` | off | Do not open a browser automatically. |
+| `--demo` | off | Prefer the generated `webapp/demo/demo-data.js` for both pages. Falls back to the empty `webapp/static/demo-data.js` placeholder if the generated file is missing. |
 
-`--demo` 下 `/api/*` 仍会实时调用分析器；生成的 demo 数据只影响前端首屏和
-Artifact 演示，不会改变 API 行为。
+### LAN access
 
-### 前端
+Binding to another interface exposes an unauthenticated analyzer. For a
+trusted LAN only:
 
-`webapp/static/` 下有两个无构建步骤的页面（原生 HTML/CSS/JS）：
+```bash
+python3 webapp/server.py --host 0.0.0.0 --port 8091 --no-browser
+```
 
-**Story（`/`，`story.html` / `story.css` / `story.js`）** — 叙事优先的原理演示：
+Use a port that the host firewall already allows, or add a rule for the chosen
+port. Do not publish this server to the internet. The startup banner prints the
+primary LAN URL when listening on all interfaces.
 
-- 问题章：`hw` 示例的 WCET / WCRT 差异、区间执行时间和抢占残留；
-- 模型章：TDG → PTPN 的 place/transition 映射、token、周期释放、依赖桥和核/优先级属性；
-- 发生规则章：从分析器导出的 SCG 路径逐帧回放，显示 E<sub>struct</sub> / E<sub>pri</sub> / R、DBM 时钟、核时间线和 F 被 B 抢占后从 `h=1` 恢复；
-- 策略章：同一个模型在 fixed / RM / DM / restart / EDF / FIFO 下的分析结果与 supported-class 拒绝；
-- LLM 闭环章：RTSL / TDG JSON / PTPN 三种形式、pending timing 的三种来源、`check` / `fill` / analyze，以及由 verdict + witness 生成的修复 prompt。
+## Front-end
 
-Story 的所有状态、标记、时钟和结论都来自 `/api/analyze` 的返回（或预计算的
-`demo-data.js`）；前端不重新计算调度结果。
+`webapp/static/` contains two no-build pages (plain HTML/CSS/JS):
 
-**Workbench（`/workbench`，`index.html` / `style.css` / `app.js`）** — 原有分析工作台：
+### Story (`/`, `story.html` / `story.css` / `story.js`)
 
-- 左侧模型列表与运行选项（max states、canonicalization、reduction、policy、horizon、extrapolation）。
-- `Model` 标签页：RTSL/TDG 语法高亮编辑器、诊断行标记、pending measurement 一键填写。
-- `TDG` / `PTPN` / `SCG` 标签页：可缩放拖动的交互图；PTPN 默认聚焦首段执行链，`FIT` 查看全网。
-- `Overview`：WCRT/WCET 包络、核利用率、响应比仪表盘、锁与诊断摘要。
-- `Metrics`：完整 per-task 时序表、核/锁表、全局事实与 JSON 复制。
-- 底部 `RUN LOG` 抽屉显示分析器 stderr 与 `[STATS]` 时序。
+A narrative-first explanation of the method:
 
-视觉上采用石墨黑 + 铜琥珀 + 冷青的“精密时计”仪表风格；图表配色经过
-dataviz 校验，状态色与序列色分离。移动端提供 `☰` 模型抽屉。
+- the problem chapter: WCET versus WCRT, interval execution times, and residual
+  work after preemption;
+- the model chapter: TDG → PTPN places/transitions, tokens, periodic release,
+  dependency bridges, core/priority attributes, and a physical-object map;
+- the firing-rule chapter: a frame-by-frame replay of the analyzer's SCG path
+  showing E<sub>struct</sub> / E<sub>pri</sub> / R, DBM clock bounds, the core
+  timeline, and F being preempted by B and resuming from `h=1`;
+- the policy chapter: fixed / RM / DM / structural restart / EDF / FIFO results
+  on the same model, including supported-class rejections;
+- the LLM chapter: RTSL / TDG JSON / PTPN front doors, the three timing sources,
+  `check` / `fill` / analyze, and a repair prompt built from the verdict and
+  witness.
 
-### 前端文件约定
+All story markings, sets, clocks, windows and verdicts come from the
+`/api/analyze` response (or the precomputed `demo-data.js`). The browser does
+not recompute scheduling results.
 
-- `GET /`（以及 `/story`）读取 `webapp/static/story.html`；`GET /workbench`
-  读取 `webapp/static/index.html`。两者都是**不含
-  `<!doctype>/<html>/<head>/<body>` 的片段**，服务器会包装成完整文档后再返回：
+### Workbench (`/workbench`, `index.html` / `style.css` / `app.js`)
+
+The analysis workbench:
+
+- model list and run options (max states, canonicalization, reduction, policy,
+  horizon, extrapolation);
+- `Model` tab: RTSL/TDG syntax-highlighted editor, line diagnostics, and a
+  one-click form for pending `measured by llm` measurements;
+- `TDG` / `PTPN` / `SCG` tabs: pan/zoom graph views with inspectors; PTPN opens
+  focused on the first execution chain, and `FIT` reveals the whole net;
+- `Overview`: WCRT/WCET envelopes, core utilization, response-ratio dial, lock
+  contention, and a diagnostic summary;
+- `Metrics`: the full per-task timing table, core/lock tables, global facts, and
+  JSON copy actions;
+- a bottom `RUN LOG` drawer with the analyzer's stderr and `[STATS]` timings.
+
+The visual language is a graphite/copper/teal precision-instrument style; chart
+colors are checked for contrast and state colors are separate from series
+colors. Mobile layouts provide a `☰` model drawer.
+
+### Front-end file conventions
+
+- `GET /` (and `/story`) reads `webapp/static/story.html`; `GET /workbench`
+  reads `webapp/static/index.html`. Both are authored as **fragments without
+  `<!doctype>/<html>/<head>/<body>`**; the server wraps them into full
+  documents:
 
   ```html
   <!doctype html><html><head><meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  </head><body> …片段… </body></html>
+  </head><body> …fragment… </body></html>
   ```
 
-- 页面中的相对引用（Story 的 `story.css` / `story.js`，Workbench 的
-  `style.css` / `app.js`，以及共用的 `demo-data.js`）会从
-  `webapp/static/`（`--demo` 时优先 `webapp/demo/`）解析，因此根路径
-  `/story.css` 等也可以直接访问。
-- `/docs/<file>` 只读地提供仓库 `docs/` 下的文件，Story 页脚的文档链接使用
-  这个路由。
-- `webapp/static/demo-data.js` 是普通的空占位文件，由静态处理器按正常
-  MIME 提供；生产/Artifact 演示数据由 `webapp/demo/demo-data.js` 提供。
-- API 和 HTML 响应都带 `Cache-Control: no-store`。
+- Relative references (Story's `story.css` / `story.js`, Workbench's
+  `style.css` / `app.js`, and the shared `demo-data.js`) are resolved from
+  `webapp/static/` (preferring `webapp/demo/` under `--demo`), so root-level
+  paths such as `/story.css` also work.
+- `/docs/<file>` serves the repository `docs/` directory read-only; the Story
+  footer links use this route.
+- `webapp/static/demo-data.js` is an empty placeholder served with the normal
+  JavaScript MIME type. Production/artifact demo data is
+  `webapp/demo/demo-data.js`.
+- API and HTML responses use `Cache-Control: no-store`.
 
-## 二进制发现顺序
+## Binary discovery
 
-1. 环境变量 `PTPN_BIN`（相对路径按仓库根目录解析）。
-2. 仓库根目录的 `.ptpn-build-dir` 文件内容作为构建目录，使用 `<dir>/ptpn`。
-   若该二进制不存在，则回退到第 3 条。
-3. `build/ptpn`。
+1. `PTPN_BIN` (relative paths are resolved from the repository root).
+2. The build directory recorded in `.ptpn-build-dir` at the repository root,
+   using `<dir>/ptpn`. If that binary is missing, fall through to step 3.
+3. `build/ptpn`.
 
-可通过 `DOT_BIN` 指定 Graphviz 可执行文件（默认使用 `PATH` 中的 `dot`；
-`neato` 会在同一目录或 `PATH` 中查找）。
-`GET /api/status` 会报告最终选中的二进制、版本、Graphviz 版本和是否存在；
-缺失时 `binary_exists` 为 `false` 并附带 `binary_error`，分析请求返回 HTTP 503。
+Set `DOT_BIN` to override the Graphviz executable (the default is `dot` from
+`PATH`; `neato` is looked up in the same directory or in `PATH`).
+`GET /api/status` reports the selected binary, version, Graphviz version and
+availability. If the binary is missing, `binary_exists` is `false`,
+`binary_error` is included, and analysis requests return HTTP 503.
 
 ## JSON API
 
-所有响应为 UTF-8 JSON；错误响应形如 `{"ok": false, "error": "..."}`。
+All responses are UTF-8 JSON. Errors use `{"ok": false, "error": "..."}`.
 
 ### `GET /api/status`
 
@@ -130,16 +166,16 @@ dataviz 校验，状态色与序列色分离。移动端提供 `☰` 模型抽�
 
 ### `GET /api/examples`
 
-`{"examples": [ … ]}`，只包含磁盘上实际存在的示例。每个对象：
+`{"examples": [ … ]}` contains only examples that exist on disk. Each object:
 
 ```json
 {
   "id": "intro-demo",
   "name": "demo-filled.rtsl",
-  "title": "传感器融合流水线",
-  "kind": "rtsl",                     // rtsl | tdg
+  "title": "Sensor fusion pipeline",
+  "kind": "rtsl",
   "path": "example/introduction/demo-filled.rtsl",
-  "source": "…文件全文…",
+  "source": "…file contents…",
   "description": "…",
   "tags": ["RTSL", "fork/join"],
   "demo": true,
@@ -149,14 +185,14 @@ dataviz 校验，状态色与序列色分离。移动端提供 `☰` 模型抽�
 }
 ```
 
-示例 `deadlock` 额外带有 `"render_limit": 500`，`symmetry-4` 的
-`reduction` 为 `"symmetry"`，`pipeline-20` 的 `max_states` 为 `20000`；
-`deadline-miss` 使用 `max_states = 10`，返回 `R-ANA-002` + `E-PERF-001`，
-供 Story 的修复闭环展示。
+`deadlock` adds `"render_limit": 500`; `symmetry-4` uses
+`"reduction": "symmetry"`; `pipeline-20` uses `"max_states": 20000`;
+`deadline-miss` uses `max_states = 10` and returns `R-ANA-002` +
+`E-PERF-001` for the Story repair loop.
 
 ### `POST /api/analyze`
 
-请求体：
+Request body:
 
 ```json
 {
@@ -177,54 +213,57 @@ dataviz 校验，状态色与序列色分离。移动端提供 `☰` 模型抽�
 }
 ```
 
-- `source`：必填字符串，UTF-8 最多 2 MB。**不接受文件路径**；服务器总是把它
-  写到临时目录中的 `model.rtsl` / `model.json`。
-- `kind`：`rtsl` 或 `tdg`；缺省按 `filename` 后缀推断。
-- `mode`：`check`（仅 RTSL，执行 `ptpn check`）或 `analyze`（默认）。
-- `options`：白名单字段；未知字段直接返回 HTTP 400。
-  - `max_states`：1–200000，默认 10000。
-  - `canonicalization`：`equality` | `max-lower` | `intersection`。
-  - `reduction`：`none` | `upper-bound` | `cone` | `symmetry`。
-  - `policy`：策略名（非空时才传给 CLI）。
-  - `horizon`：非负整数或 `null`。
-  - `extrapolation`、`keep_suspension_clocks`：布尔值。
-  - `render_limit`：图渲染节点上限，默认 1800；超过时跳过布局。
+- `source`: required UTF-8 string, at most 2 MB. **File paths are not accepted.**
+  The server always writes it to a temporary `model.rtsl` / `model.json`.
+- `kind`: `rtsl` or `tdg`; inferred from `filename` when omitted.
+- `mode`: `check` (RTSL only; runs `ptpn check`) or `analyze` (default).
+- `options`: whitelisted fields; unknown fields return HTTP 400.
+  - `max_states`: 1–200000, default 10000.
+  - `canonicalization`: `equality` | `max-lower` | `intersection`.
+  - `reduction`: `none` | `upper-bound` | `cone` | `symmetry`.
+  - `policy`: policy name (passed to the CLI only when non-empty).
+  - `horizon`: non-negative integer or `null`.
+  - `extrapolation`, `keep_suspension_clocks`: booleans.
+  - `render_limit`: graph render cap, default 1800; layout is skipped above it.
 
-成功完成一次分析（无论 `ptpn` 退出码是什么）都返回 HTTP 200。响应字段：
+A completed analysis returns HTTP 200 regardless of the analyzer exit code:
 
 ```json
 {
-  "ok": false,                       // 仅当 exit_code == 0 时为 true
-  "exit_code": 6,                    // ptpn 退出码；超时为 124
+  "ok": false,
+  "exit_code": 6,
   "duration_ms": 88,
-  "diagnostics": [ … ],              // 诊断 envelope 的 diagnostics 数组
-  "envelope": { … } | null,          // 原始 ptpn 诊断 envelope
-  "analysis": { … } | null,          // envelope.result.analysis
-  "pending_measurements": [ … ],     // envelope.result.pending_measurements 或 []
-  "metrics": { … } | null,           // --export-metrics 的 JSON
-  "wcet": { … } | null,              // --export-wcet 的 JSON
-  "tdg": { … } | null,               // RTSL：导出的 TDG；TDG：解析后的请求源
+  "diagnostics": [ … ],
+  "envelope": { … } | null,
+  "analysis": { … } | null,
+  "pending_measurements": [ … ],
+  "metrics": { … } | null,
+  "wcet": { … } | null,
+  "tdg": { … } | null,
   "graphs": { "ptpn": { … } | null, "scg": { … } | null },
   "timings": { "lowering_ms": 0, "scg_ms": 11,
                "metrics_ms": 4, "total_ms": 59 },
-  "logs": ["…stderr 最后 300 行，已去除 ANSI…"],
+  "logs": ["…last 300 stderr lines, ANSI stripped…"],
   "effective_options": { … },
-  "notices": ["…图被截断、缺少 dot、超时等提示…"]
+  "notices": ["…truncated graph, missing dot, timeout…"]
 }
 ```
 
-诊断中的 `location.file`（以及 `pending_measurements[].inject.file`）会从临时
-路径改写为客户端提供的 `filename`。
+Diagnostic `location.file` values (and `pending_measurements[].inject.file`)
+are rewritten from temporary paths to the client's `filename`.
 
-**退出码**：`0` 成功；`2` 语法错误；`3` 校验错误；`4` 不支持类；`5` 部分结果
-（截断且无运行时反例）；`6` 已证实的死锁 / 截止期反例（**仍是有效分析**，
-`metrics` 通常存在，但 `ok=false`）；`105` 是 CLI11 参数错误（无 envelope，
-notice 中会说明）；`124` 是服务器 180 秒超时并已 kill 进程。
+**Exit codes**: `0` success; `2` syntax error; `3` validation error; `4`
+unsupported class; `5` partial results (truncation without a counterexample);
+`6` proven deadlock / deadline counterexample (still a valid analysis;
+`metrics` is usually present, `ok=false`); `105` is a CLI11 argument error
+(no envelope; a notice explains it); `124` is the server's 180-second timeout
+after killing the process.
 
-HTTP 层错误：`400` 请求/选项非法，`411` 缺少 `Content-Length`，`413` 请求体
-超过 4 MB，`503` 找不到可执行的 `ptpn`，`500` 服务器内部错误。
+HTTP errors: `400` invalid request/options, `411` missing
+`Content-Length`, `413` body over 4 MB, `503` no executable `ptpn`, `500`
+internal server error.
 
-### 图（`graphs`）结构
+### Graph (`graphs`) structure
 
 ```json
 {
@@ -249,72 +288,86 @@ HTTP 层错误：`400` 请求/选项非法，`411` 缺少 `Content-Length`，`41
 }
 ```
 
-- 坐标单位是 **point（pt）**，原点在左上角（已按 `bb` 高度翻转 y）。
-- PTPN 节点：`circle` 为 place（附加 `marking`、`capacity`），`box` 为
-  transition（附加 `core`、`priority`、`interval`）；`kind` 取值
-  `place/period/resource/hold/segment/exec/acquire/lock/fork/join/control/transition`。
-- SCG 节点：`label` 为 `S<n>`，`kind` 为 `state`；当
-  `metrics.deadlock_states` 包含该状态编号时 `kind` 为 `deadlock`，并始终带有
-  布尔字段 `deadlock`。`detail` 从 tooltip 解析：
-  `{elapsed, marking, enabled, e_struct, suspended, zone}`，并附带结构化集合
-  `e_struct_transitions` / `priority_transitions` / `suspended_transitions`
-  （每项含 `id`、`name`、`priority`、`core`、`suspendable`）以及
-  `clocks`（每项含 `name`、`kind`、`transition`、`lower`、`upper`）。
-  Story 的回放直接消费这些字段；`enabled` 仍是 E<sub>pri</sub> 的兼容字符串。
-- SCG 边从 label 解析 `transition`、`core`、`dwell_min/max`、`at_min/max`。
-- `edge.points` 按 tail → head 排列，已去掉 Graphviz 的 `e,`/`s,` 标记点。
-- 节点数超过 `render_limit` 时跳过布局：`nodes`/`edges` 为空、
-  `"truncated": true`、`"layout": "none"`，并追加 notice。
-- Graphviz 失败时返回解析出的节点/边（无坐标）、`"layout": "none"` 和 notice。
+- Coordinates are points (pt), origin at the top-left (y is flipped using
+  the `bb` height).
+- PTPN nodes: `circle` is a place (with `marking`, `capacity`), `box` is a
+  transition (with `core`, `priority`, `interval`); `kind` is one of
+  `place/period/resource/hold/segment/exec/acquire/lock/fork/join/control/transition`.
+- SCG nodes: `label` is `S<n>` and `kind` is `state`; when
+  `metrics.deadlock_states` contains the state id, `kind` is `deadlock` and
+  `deadlock` is always present as a boolean. `detail` is parsed from the
+  tooltip:
+  `{elapsed, marking, enabled, e_struct, suspended, zone}`, plus the structured
+  sets `e_struct_transitions` / `priority_transitions` /
+  `suspended_transitions` (each entry has `id`, `name`, `priority`, `core`,
+  `suspendable`) and `clocks` (each entry has `name`, `kind`, `transition`,
+  `lower`, `upper`). The Story replay consumes these fields directly;
+  `enabled` remains the compatible E<sub>pri</sub> string.
+- SCG edge labels are parsed into `transition`, `core`, `dwell_min/max` and
+  `at_min/max`.
+- `edge.points` run from tail to head and omit Graphviz `e,` / `s,` marker
+  points.
+- Above `render_limit`, layout is skipped: `nodes`/`edges` are empty,
+  `"truncated": true`, `"layout": "none"`, and a notice is added.
+- If Graphviz fails, the parsed nodes/edges are returned without coordinates,
+  `"layout": "none"`, plus a notice.
 
-## 重新生成演示数据
+## Regenerate demo data
 
 ```bash
 python3 webapp/make_demo.py
 ```
 
-该脚本导入 `server.run_analysis`（不启动 HTTP 服务），用每个示例的推荐选项
-运行全部 `"demo": true` 的示例，并写入 `webapp/demo/demo-data.js`：
+This imports `server.run_analysis` (without starting HTTP), runs every
+`"demo": true` example with its recommended options, and writes
+`webapp/demo/demo-data.js`:
 
 ```js
 window.PTPN_DEMO_DATA = {
   "generated_at": "2026-10-21T06:17:59Z",
-  "status": { … /api/status 的内容（demo=true）… },
-  "examples": [ { …示例字段…, "source": "…", "response": { … } } ],
+  "status": { … /api/status with demo=true … },
+  "examples": [ { …example fields…, "source": "…", "response": { … } } ],
   "story": { "policies": { "fixed": {…}, "rm": {…}, … } }
 };
 ```
 
-- `story.policies` 保存 `hw` 示例在 fixed / RM / DM / restart / EDF / FIFO 下的
-  紧凑结果（退出码、状态数、可调度性、每任务 WCRT/verdict、诊断），供 Story
-  的策略章离线对比。
-- 生成文件当前约 3 MB，硬上限 8 MB；超过时脚本报错且不写文件。
-- 所有 `</` 都转义为 `<\/`，因此可以安全嵌入 HTML；`</script>` 不会出现。
-- 脚本会打印每个示例的退出码、状态数、metrics 是否存在、SCG/PTPN 节点/边数
-  和该示例响应的字节数。
-- 可用 `python3 webapp/make_demo.py OUTPUT_PATH` 写到其他位置。
-- 生成单文件、无需服务器的演示页：
-  - 工作台：`python3 webapp/build_standalone.py` →
-    `webapp/demo/ptpn-chronograph-demo.html`；
-  - Story：`python3 webapp/build_standalone.py --story` →
-    `webapp/demo/ptpn-story-demo.html`。
-  两者都内联 CSS/JS/预计算数据，可直接用浏览器打开或发给别人；Google Fonts
-  不可用时回退到系统字体。
-- 校验：`node --check webapp/demo/demo-data.js`。
-- 演示数据只针对演示示例生成；`--demo` 页面缺少 `webapp/demo/demo-data.js`
-  时会回退到 `webapp/static/demo-data.js` 的空占位文件（前端随后走实时 API）。
+- `story.policies` stores compact `hw` results under fixed / RM / DM / restart /
+  EDF / FIFO (exit code, state count, schedulability, per-task WCRT/verdict,
+  diagnostics) for the offline policy chapter.
+- The generated file is currently about 3 MB; the hard limit is 8 MB. The script
+  errors without writing above the limit.
+- Every `</` is escaped as `<\/`, so the payload is safe to embed in HTML;
+  `</script>` never appears.
+- The script prints each example's exit code, state count, metrics presence,
+  SCG/PTPN node/edge counts, and response size.
+- Write elsewhere with `python3 webapp/make_demo.py OUTPUT_PATH`.
+- Build server-free single-file demos:
+  - workbench: `python3 webapp/build_standalone.py` →
+    `webapp/demo/ptpn-chronograph-demo.html`;
+  - Story: `python3 webapp/build_standalone.py --story` →
+    `webapp/demo/ptpn-story-demo.html`.
+  Both inline the CSS/JS/precomputed data and can be opened directly or shared.
+  Google Fonts are optional; the pages have system fallbacks.
+- Validate with `node --check webapp/demo/demo-data.js`.
+- The demo data covers only demo examples. If `webapp/demo/demo-data.js` is
+  missing, `--demo` falls back to the empty placeholder and the front-end uses
+  the live API.
 
-## 安全说明
+## Security notes
 
-- 服务默认只绑定 `127.0.0.1`，**没有认证**。不要用 `--host 0.0.0.0` 暴露到
-  网络或公网。
-- 提交的源码会交给分析器解析（分析器本身处理不可信输入），但**不会经过
-  shell**：服务器用参数数组调用 `subprocess`，客户端无法注入命令。
-- 客户端不能提供文件路径；源码只写入新建的临时目录，文件名固定为
-  `model.rtsl`/`model.json`。
-- 每次请求的 TDG、PTPN DOT、SCG DOT、metrics、WCET 导出都是该临时目录中的
-  临时文件，请求结束（包括超时/异常）后递归删除。
-- 请求体上限 4 MB、源码上限 2 MB、分析超时 180 秒、DOT 布局超时 60 秒。
-- 静态文件处理器解析真实路径并做 `commonpath` 检查，拒绝 `..`、反斜杠和
-  指向目录外的符号链接。`/docs/` 只读地提供仓库 `docs/` 下的文件（同样受
-  `commonpath` 检查），供 Story 页脚链接使用。
+- The server binds to `127.0.0.1` by default and has **no authentication**. Do
+  not bind it to `0.0.0.0` or expose it to the internet unless the network is
+  trusted.
+- Submitted source is parsed by the analyzer (which handles untrusted input) but
+  is **never passed through a shell**: the server uses argument arrays with
+  `subprocess`, so clients cannot inject commands.
+- Clients cannot provide file paths; source is written only to a fresh temporary
+  directory with fixed names `model.rtsl` / `model.json`.
+- Per-request TDG, PTPN DOT, SCG DOT, metrics and WCET exports are temporary
+  files in that directory and are deleted recursively when the request finishes
+  (including timeouts and exceptions).
+- Limits: 4 MB request body, 2 MB source, 180-second analysis timeout, 60-second
+  DOT layout timeout.
+- The static file handler resolves real paths and checks `commonpath`, rejecting
+  `..`, backslashes, and symlinks that escape the directory. `/docs/` is served
+  read-only under the same check for the Story footer links.

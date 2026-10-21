@@ -28,20 +28,20 @@ inline std::string format_time_range(const std::pair<int, int>& range) {
   return "[" + std::to_string(range.first) + ", " + std::to_string(range.second) + "]";
 }
 
-// 实时系统调度策略
+// Real-time scheduling policies
 enum class SchedulePolicy {
-  FIXED,                     // Fixed Priority - 固定优先级(兼容别名,默认按 resume 处理)
+  FIXED,                     // Fixed Priority (compatibility alias; handled as resume by default)
   FIXED_PRIOR_WITH_RESTART,  // Fixed Priority with restart
   FIXED_PRIOR_WITH_RESUME,   // Fixed Priority with resume
-  RM,                        // Rate Monotonic - 周期越短优先级越高
-  DM,                        // Deadline Monotonic - 截止时间越短优先级越高
-  EDF,                       // Earliest Deadline First - 截止时间最早优先
-  LLF,                       // Least Laxity First - 松弛时间最小优先
-  FIFO,                      // First In First Out - 先来先服务
-  PIP,                       // Priority Inheritance Protocol - 优先级继承协议
-  PCP,                       // Priority Ceiling Protocol - 优先级天花板协议
-  SRP,                       // Stack Resource Policy - 栈资源策略
-  UNKNOWN                    // 未知策略
+  RM,                        // Rate Monotonic - shorter period gets higher priority
+  DM,                        // Deadline Monotonic - shorter deadline gets higher priority
+  EDF,                       // Earliest Deadline First - earliest deadline runs first
+  LLF,                       // Least Laxity First - smallest laxity runs first
+  FIFO,                      // First In First Out - oldest job runs first
+  PIP,                       // Priority Inheritance Protocol
+  PCP,                       // Priority Ceiling Protocol
+  SRP,                       // Stack Resource Policy
+  UNKNOWN                    // Unknown policy
 };
 
 SchedulePolicy parse_schedule_policy(const std::string& policy);

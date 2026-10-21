@@ -248,7 +248,7 @@
       const exampleId = new URLSearchParams(location.search).get("example");
       const preferred = state.examples.find((e) => e.id === exampleId) || state.examples.find((e) => e.id === "intro-demo") || state.examples[0];
       if (preferred) selectExample(preferred.id, { initial: true });
-      else renderEmptyAll("演示数据为空。");
+      else renderEmptyAll("Demo data is empty.");
       if (requestedTab) setActiveTab(requestedTab);
       return;
     }
@@ -265,13 +265,13 @@
       const exampleId = new URLSearchParams(location.search).get("example");
       const preferred = state.examples.find((e) => e.id === exampleId) || state.examples.find((e) => e.id === "intro-demo") || state.examples[0];
       if (preferred) selectExample(preferred.id, { initial: true, autoRun: true });
-      else renderEmptyAll("没有可用的内置模型。");
+      else renderEmptyAll("No built-in models are available.");
     } catch (err) {
       state.status = { ok: false, error: String(err && err.message ? err.message : err), binary_exists: false };
       renderMode();
       renderExamples();
-      renderEmptyAll("无法连接本地分析服务。");
-      showToast("无法连接本地分析服务。先运行 python3 webapp/server.py。", "err");
+      renderEmptyAll("Cannot connect to the local analysis service.");
+      showToast("Cannot connect to the local analysis service. Start python3 webapp/server.py first.", "err");
     }
     if (requestedTab) setActiveTab(requestedTab);
   }
@@ -341,7 +341,7 @@
     const root = $("#example-list");
     root.innerHTML = "";
     if (!state.examples.length) {
-      root.innerHTML = `<div class="note">暂无模型。</div>`;
+      root.innerHTML = `<div class="note">No models yet.</div>`;
       return;
     }
     const groups = new Map();
@@ -441,7 +441,7 @@
     state.options = collectOptions();
     if (state.response) {
       // Options no longer match the rendered result; mark it visually.
-      setRunMeta("选项已修改 · 重新运行以更新");
+      setRunMeta("Options changed · run again to update");
     }
   }
 
@@ -475,16 +475,16 @@
       if (state.current && state.current.response) {
         simulateRun(state.current.response, mode === "check");
       } else {
-        showToast("演示页没有这个模型的预计算数据。", "err");
+        showToast("The demo has no precomputed data for this model.", "err");
       }
       return;
     }
     if (!state.status || state.status.binary_exists === false) {
-      showToast("找不到 ptpn 二进制。先构建项目，或设置 PTPN_BIN。", "err");
+      showToast("ptpn binary not found. Build the project or set PTPN_BIN.", "err");
       return;
     }
     if (!state.source.trim()) {
-      showToast("模型为空。写入 RTSL 或 TDG JSON 后再运行。", "err");
+      showToast("The model is empty. Enter RTSL or TDG JSON before running.", "err");
       return;
     }
 
@@ -511,18 +511,18 @@
         const states = resp.metrics && resp.metrics.states;
         showToast(
           mode === "check"
-            ? `Check 完成 · ${resp.exit_code === 0 ? "通过" : `exit ${resp.exit_code}`}`
-            : `分析完成 · ${states != null ? `${fmtInt(states)} states · ` : ""}${fmtDuration(resp.client_duration_ms || resp.duration_ms)}`,
+            ? `Check complete · ${resp.exit_code === 0 ? "passed" : `exit ${resp.exit_code}`}`
+            : `Analysis complete · ${states != null ? `${fmtInt(states)} states · ` : ""}${fmtDuration(resp.client_duration_ms || resp.duration_ms)}`,
           resp.exit_code === 0 ? "ok" : "err"
         );
       } else if (!(resp.diagnostics || []).length) {
-        showToast(resp.error || "分析失败。", "err");
+        showToast(resp.error || "Analysis failed.", "err");
       }
     } catch (err) {
       stopPipelineAnimation(false);
       setRunbar({ label: "Request failed", dot: "err", exit: null, duration: Math.round(performance.now() - started), meta: String(err.message || err) });
       renderConsoleError(String(err.message || err));
-      showToast(`无法完成分析：${truncate(err.message || String(err), 160)}`, "err");
+      showToast(`Could not complete analysis: ${truncate(err.message || String(err), 160)}`, "err");
     } finally {
       state.busy = false;
       setBusy(false);
@@ -541,7 +541,7 @@
       applyResponse(response, { mode: checkOnly ? "check" : "analyze", keepTab: checkOnly });
       state.busy = false;
       setBusy(false);
-      if (!checkOnly) showToast("演示页：展示预计算分析结果。本地版可分析任意模型。", "ok");
+      if (!checkOnly) showToast("Demo: showing precomputed results. The local server can analyze any model.", "ok");
     }, delay);
   }
 
@@ -588,9 +588,9 @@
       renderMetrics();
       renderGraphs();
     } else {
-      let reason = opts.mode === "check" ? "Check 模式不包含分析结果。" : "没有可显示的分析结果。";
-      if (state.pending.length) reason = "等待填写 pending measurement";
-      else if (errors.length) reason = "分析被诊断阻止";
+      let reason = opts.mode === "check" ? "Check mode does not include analysis results." : "There is no analysis result to display.";
+      if (state.pending.length) reason = "Waiting for pending measurements";
+      else if (errors.length) reason = "Analysis is blocked by diagnostics";
       renderEmptyAll(reason, { keepDiagnostics: true });
     }
     renderCode();
@@ -936,10 +936,10 @@
     const root = $("#wcrt-chart");
     const legend = $("#wcrt-legend");
     legend.innerHTML = `
-      <span class="legend-item"><i class="legend-swatch viz1"></i>WCRT 区间</span>
+      <span class="legend-item"><i class="legend-swatch viz1"></i>WCRT interval</span>
       <span class="legend-item"><i class="legend-swatch viz2"></i>WCET</span>`;
     if (!metrics || !Array.isArray(metrics.tasks) || !metrics.tasks.length) {
-      root.innerHTML = `<div class="empty"><strong>NO TIMING DATA</strong>分析后显示每任务响应时间与执行时间。</div>`;
+      root.innerHTML = `<div class="empty"><strong>NO TIMING DATA</strong>Run an analysis to show response and execution times per task.</div>`;
       return;
     }
     const tasks = metrics.tasks;
@@ -1004,11 +1004,11 @@
     const root = $("#core-chart");
     const legend = $("#core-legend");
     legend.innerHTML = `
-      <span class="legend-item"><i class="legend-swatch viz1"></i>利用率范围</span>
-      <span class="legend-item"><i class="legend-swatch viz2"></i>图内忙碌比例</span>`;
+      <span class="legend-item"><i class="legend-swatch viz1"></i>Utilization range</span>
+      <span class="legend-item"><i class="legend-swatch viz2"></i>Graph busy fraction</span>`;
     const cores = (metrics && metrics.cores) || [];
     if (!cores.length) {
-      root.innerHTML = `<div class="empty"><strong>NO CORE DATA</strong>分析后显示每核负载。</div>`;
+      root.innerHTML = `<div class="empty"><strong>NO CORE DATA</strong>Run an analysis to show per-core load.</div>`;
       return;
     }
     const W = 640;
@@ -1059,7 +1059,7 @@
     const root = $("#lock-table");
     const locks = (metrics && metrics.locks) || [];
     if (!locks.length) {
-      root.innerHTML = `<div class="empty"><strong>NO LOCKS</strong>模型未声明互斥锁。</div>`;
+      root.innerHTML = `<div class="empty"><strong>NO LOCKS</strong>The model declares no mutex locks.</div>`;
       return;
     }
     root.innerHTML = `
@@ -1070,7 +1070,7 @@
   function renderOverviewDiagnostics() {
     const root = $("#overview-diagnostics");
     if (!state.lastResponse) {
-      root.innerHTML = `<div class="note">尚未运行。选择模型后按 Analyze。</div>`;
+      root.innerHTML = `<div class="note">No run yet. Select a model and press Analyze.</div>`;
       return;
     }
     if (!state.diagnostics.length && !state.pending.length) {
@@ -1085,7 +1085,7 @@
       items.push(`<div class="signal pending"><i></i><span class="signal-text">${state.pending.length} pending measurement${state.pending.length > 1 ? "s" : ""}</span></div>`);
     }
     if (state.diagnostics.length > 6) {
-      items.push(`<div class="note">还有 ${state.diagnostics.length - 6} 条诊断，见 Model 标签页。</div>`);
+      items.push(`<div class="note">${state.diagnostics.length - 6} more diagnostics; see the Model tab.</div>`);
     }
     root.innerHTML = items.join("");
     bindDiagClicks(root);
@@ -1108,7 +1108,7 @@
     const root = $("#diagnostics");
     setText($("#diag-count"), `${state.diagnostics.length}`);
     if (!state.lastResponse) {
-      root.innerHTML = `<div class="empty"><strong>NO RUN</strong>运行 Check 或 Analyze 后显示诊断。</div>`;
+      root.innerHTML = `<div class="empty"><strong>NO RUN</strong>Run Check or Analyze to show diagnostics.</div>`;
       return;
     }
     if (!state.diagnostics.length) {
@@ -1163,7 +1163,7 @@
     const root = $("#pending-list");
     const banner = $("#pending-banner");
     if (!state.pending.length) {
-      root.innerHTML = `<div class="pending-empty">没有待填测量项。${state.lastResponse ? "" : "运行 Check 查看 pending_measurements。"}</div>`;
+      root.innerHTML = `<div class="pending-empty">No pending measurements. ${state.lastResponse ? "" : "Run Check to inspect pending_measurements."}</div>`;
       if (banner) {
         banner.hidden = true;
         banner.innerHTML = "";
@@ -1174,9 +1174,9 @@
       const first = state.pending[0];
       const segs = first.expected_segments || 1;
       const loc = first.inject ? `line ${first.inject.line}` : "source";
-      const extra = state.pending.length > 1 ? ` · 另有 ${state.pending.length - 1} 项` : "";
+      const extra = state.pending.length > 1 ? ` · ${state.pending.length - 1} more` : "";
       banner.hidden = false;
-      banner.innerHTML = `<div class="pb-text"><span class="pb-eyebrow">Pending measurement</span><strong>${esc(first.task || "task")}</strong> 需要 ${segs} 个执行段${extra} · ${esc(loc)}</div><button class="btn primary" type="button" data-pending-banner>填写测量值</button>`;
+      banner.innerHTML = `<div class="pb-text"><span class="pb-eyebrow">Pending measurement</span><strong>${esc(first.task || "task")}</strong> needs ${segs} execution segments${extra} · ${esc(loc)}</div><button class="btn primary" type="button" data-pending-banner>Fill measurements</button>`;
       const btn = banner.querySelector("[data-pending-banner]");
       if (btn) btn.addEventListener("click", () => openPendingModal(first));
     }
@@ -1187,8 +1187,8 @@
         <div class="pending-title"><strong>${esc(pm.task || "task")}</strong><span class="chip mono">${segs} segment${segs > 1 ? "s" : ""}</span></div>
         <div class="pending-meta">measured by llm · runs ${esc(pm.runs ?? "—")} · timeout ${esc(pm.timeout ?? "—")} · line ${esc(loc)}</div>
         <div class="pending-actions">
-          <button class="btn ghost" type="button" data-pending="${idx}">填写测量值</button>
-          <span class="note">或直接在源码中替换 <code class="code-inline">time measured by llm {…}</code></span>
+          <button class="btn ghost" type="button" data-pending="${idx}">Fill measurements</button>
+          <span class="note">or replace directly in the source <code class="code-inline">time measured by llm {…}</code></span>
         </div>
       </div>`;
     }).join("");
@@ -1340,15 +1340,15 @@
         <input type="number" min="0" step="1" id="seg-max-${i}" placeholder="max ms" inputmode="numeric">
       </div>`).join("");
     const html = `
-      <p>任务 <code class="code-inline">${esc(pm.task || "task")}</code> 声明了 <code class="code-inline">measured by llm</code>。
-      按 2×锁数+1 的规则需要 <strong>${segs}</strong> 个执行段；填入每段的实测区间（毫秒）。</p>
+      <p>Task <code class="code-inline">${esc(pm.task || "task")}</code> declares <code class="code-inline">measured by llm</code>.
+      It needs <strong>${segs}</strong> execution segments (2 × locks + 1); enter the measured interval for each segment (ms).</p>
       <div class="seg-grid">${rows}</div>
-      <p class="note">生成来源标记为 <code class="code-inline">estimated by "measurement"</code>。只有 <code class="code-inline">certified by</code> 才表示经过认证的 WCET 上界。</p>
+      <p class="note">The generated provenance is <code class="code-inline">estimated by "measurement"</code>. Only <code class="code-inline">certified by</code> denotes a certified WCET upper bound.</p>
       <div class="modal-actions">
-        <button class="btn ghost" type="button" id="pending-cancel">取消</button>
-        <button class="btn primary" type="button" id="pending-apply">填入并检查</button>
+        <button class="btn ghost" type="button" id="pending-cancel">Cancel</button>
+        <button class="btn primary" type="button" id="pending-apply">Fill and check</button>
       </div>`;
-    openModal({ eyebrow: "Pending measurement", title: `填写 ${pm.task || "task"} 时间`, html, onMount: () => {
+    openModal({ eyebrow: "Pending measurement", title: `Fill timing for ${pm.task || "task"}`, html, onMount: () => {
       $("#pending-cancel").addEventListener("click", closeModal);
       $("#pending-apply").addEventListener("click", () => {
         const values = [];
@@ -1356,13 +1356,13 @@
           const minRaw = $(`#seg-min-${i}`).value.trim();
           const maxRaw = $(`#seg-max-${i}`).value.trim();
           if (!minRaw || !maxRaw) {
-            showToast(`第 ${i + 1} 段缺少 min 或 max。`, "err");
+            showToast(`Segment ${i + 1} is missing min or max.`, "err");
             return;
           }
           const min = parseInt(minRaw, 10);
           const max = parseInt(maxRaw, 10);
           if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max < min) {
-            showToast(`第 ${i + 1} 段区间无效（需 0 ≤ min ≤ max）。`, "err");
+            showToast(`Segment ${i + 1} has an invalid interval (require 0 ≤ min ≤ max).`, "err");
             return;
           }
           values.push([min, max]);
@@ -1375,7 +1375,7 @@
         if (start < 0 || end < start) {
           const idx = state.source.indexOf("time measured by llm");
           if (idx < 0) {
-            showToast("找不到可替换的 time 语句，请直接在源码中编辑。", "err");
+            showToast("No replaceable time statement was found; edit the source directly.", "err");
             return;
           }
           start = idx;
@@ -1387,9 +1387,9 @@
         state.dirty = state.source !== state.originalSource;
         updateEditorMeta();
         setActiveTab("model");
-        showToast("已填入测量区间。运行 Check 验证模型。", "ok");
+        showToast("Measurement intervals filled. Run Check to validate the model.", "ok");
         if (!state.demo) runAnalysis("check", { keepTab: true });
-        else showToast("演示页已更新源码；本地版可重新分析。", "ok");
+        else showToast("The demo source was updated; the local server can analyze it again.", "ok");
       });
     } });
     setTimeout(() => { const first = $("#seg-min-0"); if (first) first.focus(); }, 30);
@@ -1420,14 +1420,14 @@
   function openDemoHint() {
     openModal({
       eyebrow: "Demo mode",
-      title: "本地运行完整分析器",
+      title: "Run the full analyzer locally",
       html: `
-        <p>这是一个可分享的演示页：模型与结果都是预计算的，浏览器无法启动 C++ 分析器。</p>
-        <p>在仓库中运行本地服务即可分析任意 RTSL / TDG：</p>
+        <p>This is a shareable demo: models and results are precomputed, and the browser cannot start the C++ analyzer.</p>
+        <p>Start the local server in the repository to analyze any RTSL / TDG model:</p>
         <p><code class="code-inline">./example/build.py && python3 webapp/server.py</code></p>
-        <p>然后打开 <code class="code-inline">http://127.0.0.1:8765</code>。编辑、Check、Analyze、导出全部可用。</p>
+        <p>Then open <code class="code-inline">http://127.0.0.1:8765</code>. Editing, Check, Analyze and exports are all available.</p>
         <div class="modal-actions">
-          <button class="btn primary" type="button" id="demo-ok">知道了</button>
+          <button class="btn primary" type="button" id="demo-ok">Got it</button>
         </div>`,
       onMount: () => $("#demo-ok").addEventListener("click", closeModal),
     });
@@ -1438,7 +1438,7 @@
       eyebrow: "Reference",
       title: "Workbench guide",
       html: `
-        <p>PTPN Chronograph 把 RTSL/TDG 模型送入 <code class="code-inline">build/ptpn</code>，并展示 TDG、PTPN、SCG 与 WCRT 指标。演示页只回放预计算数据。</p>
+        <p>PTPN Chronograph sends RTSL/TDG models to <code class="code-inline">build/ptpn</code> and displays TDG, PTPN, SCG and WCRT metrics. The demo only replays precomputed data.</p>
         <div class="help-keys">
           <div class="help-key"><span>Analyze</span><kbd>⌘ / Ctrl + Enter</kbd></div>
           <div class="help-key"><span>Check (parse + validate)</span><kbd>⌘ / Ctrl + Shift + Enter</kbd></div>
@@ -1446,9 +1446,9 @@
           <div class="help-key"><span>Pan graph</span><kbd>drag</kbd></div>
           <div class="help-key"><span>Zoom graph</span><kbd>wheel</kbd></div>
         </div>
-        <p class="note" style="margin-top:12px">RTSL 时间归一化为毫秒。EDF/FIFO/LLF 受 supported class 限制；extrapolation 与 symmetry 只适用于静态/PIP/PCP/SRP 的 transition-indexed 布局。</p>
+        <p class="note" style="margin-top:12px">RTSL time is normalized to milliseconds. EDF/FIFO/LLF are limited by their supported classes; extrapolation and symmetry apply only to the transition-indexed layouts of static/PIP/PCP/SRP rules.</p>
         <div class="modal-actions">
-          <button class="btn ghost" type="button" id="help-close">关闭</button>
+          <button class="btn ghost" type="button" id="help-close">Close</button>
         </div>`,
       onMount: () => $("#help-close").addEventListener("click", closeModal),
     });
@@ -1536,7 +1536,7 @@
     const tdg = state.response && state.response.tdg;
     if (!tdg || !Array.isArray(tdg.nodes) || !tdg.nodes.length) {
       view.clear();
-      setGraphHint("tdg", `<div><strong>NO TDG</strong>分析后显示任务依赖图。</div>`);
+      setGraphHint("tdg", `<div><strong>NO TDG</strong>Run an analysis to show the task dependency graph.</div>`);
       legend.innerHTML = "";
       renderTdgInspector(null);
       state.graphs.tdg = null;
@@ -1550,7 +1550,7 @@
       <span class="legend-item"><i class="legend-swatch viz3"></i>fork / join</span>
       <span class="legend-item"><i class="legend-swatch" style="background:var(--brass)"></i>start / end</span>
       <span class="legend-item"><i class="legend-swatch" style="background:var(--brass-dim)"></i>lock holder</span>
-      <span class="legend-item">核心色条 C0–C2</span>`;
+      <span class="legend-item">Core color bar C0–C2</span>`;
     view.setData(graph, "tdg");
     if (state.selected.tdg) view.select(state.selected.tdg);
     renderTdgInspector(state.selected.tdg);
@@ -1565,7 +1565,7 @@
       const truncated = graph && graph.truncated;
       setGraphHint("ptpn", truncated
         ? `<div><strong>GRAPH OMITTED</strong>${fmtInt(graph.node_count)} places/transitions exceed the render limit.</div>`
-        : `<div><strong>NO PTPN</strong>分析后显示时间 Petri 网结构。</div>`);
+        : `<div><strong>NO PTPN</strong>Run an analysis to show the timed Petri net structure.</div>`);
       legend.innerHTML = "";
       renderPtpnInspector(null);
       state.graphs.ptpn = null;
@@ -1578,7 +1578,7 @@
       <span class="legend-item"><i class="legend-swatch" style="background:var(--brass)"></i>timing / lock</span>
       <span class="legend-item"><i class="legend-swatch" style="background:var(--muted)"></i>control</span>
       <span class="legend-item"><i class="legend-swatch viz3"></i>resource / period</span>
-      <span class="legend-item">拖动平移 · 滚轮缩放</span>`;
+      <span class="legend-item">Drag to pan · wheel to zoom</span>`;
     view.setData(graph, "ptpn", { focus: true });
     view.setEdgeLabels(state.filters.ptpnLabels);
     if (state.selected.ptpn) view.select(state.selected.ptpn);
@@ -1594,7 +1594,7 @@
       const truncated = graph && graph.truncated;
       setGraphHint("scg", truncated
         ? `<div><strong>GRAPH OMITTED</strong>${fmtInt(graph.node_count)} state classes exceed the render limit. Metrics remain available.</div>`
-        : `<div><strong>NO SCG</strong>分析后显示状态类可达图。</div>`);
+        : `<div><strong>NO SCG</strong>Run an analysis to show the state-class reachability graph.</div>`);
       legend.innerHTML = "";
       renderScgInspector(null);
       state.graphs.scg = null;
@@ -1607,7 +1607,7 @@
       <span class="legend-item"><i class="legend-swatch" style="background:#3b4654"></i>dwell 0</span>
       <span class="legend-item"><i class="legend-swatch" style="background:#8a6a45"></i>dwell 1–4</span>
       <span class="legend-item"><i class="legend-swatch viz1"></i>dwell 5+</span>
-      <span class="legend-item">拖动平移 · 滚轮缩放</span>`;
+      <span class="legend-item">Drag to pan · wheel to zoom</span>`;
     view.setData(graph, "scg");
     view.emphasizeDeadlocks(state.filters.scgDeadlocks);
     if (state.selected.scg) view.select(state.selected.scg);
@@ -1627,7 +1627,7 @@
     const root = $("#tdg-inspector");
     const graph = state.graphs.tdg;
     if (!graph || !id) {
-      root.innerHTML = `<div class="inspector-empty"><strong>SELECT A NODE</strong><span>点击任务、fork 或 join 查看细节。</span></div>`;
+      root.innerHTML = `<div class="inspector-empty"><strong>SELECT A NODE</strong><span>Click a task, fork or join to inspect details.</span></div>`;
       return;
     }
     const node = graph.nodes.find((n) => n.id === id);
@@ -1672,7 +1672,7 @@
     const root = $("#ptpn-inspector");
     const graph = state.response && state.response.graphs && state.response.graphs.ptpn;
     if (!graph || !id) {
-      root.innerHTML = `<div class="inspector-empty"><strong>SELECT A NODE</strong><span>点击 place 或 transition 查看结构。</span></div>`;
+      root.innerHTML = `<div class="inspector-empty"><strong>SELECT A NODE</strong><span>Click a place or transition to inspect its structure.</span></div>`;
       return;
     }
     const node = graph.nodes.find((n) => n.id === id);
@@ -1702,7 +1702,7 @@
     const root = $("#scg-inspector");
     const graph = state.response && state.response.graphs && state.response.graphs.scg;
     if (!graph || !id) {
-      root.innerHTML = `<div class="inspector-empty"><strong>SELECT A STATE</strong><span>点击状态类查看 marking、E_pri 与 DBM zone。</span></div>`;
+      root.innerHTML = `<div class="inspector-empty"><strong>SELECT A STATE</strong><span>Click a state class to inspect marking, E_pri and the DBM zone.</span></div>`;
       return;
     }
     const node = graph.nodes.find((n) => n.id === id);
@@ -2280,7 +2280,7 @@
       }
       if (this.note) {
         this.note.hidden = !focused;
-        this.note.textContent = "首段视图 · FIT 全览 · 拖动平移";
+        this.note.textContent = "First-chain view · FIT for all · drag to pan";
       }
       this.applyTransform();
       this.userMoved = false;
@@ -2312,14 +2312,14 @@
     const tasks = (metrics && metrics.tasks) || [];
     const taskTable = $("#task-table");
     if (!metrics) {
-      taskTable.innerHTML = `<div class="empty"><strong>NO METRICS</strong>分析后显示每任务时序指标。</div>`;
+      taskTable.innerHTML = `<div class="empty"><strong>NO METRICS</strong>Run an analysis to show per-task timing metrics.</div>`;
       $("#core-table").innerHTML = `<div class="empty"><strong>NO DATA</strong></div>`;
       $("#lock-table-full").innerHTML = `<div class="empty"><strong>NO DATA</strong></div>`;
       $("#fact-grid").innerHTML = "";
       return;
     }
     if (!tasks.length) {
-      taskTable.innerHTML = `<div class="empty"><strong>NO TASKS</strong>指标中未观察到任务。</div>`;
+      taskTable.innerHTML = `<div class="empty"><strong>NO TASKS</strong>No tasks were observed in the metrics.</div>`;
     } else {
       taskTable.innerHTML = `<table class="data">
         <thead><tr>
@@ -2462,12 +2462,12 @@
 
   async function copyText(text, label) {
     if (!text) {
-      showToast("没有可复制的内容。", "err");
+      showToast("There is nothing to copy.", "err");
       return;
     }
     try {
       await navigator.clipboard.writeText(text);
-      showToast(`${label} 已复制。`, "ok");
+      showToast(`${label} copied.`, "ok");
     } catch {
       const ta = document.createElement("textarea");
       ta.value = text;
@@ -2477,9 +2477,9 @@
       ta.select();
       try {
         document.execCommand("copy");
-        showToast(`${label} 已复制。`, "ok");
+        showToast(`${label} copied.`, "ok");
       } catch {
-        showToast("复制失败。请手动选择文本。", "err");
+        showToast("Copy failed. Select the text manually.", "err");
       }
       ta.remove();
     }
@@ -2524,7 +2524,7 @@
       setEditorSource(state.originalSource);
       state.dirty = false;
       updateEditorMeta();
-      showToast("已恢复为原始模型。", "ok");
+      showToast("Restored the original model.", "ok");
     });
     $("#btn-copy-metrics").addEventListener("click", () => copyText(
       state.response && state.response.metrics ? JSON.stringify(state.response.metrics, null, 2) : "",
@@ -2671,7 +2671,7 @@ system new_model {
     renderExamples();
     setEditorSource(template);
     resetRunState();
-    renderAllEmpty("新模型：写入任务后运行 Check 或 Analyze。");
+    renderAllEmpty("New model: write tasks, then run Check or Analyze.");
     setActiveTab("model");
     focusLine(1, 1);
   }
