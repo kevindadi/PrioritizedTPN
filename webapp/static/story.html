@@ -1,0 +1,670 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>PTPN — A Schedule Is a Sequence of Firings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="story.css">
+
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#top" aria-label="PTPN story home">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-copy">
+        <span class="brand-title">PTPN <em>Chronograph</em></span>
+        <span class="brand-sub">priority timed Petri nets · a guided run</span>
+      </span>
+    </a>
+    <nav class="chapter-nav" aria-label="Chapters">
+      <a href="#problem" data-chapter="problem"><span>01</span>Problem</a>
+      <a href="#model" data-chapter="model"><span>02</span>Model</a>
+      <a href="#firing" data-chapter="firing"><span>03</span>Firing</a>
+      <a href="#policies" data-chapter="policies"><span>04</span>Policies</a>
+      <a href="#loop" data-chapter="loop"><span>05</span>LLM loop</a>
+    </nav>
+    <div class="topbar-actions">
+      <span class="mode-pill" id="story-mode-pill">LIVE</span>
+      <a class="btn ghost small" href="/workbench">Workbench</a>
+    </div>
+  </div>
+  <div class="read-progress" aria-hidden="true"><span id="read-progress-bar"></span></div>
+</header>
+
+<main id="top">
+
+  <!-- ------------------------------------------------------------------ hero -->
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="kicker">Priority Timed Petri Nets</p>
+      <h1>A schedule is a sequence of <em>firings</em>.</h1>
+      <p class="lede">
+        Real-time systems do not fail because a task is slow. They fail because
+        the timing of <strong>who runs, when, and for how long</strong> is not
+        what the design assumed. PTPN makes that timing explicit: a task graph
+        becomes a timed Petri net, and every scheduling decision becomes a
+        firing rule.
+      </p>
+      <div class="hero-actions">
+        <a class="btn primary" href="#firing">Watch a preemption</a>
+        <a class="btn ghost" href="#problem">Start from the problem</a>
+      </div>
+      <dl class="hero-facts">
+        <div><dt>Example</dt><dd>3 tasks · 1 core · fixed priority</dd></div>
+        <div><dt>Question</dt><dd>F's WCET is 10. Why is its WCRT 19?</dd></div>
+        <div><dt>Method</dt><dd>state classes + DBM clock zones</dd></div>
+      </dl>
+    </div>
+    <div class="hero-stage" aria-hidden="true">
+      <div class="hero-rail">
+        <span class="hero-rail-label">CORE 0</span>
+        <div class="hero-bars">
+          <span class="hero-bar a" style="--start:0%;--len:30%">A · 97</span>
+          <span class="hero-bar f" style="--start:30%;--len:5%">F</span>
+          <span class="hero-bar b" style="--start:35%;--len:15%">B · 98</span>
+          <span class="hero-bar f frozen" style="--start:50%;--len:0%"></span>
+          <span class="hero-bar f" style="--start:50%;--len:45%">F · resumed</span>
+        </div>
+        <div class="hero-ticks"><span>0</span><span>6</span><span>7</span><span>10</span><span>19</span></div>
+      </div>
+      <div class="hero-net">
+        <span class="hero-token t1"></span>
+        <span class="hero-token t2"></span>
+        <span class="hero-token t3"></span>
+        <span class="hero-net-label">tokens = state</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------------- problem -->
+  <section class="chapter" id="problem">
+    <div class="chapter-head">
+      <p class="kicker">01 · The problem</p>
+      <h2>WCET is not a schedule.</h2>
+      <p class="chapter-lede">
+        A task graph tells us what <em>can</em> run. A real-time schedule is a
+        statement about what <em>does</em> run on the shared core — including
+        the time a task spends waiting, and the progress it loses when it is
+        preempted.
+      </p>
+    </div>
+
+    <div class="problem-grid">
+      <article class="panel system-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">The example</p>
+            <h3>One core, three tasks</h3>
+          </div>
+          <span class="chip">fixed priority</span>
+        </div>
+        <div class="task-table" role="table" aria-label="Task set">
+          <div class="task-row head" role="row">
+            <span>Task</span><span>Priority</span><span>Execution</span><span>Arrival</span>
+          </div>
+          <div class="task-row a" role="row">
+            <span><i class="dot a"></i>A</span><span>97</span><span class="mono">[4, 6]</span><span>period 20</span>
+          </div>
+          <div class="task-row b" role="row">
+            <span><i class="dot b"></i>B</span><span>98</span><span class="mono">[2, 3]</span><span>A → 1 → B</span>
+          </div>
+          <div class="task-row f" role="row">
+            <span><i class="dot f"></i>F</span><span>96</span><span class="mono">[2, 10]</span><span>t = 0</span>
+          </div>
+        </div>
+        <div class="core-strip">
+          <span class="core-label">CORE 0</span>
+          <span class="priority-chain">B 98 <b>&gt;</b> A 97 <b>&gt;</b> F 96</span>
+          <span class="core-note">one segment at a time</span>
+        </div>
+        <div class="dependency">
+          <span class="dep-node a">A</span>
+          <span class="dep-arrow">→ 1 time unit →</span>
+          <span class="dep-node b">B</span>
+          <span class="dep-arrow">F starts at t = 0</span>
+          <span class="dep-node f">F</span>
+        </div>
+      </article>
+
+      <article class="panel question-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">The question</p>
+            <h3>Why 19?</h3>
+          </div>
+          <span class="chip warn">response time</span>
+        </div>
+        <div class="why-bars">
+          <div class="why-row">
+            <span>A executes</span>
+            <div class="why-track"><span class="why-fill a" style="--w:31.6%"></span></div>
+            <b>6</b>
+          </div>
+          <div class="why-row">
+            <span>Dependency delay</span>
+            <div class="why-track"><span class="why-fill dep" style="--w:5.3%"></span></div>
+            <b>1</b>
+          </div>
+          <div class="why-row">
+            <span>B executes</span>
+            <div class="why-track"><span class="why-fill b" style="--w:15.8%"></span></div>
+            <b>3</b>
+          </div>
+          <div class="why-row">
+            <span>F's residual work</span>
+            <div class="why-track"><span class="why-fill f" style="--w:47.4%"></span></div>
+            <b>9</b>
+          </div>
+        </div>
+        <p class="why-summary">
+          <strong>WCRT(F) = 19</strong> = 6 (A) + 1 (dependency) + 3 (B) + 9
+          (F's residual work after preemption). F's WCET is 10: 1 unit before
+          the preemption, 9 after it.
+        </p>
+        <p class="fine">
+          The 19 is not a guess. It is the longest path through the symbolically
+          explored state space, under the fixed-priority firing rule.
+        </p>
+      </article>
+    </div>
+
+    <div class="problem-cards">
+      <article class="mini-card">
+        <span class="mini-index">A</span>
+        <h3>Intervals, not points</h3>
+        <p>A executes in <span class="mono">[4, 6]</span>. Every value in the interval is a legal run. A point WCET hides the schedule's timing envelope.</p>
+      </article>
+      <article class="mini-card">
+        <span class="mini-index">B</span>
+        <h3>Preemption has a residual</h3>
+        <p>When B arrives, F has already run for 1 unit. F must resume from 1, not from 0. That breakpoint is part of the state.</p>
+      </article>
+      <article class="mini-card">
+        <span class="mini-index">C</span>
+        <h3>The rule is the scheduler</h3>
+        <p>"Highest priority on the core" is not an annotation. It is an operational rule that decides which transition may fire next.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------------- model -->
+  <section class="chapter" id="model">
+    <div class="chapter-head">
+      <p class="kicker">02 · The model</p>
+      <h2>Tasks become tokens. Timing becomes intervals.</h2>
+      <p class="chapter-lede">
+        PTPN lowers the task graph into a place/transition net. The structure
+        records what can happen; the annotations record when it may happen.
+        Nothing about the schedule is hidden in a side table.
+      </p>
+    </div>
+
+    <div class="model-layout">
+      <div class="model-stage panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Lowered net</p>
+            <h3>same example, as places and transitions</h3>
+          </div>
+          <span class="chip">resume policy · no core place</span>
+        </div>
+        <div class="net-wrap" id="model-net" aria-label="PTPN structure for A, B and F"></div>
+        <div class="net-legend" id="model-legend">
+          <span><i class="lg place"></i>place (state)</span>
+          <span><i class="lg token"></i>token (current state)</span>
+          <span><i class="lg exec"></i>timed execution</span>
+          <span><i class="lg control"></i>zero-time control</span>
+          <span><i class="lg period"></i>periodic release</span>
+        </div>
+      </div>
+
+      <div class="model-notes">
+        <article class="note-card" data-highlight="chain">
+          <p class="eyebrow">1 · Task chain</p>
+          <h3>A task is an alternating place/transition path.</h3>
+          <p><span class="mono">entry → get_core → ready → exec → exit</span>. The token is the current state of the task. A timed transition is an execution segment, not a label on the whole task.</p>
+        </article>
+        <article class="note-card" data-highlight="period">
+          <p class="eyebrow">2 · Periodic release</p>
+          <h3>A clock can create a token.</h3>
+          <p><span class="mono">A_period → A_fire [20,20] → Aentry</span>. The release transition carries time; it is not a CPU-scheduled step.</p>
+        </article>
+        <article class="note-card" data-highlight="dependency">
+          <p class="eyebrow">3 · Dependency</p>
+          <h3>An edge becomes a bridge transition.</h3>
+          <p><span class="mono">Aexit → A_to_B [1,1] → Bentry</span>. The delay is explicit. A fork/join would wire directly into a sync transition instead.</p>
+        </article>
+        <article class="note-card" data-highlight="core">
+          <p class="eyebrow">4 · Core and priority</p>
+          <h3>The core is a scheduling attribute.</h3>
+          <p>Under the resume policy there is no core token to steal. A transition carries <span class="mono">core = 0</span> and <span class="mono">priority = 97</span>; the firing rule keeps at most one task per core.</p>
+        </article>
+        <article class="note-card" data-highlight="exec">
+          <p class="eyebrow">5 · Time</p>
+          <h3>Only execution and release transitions consume time.</h3>
+          <p>Acquire, lock, fork/join and connector transitions are zero-time. This is why the net can represent a schedule without inventing a global clock tick.</p>
+        </article>
+      </div>
+    </div>
+
+    <div class="mapping-table panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">Physical → formal</p>
+          <h3>What each element means</h3>
+        </div>
+        <span class="chip">same net, named</span>
+      </div>
+      <div class="map-grid">
+        <div class="map-head">Physical object</div><div class="map-head">PTPN element</div><div class="map-head">In this example</div>
+        <div>Task</div><div>alternating place / transition chain</div><div class="mono">Aentry → Aget_core → Aready → Aexec → Aexit</div>
+        <div>Currently running</div><div>token in the chain + active execution transition</div><div>A runs while <span class="mono">Aexec ∈ E<sub>pri</sub></span></div>
+        <div>CPU core</div><div>transition attribute + firing rule</div><div class="mono">core 0</div>
+        <div>Execution time</div><div>timed transition interval</div><div class="mono">Aexec [4,6] · Bexec [2,3] · Fexec [2,10]</div>
+        <div>Dependency</div><div>bridge transition with a delay interval</div><div class="mono">Aexit → A_to_B [1,1] → Bentry</div>
+        <div>Priority</div><div>transition attribute consumed by E<sub>pri</sub></div><div class="mono">B 98 &gt; A 97 &gt; F 96</div>
+        <div>Lock (not in this example)</div><div>resource place holding one token</div><div>adds hold places and lock acquisition transitions</div>
+      </div>
+    </div>
+
+    <div class="stage-strip" id="stage-strip" aria-label="TDG to PTPN lowering stages">
+      <button type="button" data-stage="0"><span>01</span>Vertices<small>task → chain</small></button>
+      <button type="button" data-stage="1"><span>02</span>Edges<small>dependency → bridge</small></button>
+      <button type="button" data-stage="2"><span>03</span>Bindings<small>start / periodic / end</small></button>
+      <button type="button" data-stage="3"><span>04</span>Preemption<small>resume: rule only</small></button>
+      <button type="button" data-stage="4"><span>05</span>Resources<small>core attributes, locks</small></button>
+      <p class="stage-caption" id="stage-caption">Pick a lowering stage to highlight the corresponding elements.</p>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- firing -->
+  <section class="chapter chapter-wide" id="firing">
+    <div class="chapter-head">
+      <p class="kicker">03 · The firing rule</p>
+      <h2>The scheduler is a filter over enabled transitions.</h2>
+      <p class="chapter-lede">
+        At every state, the net computes three sets. A task can be structurally
+        ready and still not run. The difference between the first two sets is
+        exactly the scheduling decision.
+      </p>
+      <div class="rule-strip" aria-label="Firing rule">
+        <span><b>E<sub>struct</sub></b> every transition with enough tokens</span>
+        <span class="rule-arrow">→</span>
+        <span><b>E<sub>pri</sub></b> per-core highest priority</span>
+        <span class="rule-arrow">→</span>
+        <span><b>R</b> enabled, suspendable, not selected</span>
+      </div>
+    </div>
+
+    <div class="firing-layout">
+      <div class="firing-main">
+        <div class="panel net-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Live marking</p>
+              <h3 id="firing-state-title">State S0</h3>
+            </div>
+            <div class="state-meta">
+              <span class="chip mono" id="firing-step">step 0 / 0</span>
+              <span class="chip mono" id="firing-time">t = 0</span>
+            </div>
+          </div>
+          <div class="net-wrap firing-net-wrap" id="firing-net" aria-label="Animated PTPN marking"></div>
+          <div class="net-legend">
+            <span><i class="lg place"></i>place</span>
+            <span><i class="lg token"></i>token</span>
+            <span><i class="lg exec active"></i>firing / active</span>
+            <span><i class="lg susp"></i>suspended</span>
+            <span><i class="lg control"></i>control</span>
+          </div>
+        </div>
+
+        <div class="panel timeline-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Core timeline</p>
+              <h3>one representative run</h3>
+            </div>
+            <div class="timeline-legend">
+              <span><i class="tl-swatch run"></i>running</span>
+              <span><i class="tl-swatch susp"></i>suspended</span>
+              <span><i class="tl-swatch wait"></i>waiting</span>
+            </div>
+          </div>
+          <div class="timeline" id="firing-timeline" aria-label="Core timeline"></div>
+          <p class="fine" id="timeline-note">
+            The state class represents every timing in the interval. This run
+            picks one admissible value; switch to “earliest” to see another.
+          </p>
+        </div>
+      </div>
+
+      <aside class="firing-rail">
+        <div class="panel narration-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">What just happened</p>
+              <h3 id="firing-phase">Ready</h3>
+            </div>
+            <span class="chip mono" id="firing-fired">—</span>
+          </div>
+          <p class="narration" id="firing-narration" aria-live="polite">
+            Press “Next” to fire the first transition.
+          </p>
+          <div class="firing-controls">
+            <button class="btn ghost" id="fire-prev" type="button" aria-label="Previous step">← Prev</button>
+            <button class="btn primary" id="fire-next" type="button">Next →</button>
+            <button class="btn ghost" id="fire-play" type="button" aria-pressed="false">Play</button>
+            <button class="btn ghost" id="fire-reset" type="button">Reset</button>
+          </div>
+          <div class="mode-toggle" role="group" aria-label="Timing mode">
+            <button type="button" class="seg active" data-mode="worst">worst case</button>
+            <button type="button" class="seg" data-mode="earliest">earliest</button>
+          </div>
+          <div class="step-dots" id="firing-dots" aria-hidden="true"></div>
+        </div>
+
+        <div class="panel sets-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">The filter</p>
+              <h3>enabled sets</h3>
+            </div>
+            <span class="chip mono" id="sets-count">0 / 0 / 0</span>
+          </div>
+          <div class="set-group">
+            <h4>E<sub>struct</sub> <span>structurally enabled</span></h4>
+            <div class="chips" id="set-struct"></div>
+          </div>
+          <div class="set-group">
+            <h4>E<sub>pri</sub> <span>selected on the core</span></h4>
+            <div class="chips" id="set-priority"></div>
+          </div>
+          <div class="set-group">
+            <h4>R <span>suspended (frozen)</span></h4>
+            <div class="chips" id="set-suspended"></div>
+          </div>
+          <p class="why-now" id="firing-why"></p>
+        </div>
+
+        <div class="panel clocks-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Time representation</p>
+              <h3>execution clocks</h3>
+            </div>
+            <span class="chip mono">DBM</span>
+          </div>
+          <div class="clock-rack" id="firing-clocks"></div>
+          <details class="dbm-details" id="firing-dbm-details">
+            <summary>state-class zone (raw DBM)</summary>
+            <pre id="firing-dbm">—</pre>
+          </details>
+        </div>
+      </aside>
+    </div>
+
+    <div class="verdict-strip" id="firing-verdict" hidden>
+      <div>
+        <p class="eyebrow">Run complete</p>
+        <h3>F exits at t = <span id="verdict-f-exit">19</span>.</h3>
+        <p>The analyzer's worst-case response bound for F is <span id="verdict-wcrt">19</span>; its WCET is <span id="verdict-wcet">10</span>.</p>
+      </div>
+      <div class="verdict-facts">
+        <span><b id="verdict-interference">3</b> interference</span>
+        <span><b id="verdict-states">17</b> state classes</span>
+        <span><b id="verdict-exact">exact</b> verdict</span>
+      </div>
+      <a class="btn ghost" href="#policies">Now change the rule →</a>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- policies -->
+  <section class="chapter" id="policies">
+    <div class="chapter-head">
+      <p class="kicker">04 · One model, many rules</p>
+      <h2>Change the firing rule, not the task graph.</h2>
+      <p class="chapter-lede">
+        The net records the possible behaviours. A scheduling policy is an
+        operational answer to one question: given the enabled transitions, who
+        may run on this core? The same source model can be analysed under
+        different rules.
+      </p>
+    </div>
+
+    <div class="policy-layout">
+      <div class="policy-list" id="policy-list" role="tablist" aria-label="Scheduling policies">
+        <button type="button" class="policy-card active" data-policy="fixed" role="tab" aria-selected="true">
+          <span class="policy-code">fixed</span>
+          <strong>Static priority</strong>
+          <small>highest declared priority wins; ties by transition index</small>
+        </button>
+        <button type="button" class="policy-card" data-policy="rm" role="tab" aria-selected="false">
+          <span class="policy-code">rm</span>
+          <strong>Rate monotonic</strong>
+          <small>priority recomputed from the period</small>
+        </button>
+        <button type="button" class="policy-card" data-policy="dm" role="tab" aria-selected="false">
+          <span class="policy-code">dm</span>
+          <strong>Deadline monotonic</strong>
+          <small>priority recomputed from the relative deadline</small>
+        </button>
+        <button type="button" class="policy-card" data-policy="restart" role="tab" aria-selected="false">
+          <span class="policy-code">restart</span>
+          <strong>Structural restart</strong>
+          <small>the lowering adds a preemption sub-net</small>
+        </button>
+        <button type="button" class="policy-card" data-policy="edf" role="tab" aria-selected="false">
+          <span class="policy-code">edf</span>
+          <strong>Earliest deadline first</strong>
+          <small>per-job deadlines; guarded supported class</small>
+        </button>
+        <button type="button" class="policy-card" data-policy="fifo" role="tab" aria-selected="false">
+          <span class="policy-code">fifo</span>
+          <strong>First in, first out</strong>
+          <small>arrival order; no preemption by priority</small>
+        </button>
+      </div>
+
+      <div class="policy-detail panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow" id="policy-eyebrow">Firing rule</p>
+            <h3 id="policy-title">Static priority</h3>
+          </div>
+          <span class="chip" id="policy-exit">exit —</span>
+        </div>
+        <p class="policy-rule" id="policy-rule"></p>
+        <div class="policy-facts" id="policy-facts"></div>
+        <div class="policy-result" id="policy-result"></div>
+        <div class="policy-note" id="policy-note"></div>
+        <div class="same-net">
+          <span class="same-net-badge">same places · same transitions</span>
+          <p id="policy-structure-note">The lowering is unchanged under fixed, RM, DM, EDF and FIFO; only the rule that computes E<sub>pri</sub> changes.</p>
+        </div>
+        <div class="policy-loading" id="policy-loading" hidden>Running the analyzer for this rule…</div>
+      </div>
+    </div>
+
+    <article class="panel policy-caveat">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">Supported classes</p>
+          <h3>A rule is not a magic switch</h3>
+        </div>
+      </div>
+      <p>
+        EDF and FIFO in this analyzer are restricted to statically partitioned
+        systems with one in-flight job per task, no locks, no fork/join and no
+        dependency-driven releases. The <span class="mono">hw</span> example has
+        a dependency, so those rules are rejected with
+        <span class="mono">E-UNS-001</span> rather than silently approximated.
+        Structural restart is a lowering variant, not a pure firing-rule swap:
+        it adds preemption transitions to the net.
+      </p>
+    </article>
+  </section>
+
+  <!-- ------------------------------------------------------------------ loop -->
+  <section class="chapter chapter-wide" id="loop">
+    <div class="chapter-head">
+      <p class="kicker">05 · The LLM loop</p>
+      <h2>Let the model be generated. Let the analyzer be the judge.</h2>
+      <p class="chapter-lede">
+        An LLM can draft the architecture, but it cannot certify its own timing.
+        PTPN gives the model three interchangeable front doors, a disciplined
+        timing hand-off, and a verdict that can be fed back into the next
+        revision.
+      </p>
+    </div>
+
+    <div class="loop-grid">
+      <article class="panel forms-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Three front doors</p>
+            <h3>One pipeline, three representations</h3>
+          </div>
+          <div class="form-tabs" id="form-tabs" role="tablist" aria-label="Model forms">
+            <button type="button" class="active" data-form="rtsl" role="tab" aria-selected="true">RTSL</button>
+            <button type="button" data-form="json" role="tab" aria-selected="false">TDG JSON</button>
+            <button type="button" data-form="ptpn" role="tab" aria-selected="false">PTPN</button>
+          </div>
+        </div>
+        <p class="form-intro" id="form-intro"></p>
+        <div class="code-frame">
+          <div class="code-head">
+            <span id="form-filename">model.rtsl</span>
+            <button class="link-btn" id="form-copy" type="button">copy</button>
+          </div>
+          <pre class="code" id="form-code" tabindex="0"></pre>
+        </div>
+        <div class="form-tradeoffs" id="form-tradeoffs"></div>
+        <p class="fine">
+          We do not claim one form is best for LLMs. The repository exposes all
+          three precisely so that this can be measured rather than assumed.
+        </p>
+      </article>
+
+      <article class="panel loop-flow">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">The contract</p>
+            <h3>Generate → check → time → analyze → report</h3>
+          </div>
+          <span class="chip">rt-system skill</span>
+        </div>
+        <ol class="flow" id="loop-flow">
+          <li class="flow-step active" data-flow="generate"><span>1</span><div><b>Generate</b><small>RTSL, TDG JSON or PTPN</small></div></li>
+          <li class="flow-step" data-flow="check"><span>2</span><div><b>Check</b><small>parse, validate, list pending timing</small></div></li>
+          <li class="flow-step" data-flow="time"><span>3</span><div><b>Time</b><small>confirm every unknown WCET</small></div></li>
+          <li class="flow-step" data-flow="analyze"><span>4</span><div><b>Analyze</b><small>WCRT, verdict, witness, exit code</small></div></li>
+          <li class="flow-step" data-flow="report"><span>5</span><div><b>Report &amp; revise</b><small>feed facts back, not vibes</small></div></li>
+        </ol>
+        <div class="flow-detail" id="loop-detail">
+          <p><strong>Generate.</strong> Start from the requirements: task kinds,
+          periods, deadlines, priorities, cores, locks and dependencies. The
+          model is a claim; it is not yet a result.</p>
+        </div>
+      </article>
+    </div>
+
+    <article class="panel timing-panel" id="timing-panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">The only unknown</p>
+          <h3>Where does execution time come from?</h3>
+        </div>
+        <span class="chip warn" id="timing-pending-count">pending —</span>
+      </div>
+
+      <div class="timing-grid">
+        <div class="timing-source">
+          <p class="timing-lede" id="timing-lede">
+            The model can declare <span class="mono">time measured by llm</span>.
+            <span class="mono">ptpn check</span> accepts the model and returns the
+            pending tasks. The time must be filled before analysis.
+          </p>
+          <div class="source-cards" id="timing-sources" role="radiogroup" aria-label="Timing source">
+            <button type="button" class="source-card active" data-source="manual" role="radio" aria-checked="true">
+              <span class="source-icon">01</span>
+              <strong>User-supplied bound</strong>
+              <small>A datasheet or measurement the user trusts. Write <span class="mono">certified by "tool"</span> only for a real bound.</small>
+            </button>
+            <button type="button" class="source-card" data-source="llm" role="radio" aria-checked="false">
+              <span class="source-icon">02</span>
+              <strong>LLM measures a single-core run</strong>
+              <small>Run the task alone, record intervals, keep <span class="mono">measured by llm</span>. Not a certified WCET.</small>
+            </button>
+            <button type="button" class="source-card" data-source="tool" role="radio" aria-checked="false">
+              <span class="source-icon">03</span>
+              <strong>Generated harness + external tool</strong>
+              <small>The LLM writes a single-core harness; a timing tool produces the intervals. Write <span class="mono">estimated by "tool"</span>, or <span class="mono">certified by "tool"</span> only for a real bound.</small>
+            </button>
+          </div>
+          <div class="provenance-note" id="provenance-note"></div>
+        </div>
+
+        <div class="timing-form">
+          <div class="pending-card" id="pending-card"></div>
+          <div class="interval-grid" id="interval-grid"></div>
+          <label class="certify-row" id="certify-row">
+            <input type="checkbox" id="timing-certified">
+            <span>These intervals are a certified upper bound, not an estimate.</span>
+          </label>
+          <div class="timing-actions">
+            <button class="btn primary" id="timing-fill" type="button">Fill timing &amp; analyze</button>
+            <button class="btn ghost" id="timing-reset" type="button">Reset</button>
+          </div>
+          <div class="timing-result" id="timing-result" hidden></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel repair-panel" id="repair-panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">When the verdict is “misses”</p>
+          <h3>Send facts back to the LLM</h3>
+        </div>
+        <span class="chip warn" id="repair-exit">exit 6</span>
+      </div>
+      <div class="repair-grid">
+        <div class="repair-facts" id="repair-facts"></div>
+        <div class="repair-prompt">
+          <div class="code-head">
+            <span>revision prompt</span>
+            <button class="link-btn" id="repair-copy" type="button">copy prompt</button>
+          </div>
+          <pre class="code" id="repair-text" tabindex="0"></pre>
+        </div>
+      </div>
+      <p class="fine">
+        Design changes are the user's decision. The prompt asks for a proposed
+        diff and its consequences; it does not silently rewrite periods,
+        priorities or provenance to make a diagnostic disappear.
+      </p>
+    </article>
+  </section>
+
+  <!-- ---------------------------------------------------------------- footer -->
+  <footer class="footer">
+    <div>
+      <p class="kicker">PTPN</p>
+      <h2>See the whole machine.</h2>
+      <p class="lede">The story uses the <span class="mono">hw</span> example. The workbench opens the same analyzer on your own RTSL, TDG JSON or PTPN source.</p>
+    </div>
+    <div class="footer-actions">
+      <a class="btn primary" href="/workbench">Open the workbench</a>
+      <a class="btn ghost" href="/api/examples">Browse examples</a>
+    </div>
+    <p class="footer-meta">
+      <span id="story-generated">—</span> ·
+      <a href="/docs/usage.md">usage</a> ·
+      <a href="/docs/rtsl.md">RTSL</a> ·
+      <a href="/docs/diagnostics.md">diagnostics</a>
+    </p>
+  </footer>
+
+</main>
+
+<script src="demo-data.js"></script>
+<script src="story.js"></script>

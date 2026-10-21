@@ -51,6 +51,55 @@ def _js_payload(payload) -> str:
     return "window.PTPN_DEMO_DATA = " + text + ";\n"
 
 
+STORY_POLICIES = [
+    ("fixed", ""),
+    ("rm", "rm"),
+    ("dm", "dm"),
+    ("restart", "fixed_prior_with_restart"),
+    ("edf", "edf"),
+    ("fifo", "fifo"),
+]
+
+
+def _policy_summary(response) -> dict:
+    """Compact analyzer result used by the story's policy comparison."""
+    metrics = response.get("metrics") or {}
+    analysis = response.get("analysis") or {}
+    verdicts = {
+        task.get("task"): task for task in analysis.get("tasks") or []
+    }
+    tasks = []
+    for task in metrics.get("tasks") or []:
+        name = task.get("name")
+        verdict = verdicts.get(name) or {}
+        tasks.append(
+            {
+                "name": name,
+                "priority": task.get("priority"),
+                "wcet": task.get("wcet"),
+                "wcrt": task.get("wcrt"),
+                "verdict": verdict.get("verdict") or task.get("verdict"),
+            }
+        )
+    return {
+        "exit_code": response.get("exit_code"),
+        "ok": response.get("ok"),
+        "states": metrics.get("states"),
+        "exact": metrics.get("exact"),
+        "schedulability": analysis.get("schedulability"),
+        "tasks": tasks,
+        "diagnostics": [
+            {
+                "code": diag.get("code"),
+                "severity": diag.get("severity"),
+                "subject": diag.get("subject"),
+                "message": diag.get("message"),
+            }
+            for diag in response.get("diagnostics") or []
+        ],
+    }
+
+
 def _summary_line(index: int, total: int, example, response) -> str:
     metrics = response.get("metrics")
     analysis = response.get("analysis") or {}
@@ -150,10 +199,33 @@ def generate(output_path: Path = None) -> int:
         "repo_root": "",
         "build_dir": "",
     }
+
+    # The story compares the same hw model under several firing rules.  Keep
+    # only the compact verdict fields here; the full responses stay in
+    # ``examples`` above.
+    story = {"policies": {}}
+    hw = next((example for example in examples if example["id"] == "hw"), None)
+    if hw is not None:
+        for label, policy in STORY_POLICIES:
+            options = dict(hw["options"])
+            options["policy"] = policy
+            response = server.run_analysis(
+                hw["source"], hw["name"], hw["kind"], "analyze", options
+            )
+            story["policies"][label] = _policy_summary(response)
+            print(
+                "[story] policy={:<8} exit={:<3} states={}".format(
+                    label,
+                    response.get("exit_code"),
+                    story["policies"][label].get("states"),
+                )
+            )
+
     payload = {
         "generated_at": _utc_timestamp(),
         "status": demo_status,
         "examples": records,
+        "story": story,
     }
     js_text = _js_payload(payload)
     js_bytes = js_text.encode("utf-8")

@@ -27,6 +27,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -172,6 +173,20 @@ EXAMPLE_SPECS = [
         "description": "周期任务的 period 为 0，触发 E-VAL-206 校验错误（退出码 3）。",
         "tags": ["诊断", "校验错误", "E-VAL-206"],
         "options": _base_options(),
+    },
+    {
+        "id": "deadline-miss",
+        "path": "example/diagnostics/deadline-miss.rtsl",
+        "title": "截止期违约证书",
+        "kind": "rtsl",
+        "demo": True,
+        "description": (
+            "单核固定优先级下 b 的截止期被证明违约：分析器给出 R-ANA-002 "
+            "及见证序列，同时在 -m 10 处截断（E-PERF-001）。用于演示报告"
+            "回传 LLM 的修正闭环。"
+        ),
+        "tags": ["诊断", "截止期违约", "R-ANA-002", "exit 6", "见证"],
+        "options": _base_options(max_states=10),
     },
     {
         "id": "unsupported",
@@ -911,13 +926,122 @@ def _enrich_ptpn_node(node: dict, attrs: dict, shared_locks) -> None:
     node["kind"] = "unknown"
 
 
+def _parse_transition_refs(text: str) -> list:
+    """Parse the transition lists embedded in an SCG node tooltip.
+
+    The tooltip renders entries as ``T5(Aexec, priority=97, core=0)`` (and
+    ``(none)`` for the empty set).  Returning structured entries keeps the
+    story/replay layer from re-parsing display text.
+    """
+    refs = []
+    if not text:
+        return refs
+    for match in re.finditer(r"(T\d+)\(([^)]*)\)", text):
+        transition_id, body = match.groups()
+        priority = re.search(r"priority=(-?\d+)", body)
+        core = re.search(r"core=(-?\d+)", body)
+        refs.append(
+            {
+                "id": transition_id,
+                "name": body.split(",")[0].strip(),
+                "priority": int(priority.group(1)) if priority else None,
+                "core": int(core.group(1)) if core else None,
+                "suspendable": "suspendable" in body,
+            }
+        )
+    return refs
+
+
+def _parse_dbm_clocks(zone_text: str) -> list:
+    """Turn the rendered DBM matrix into per-clock bounds.
+
+    The SCG tooltip carries the canonical zone as a matrix.  The first row /
+    column are the reference clock ``x0``; for variable ``i`` the canonical
+    bounds are ``-D[0][i] <= x_i <= D[i][0]``.  ``inf`` is reported as a null
+    upper bound.
+    """
+    if not zone_text:
+        return []
+    lines = [line for line in zone_text.splitlines() if line.strip()]
+    header_index = None
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("|") and "x0" in stripped:
+            header_index = index
+            break
+    if header_index is None:
+        return []
+
+    headers = [cell.strip() for cell in lines[header_index].strip().strip("|").split("|")]
+    matrix = {}
+    for line in lines[header_index + 1 :]:
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) == len(headers) + 1:
+            matrix[cells[0]] = cells[1:]
+
+    row_zero = matrix.get("x0")
+    if not row_zero:
+        return []
+
+    def _value(raw):
+        if raw is None:
+            return None
+        raw = raw.strip()
+        if raw.lower() in ("inf", "+inf", "∞"):
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    clocks = []
+    for index, name in enumerate(headers):
+        if name == "x0" or index >= len(row_zero):
+            continue
+        row = matrix.get(name)
+        if not row:
+            continue
+        upper = _value(row[0])
+        lower_raw = _value(row_zero[index])
+        lower = 0 if lower_raw is None else max(0, -lower_raw)
+        if name.startswith("h("):
+            kind = "exec"
+        elif name.startswith("w("):
+            kind = "susp"
+        elif name.startswith("r("):
+            kind = "release"
+        elif name.startswith("chi("):
+            kind = "laxity"
+        else:
+            kind = "other"
+        transition = None
+        match = re.search(r"\(T(\d+)\)", name)
+        if match:
+            transition = "T" + match.group(1)
+        clocks.append(
+            {
+                "name": name,
+                "kind": kind,
+                "transition": transition,
+                "lower": lower,
+                "upper": upper,
+            }
+        )
+    return clocks
+
+
 def _parse_scg_detail(tooltip: str) -> dict:
     detail = {
         "elapsed": None,
         "marking": None,
         "enabled": None,
+        "e_struct": None,
         "suspended": None,
         "zone": None,
+        "e_struct_transitions": [],
+        "priority_transitions": [],
+        "suspended_transitions": [],
+        "clocks": [],
     }
     if not tooltip:
         return detail
@@ -938,6 +1062,8 @@ def _parse_scg_detail(tooltip: str) -> dict:
                     detail["elapsed"] = None
         elif stripped.startswith("Marking:"):
             detail["marking"] = value_after("Marking:", stripped)
+        elif stripped.startswith("E_struct:"):
+            detail["e_struct"] = value_after("E_struct:", stripped)
         elif stripped.startswith("E_pri"):
             colon = stripped.find(":")
             if colon != -1:
@@ -947,6 +1073,11 @@ def _parse_scg_detail(tooltip: str) -> dict:
         elif stripped == "Zone:":
             zone = "\n".join(lines[index + 1 :]).rstrip("\n")
             detail["zone"] = zone if zone.strip() else None
+
+    detail["e_struct_transitions"] = _parse_transition_refs(detail["e_struct"])
+    detail["priority_transitions"] = _parse_transition_refs(detail["enabled"])
+    detail["suspended_transitions"] = _parse_transition_refs(detail["suspended"])
+    detail["clocks"] = _parse_dbm_clocks(detail["zone"])
     return detail
 
 
@@ -1524,6 +1655,8 @@ MIME_TYPES = {
     ".ttf": "font/ttf",
     ".map": "application/json; charset=utf-8",
     ".txt": "text/plain; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8",
+    ".ebnf": "text/plain; charset=utf-8",
     ".wasm": "application/wasm",
 }
 
@@ -1670,8 +1803,11 @@ class PTPNRequestHandler(BaseHTTPRequestHandler):
                 404, {"ok": False, "error": "unknown API endpoint: " + path}
             )
             return
-        if path in ("/", "/index.html"):
-            self._serve_index(demo)
+        if path in ("/", "/story", "/story.html"):
+            self._serve_page("story.html", demo)
+            return
+        if path in ("/workbench", "/workbench/", "/index.html"):
+            self._serve_page("index.html", demo)
             return
         if path.startswith("/static/"):
             relative = unquote(path[len("/static/") :])
@@ -1686,6 +1822,10 @@ class PTPNRequestHandler(BaseHTTPRequestHandler):
             relative = unquote(path[len("/demo/") :])
             self._serve_file(_safe_resolve(DEMO_DIR, relative))
             return
+        if path.startswith("/docs/"):
+            relative = unquote(path[len("/docs/") :])
+            self._serve_file(_safe_resolve(REPO_ROOT / "docs", relative))
+            return
 
         # The page references style.css / app.js / demo-data.js relative to
         # itself, so root-level assets fall back to the static (and, in demo
@@ -1698,12 +1838,12 @@ class PTPNRequestHandler(BaseHTTPRequestHandler):
             resolved = _safe_resolve(STATIC_DIR, relative)
         self._serve_file(resolved)
 
-    def _serve_index(self, demo: bool) -> None:
+    def _serve_page(self, page_name: str, demo: bool) -> None:
         if demo:
-            demo_index = DEMO_DIR / "index.html"
-            if demo_index.is_file():
+            demo_page = DEMO_DIR / page_name
+            if demo_page.is_file():
                 try:
-                    data = demo_index.read_bytes()
+                    data = demo_page.read_bytes()
                 except OSError:
                     data = None
                 if data is not None:
@@ -1712,14 +1852,14 @@ class PTPNRequestHandler(BaseHTTPRequestHandler):
                     self._send_html(200, data)
                     return
 
-        static_index = STATIC_DIR / "index.html"
-        if static_index.is_file():
+        static_page = STATIC_DIR / page_name
+        if static_page.is_file():
             try:
-                data = static_index.read_bytes()
+                data = static_page.read_bytes()
             except OSError as exc:
-                self._send_text(500, "could not read index: {}\n".format(exc))
+                self._send_text(500, "could not read {}: {}\n".format(page_name, exc))
                 return
-            # The frontend index is authored as a fragment; wrap it here.
+            # Frontend pages are authored as fragments; wrap them here.
             data = WRAP_PREFIX + data + WRAP_SUFFIX
             self._send_html(200, data)
             return
@@ -1728,12 +1868,12 @@ class PTPNRequestHandler(BaseHTTPRequestHandler):
             "<!doctype html><html><head><meta charset=\"utf-8\">"
             "<title>PTPN web UI</title></head><body>"
             "<h1>PTPN web UI</h1>"
-            "<p><code>webapp/static/index.html</code> is missing.</p>"
+            "<p><code>webapp/static/{}</code> is missing.</p>"
             "<p>The JSON API is available at "
             "<code>/api/status</code>, <code>/api/examples</code> and "
             "<code>/api/analyze</code>.</p>"
             "</body></html>"
-        ).encode("utf-8")
+        ).format(page_name).encode("utf-8")
         self._send_html(404, message)
 
     def _serve_file(self, path) -> None:
@@ -1884,6 +2024,21 @@ class PTPNServer(ThreadingHTTPServer):
 # ---------------------------------------------------------------------------
 
 
+def _primary_lan_ip():
+    """Best-effort primary IPv4 address for the LAN URL banner.
+
+    A UDP ``connect`` never sends a packet; it only asks the kernel which
+    source address it would use for the default route.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("8.8.8.8", 80))
+            address = probe.getsockname()[0]
+            return address if address and not address.startswith("127.") else None
+    except OSError:
+        return None
+
+
 def _open_browser(url: str) -> None:
     try:
         webbrowser.open(url)
@@ -1897,8 +2052,8 @@ def main(argv=None) -> int:
     )
     parser.add_argument(
         "--host",
-        default="127.0.0.1",
-        help="bind address (default: 127.0.0.1; localhost only)",
+        default="0.0.0.0",
+        help="bind address (default: 0.0.0.0; all interfaces)",
     )
     parser.add_argument(
         "--port", type=int, default=8765, help="listen port (default: 8765)"
@@ -1911,7 +2066,7 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--demo",
         action="store_true",
-        help="serve webapp/demo/index.html and the generated demo data",
+        help="serve the generated demo data (story and workbench)",
     )
     args = parser.parse_args(argv)
 
@@ -1929,11 +2084,15 @@ def main(argv=None) -> int:
         return 1
 
     bound_host, bound_port = httpd.server_address[:2]
-    display_host = "127.0.0.1" if bound_host in ("0.0.0.0", "::", "") else bound_host
+    wildcard = bound_host in ("0.0.0.0", "::", "")
+    display_host = (_primary_lan_ip() or "127.0.0.1") if wildcard else bound_host
     url = "http://{}:{}/".format(display_host, bound_port)
 
     print("PTPN web UI" + (" (demo mode)" if args.demo else ""))
-    print("  URL:      " + url)
+    print("  Story:     " + url)
+    print("  Workbench: " + url + "workbench")
+    if wildcard and display_host != "127.0.0.1":
+        print("  Local:     http://127.0.0.1:{}/".format(bound_port))
     print(
         "  Binary:   "
         + status["binary"]
@@ -1951,7 +2110,7 @@ def main(argv=None) -> int:
     print(
         "  Demo:     "
         + (
-            "webapp/demo/index.html"
+            "generated data (webapp/demo/demo-data.js)"
             if args.demo
             else "off (use --demo for the precomputed showcase)"
         )

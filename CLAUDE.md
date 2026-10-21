@@ -47,17 +47,22 @@ Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/
 ### Webapp
 
 ```bash
-python3 webapp/server.py              # local workbench at http://127.0.0.1:8765
-python3 webapp/server.py --demo        # precomputed showcase
+python3 webapp/server.py               # story at /, workbench at /workbench
+python3 webapp/server.py --demo        # precomputed showcase (both pages)
 python3 webapp/make_demo.py            # regenerate webapp/demo/demo-data.js
-python3 webapp/build_standalone.py     # single-file demo (no server)
+python3 webapp/build_standalone.py     # single-file workbench demo
+python3 webapp/build_standalone.py --story  # single-file story demo
 ```
 
 `webapp/server.py` is a zero-dependency Python 3.9 stdlib HTTP wrapper around
 `build/ptpn`; the front-end is plain HTML/CSS/JS under `webapp/static/`.
-`webapp/static/index.html` is a skeleton-free fragment that the server wraps
-into a document. PTPN/SCG graph layouts use Graphviz `dot`/`neato`. Demo data is
-generated from bundled examples; do not edit `webapp/demo/demo-data.js` by hand.
+`story.html` is the narrative-first guided page; `index.html` is the analysis
+workbench. Both are skeleton-free fragments that the server wraps into a
+document. Story replay data comes from the SCG detail parsed in
+`_parse_scg_detail` (`E_struct`, `E_pri`, `suspended`, per-clock DBM bounds), not
+from browser-side scheduling logic. PTPN/SCG graph layouts use Graphviz
+`dot`/`neato`. Demo data (including `story.policies`) is generated from bundled
+examples; do not edit `webapp/demo/demo-data.js` by hand.
 
 ## Architecture
 

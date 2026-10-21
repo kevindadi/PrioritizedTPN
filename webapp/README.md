@@ -29,11 +29,13 @@ python3 webapp/server.py
 ```
 
 默认监听 `127.0.0.1:8765`，打印 URL 并自动打开浏览器。按 `Ctrl+C` 退出。
+根路径 `/` 是叙事页（Story），原有工作台在 `/workbench`。
 
 ```bash
 python3 webapp/server.py --port 8799 --no-browser   # 测试 / 无头环境
 python3 webapp/server.py --demo                      # 预计算演示模式
-python3 webapp/build_standalone.py                   # 单文件演示页（可双击/分享）
+python3 webapp/build_standalone.py                   # 单文件工作台演示页
+python3 webapp/build_standalone.py --story           # 单文件叙事演示页
 ```
 
 | 参数 | 默认值 | 说明 |
@@ -41,14 +43,27 @@ python3 webapp/build_standalone.py                   # 单文件演示页（可�
 | `--host HOST` | `127.0.0.1` | 绑定地址。请保持 localhost，见“安全说明”。 |
 | `--port PORT` | `8765` | 监听端口；传 `0` 可让系统分配。 |
 | `--no-browser` | 关闭 | 不自动打开浏览器。 |
-| `--demo` | 关闭 | 让 `/demo-data.js`、`/static/demo-data.js` 优先指向生成的 `webapp/demo/demo-data.js`；缺失时回退到 `webapp/static/demo-data.js` 占位文件。 |
+| `--demo` | 关闭 | 让 `/demo-data.js`、`/static/demo-data.js` 优先指向生成的 `webapp/demo/demo-data.js`；Story 和 Workbench 都使用这份数据。缺失时回退到 `webapp/static/demo-data.js` 占位文件。 |
 
 `--demo` 下 `/api/*` 仍会实时调用分析器；生成的 demo 数据只影响前端首屏和
 Artifact 演示，不会改变 API 行为。
 
 ### 前端
 
-`webapp/static/` 是一个无构建步骤的单页工作台（原生 HTML/CSS/JS）：
+`webapp/static/` 下有两个无构建步骤的页面（原生 HTML/CSS/JS）：
+
+**Story（`/`，`story.html` / `story.css` / `story.js`）** — 叙事优先的原理演示：
+
+- 问题章：`hw` 示例的 WCET / WCRT 差异、区间执行时间和抢占残留；
+- 模型章：TDG → PTPN 的 place/transition 映射、token、周期释放、依赖桥和核/优先级属性；
+- 发生规则章：从分析器导出的 SCG 路径逐帧回放，显示 E<sub>struct</sub> / E<sub>pri</sub> / R、DBM 时钟、核时间线和 F 被 B 抢占后从 `h=1` 恢复；
+- 策略章：同一个模型在 fixed / RM / DM / restart / EDF / FIFO 下的分析结果与 supported-class 拒绝；
+- LLM 闭环章：RTSL / TDG JSON / PTPN 三种形式、pending timing 的三种来源、`check` / `fill` / analyze，以及由 verdict + witness 生成的修复 prompt。
+
+Story 的所有状态、标记、时钟和结论都来自 `/api/analyze` 的返回（或预计算的
+`demo-data.js`）；前端不重新计算调度结果。
+
+**Workbench（`/workbench`，`index.html` / `style.css` / `app.js`）** — 原有分析工作台：
 
 - 左侧模型列表与运行选项（max states、canonicalization、reduction、policy、horizon、extrapolation）。
 - `Model` 标签页：RTSL/TDG 语法高亮编辑器、诊断行标记、pending measurement 一键填写。
@@ -62,7 +77,8 @@ dataviz 校验，状态色与序列色分离。移动端提供 `☰` 模型抽�
 
 ### 前端文件约定
 
-- `GET /` 读取 `webapp/static/index.html`。该文件是**不含
+- `GET /`（以及 `/story`）读取 `webapp/static/story.html`；`GET /workbench`
+  读取 `webapp/static/index.html`。两者都是**不含
   `<!doctype>/<html>/<head>/<body>` 的片段**，服务器会包装成完整文档后再返回：
 
   ```html
@@ -71,9 +87,12 @@ dataviz 校验，状态色与序列色分离。移动端提供 `☰` 模型抽�
   </head><body> …片段… </body></html>
   ```
 
-- 页面中的相对引用 `style.css`、`app.js`、`demo-data.js` 会从
+- 页面中的相对引用（Story 的 `story.css` / `story.js`，Workbench 的
+  `style.css` / `app.js`，以及共用的 `demo-data.js`）会从
   `webapp/static/`（`--demo` 时优先 `webapp/demo/`）解析，因此根路径
-  `/style.css` 等也可以直接访问。
+  `/story.css` 等也可以直接访问。
+- `/docs/<file>` 只读地提供仓库 `docs/` 下的文件，Story 页脚的文档链接使用
+  这个路由。
 - `webapp/static/demo-data.js` 是普通的空占位文件，由静态处理器按正常
   MIME 提供；生产/Artifact 演示数据由 `webapp/demo/demo-data.js` 提供。
 - API 和 HTML 响应都带 `Cache-Control: no-store`。
@@ -131,7 +150,9 @@ dataviz 校验，状态色与序列色分离。移动端提供 `☰` 模型抽�
 ```
 
 示例 `deadlock` 额外带有 `"render_limit": 500`，`symmetry-4` 的
-`reduction` 为 `"symmetry"`，`pipeline-20` 的 `max_states` 为 `20000`。
+`reduction` 为 `"symmetry"`，`pipeline-20` 的 `max_states` 为 `20000`；
+`deadline-miss` 使用 `max_states = 10`，返回 `R-ANA-002` + `E-PERF-001`，
+供 Story 的修复闭环展示。
 
 ### `POST /api/analyze`
 
@@ -235,7 +256,11 @@ HTTP 层错误：`400` 请求/选项非法，`411` 缺少 `Content-Length`，`41
 - SCG 节点：`label` 为 `S<n>`，`kind` 为 `state`；当
   `metrics.deadlock_states` 包含该状态编号时 `kind` 为 `deadlock`，并始终带有
   布尔字段 `deadlock`。`detail` 从 tooltip 解析：
-  `{elapsed, marking, enabled, suspended, zone}`。
+  `{elapsed, marking, enabled, e_struct, suspended, zone}`，并附带结构化集合
+  `e_struct_transitions` / `priority_transitions` / `suspended_transitions`
+  （每项含 `id`、`name`、`priority`、`core`、`suspendable`）以及
+  `clocks`（每项含 `name`、`kind`、`transition`、`lower`、`upper`）。
+  Story 的回放直接消费这些字段；`enabled` 仍是 E<sub>pri</sub> 的兼容字符串。
 - SCG 边从 label 解析 `transition`、`core`、`dwell_min/max`、`at_min/max`。
 - `edge.points` 按 tail → head 排列，已去掉 Graphviz 的 `e,`/`s,` 标记点。
 - 节点数超过 `render_limit` 时跳过布局：`nodes`/`edges` 为空、
@@ -253,21 +278,28 @@ python3 webapp/make_demo.py
 
 ```js
 window.PTPN_DEMO_DATA = {
-  "generated_at": "2026-10-20T05:06:07Z",
+  "generated_at": "2026-10-21T06:17:59Z",
   "status": { … /api/status 的内容（demo=true）… },
-  "examples": [ { …示例字段…, "source": "…", "response": { … } } ]
+  "examples": [ { …示例字段…, "source": "…", "response": { … } } ],
+  "story": { "policies": { "fixed": {…}, "rm": {…}, … } }
 };
 ```
 
-- 生成文件当前约 1.6 MB，硬上限 8 MB；超过时脚本报错且不写文件。
+- `story.policies` 保存 `hw` 示例在 fixed / RM / DM / restart / EDF / FIFO 下的
+  紧凑结果（退出码、状态数、可调度性、每任务 WCRT/verdict、诊断），供 Story
+  的策略章离线对比。
+- 生成文件当前约 3 MB，硬上限 8 MB；超过时脚本报错且不写文件。
 - 所有 `</` 都转义为 `<\/`，因此可以安全嵌入 HTML；`</script>` 不会出现。
 - 脚本会打印每个示例的退出码、状态数、metrics 是否存在、SCG/PTPN 节点/边数
   和该示例响应的字节数。
 - 可用 `python3 webapp/make_demo.py OUTPUT_PATH` 写到其他位置。
 - 生成单文件、无需服务器的演示页：
-  `python3 webapp/build_standalone.py` →
-  `webapp/demo/ptpn-chronograph-demo.html`（内联 CSS/JS/预计算数据，可直接用
-  浏览器打开或发给别人；Google Fonts 不可用时回退到系统字体）。
+  - 工作台：`python3 webapp/build_standalone.py` →
+    `webapp/demo/ptpn-chronograph-demo.html`；
+  - Story：`python3 webapp/build_standalone.py --story` →
+    `webapp/demo/ptpn-story-demo.html`。
+  两者都内联 CSS/JS/预计算数据，可直接用浏览器打开或发给别人；Google Fonts
+  不可用时回退到系统字体。
 - 校验：`node --check webapp/demo/demo-data.js`。
 - 演示数据只针对演示示例生成；`--demo` 页面缺少 `webapp/demo/demo-data.js`
   时会回退到 `webapp/static/demo-data.js` 的空占位文件（前端随后走实时 API）。
@@ -284,4 +316,5 @@ window.PTPN_DEMO_DATA = {
   临时文件，请求结束（包括超时/异常）后递归删除。
 - 请求体上限 4 MB、源码上限 2 MB、分析超时 180 秒、DOT 布局超时 60 秒。
 - 静态文件处理器解析真实路径并做 `commonpath` 检查，拒绝 `..`、反斜杠和
-  指向目录外的符号链接。
+  指向目录外的符号链接。`/docs/` 只读地提供仓库 `docs/` 下的文件（同样受
+  `commonpath` 检查），供 Story 页脚链接使用。
