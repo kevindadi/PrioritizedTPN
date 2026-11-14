@@ -87,6 +87,11 @@ endif()
 
 project(PTPN LANGUAGES CXX)
 
+# Optional Qt 6 desktop front-end (desktop/). It is off by default so the
+# analyzer, tests and CI do not need Qt; enable with -DPTPN_BUILD_DESKTOP=ON and
+# a Qt installation on CMAKE_PREFIX_PATH.
+option(PTPN_BUILD_DESKTOP "Build the Qt 6 desktop analyzer" OFF)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -590,6 +595,10 @@ target_link_libraries(ptpn PRIVATE ptpn_cli CLI11::CLI11 ptpn_platform spdlog::s
 
 # Test subdirectory
 add_subdirectory(test)
+
+if(PTPN_BUILD_DESKTOP)
+    add_subdirectory(desktop)
+endif()
 
 # Expose compile_commands.json at repo root for IDE/clangd. Only the Ninja and
 # Makefile generators actually write the file (the Visual Studio generator

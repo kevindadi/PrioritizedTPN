@@ -44,6 +44,10 @@ Tests are discovered with `gtest_discover_tests` and `WORKING_DIRECTORY` = repo 
 
 Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/golden/*`; the header comment documents the exact commands that regenerate each golden file. Golden comparison is skipped when not compiled with libstdc++ or when building on Windows (`_WIN32`, CRLF) — regenerate goldens only on POSIX libstdc++ builds.
 
+### Desktop (Qt, optional)
+
+`desktop/` is an optional Qt 6 Widgets front-end. It launches `ptpn` as a child process, parses the PTPN/SCG DOT and metrics JSON exports, and renders an interactive Petri net, the state-class graph and a metrics dashboard. It is outside the core build graph: enable it with `-DPTPN_BUILD_DESKTOP=ON` (the `windows-desktop` preset does) and install the reduced `qtbase` port from `desktop/vcpkg.json` into `D:/vcpkg/installed` first. See `desktop/README.md`.
+
 ## Architecture
 
 The pipeline is `parse → model → lowering → analysis`, mirrored one-to-one by the static-library layering in `CMakeLists.txt` (each target declares only the deps it uses; `PTPN_core` is the INTERFACE aggregate for tests). The CLI is its own layer and depends one-way on the application layer:

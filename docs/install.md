@@ -76,6 +76,31 @@ during the first configure (Boost is built for MinGW once).
 The golden-output tests are skipped on Windows: the committed fixtures are
 LF-only outputs produced by libstdc++ on POSIX, and text-mode writes add CRLF.
 
+### Desktop analyzer (Qt 6, optional)
+
+The optional Qt Widgets front-end lives in [`desktop/`](../desktop/README.md).
+It runs the built `ptpn` CLI, renders the exported Petri net and state-class
+graph, and adds an interactive token game plus a metrics dashboard. It is off by
+default (`PTPN_BUILD_DESKTOP`) so the analyzer and tests never require Qt.
+
+Build the reduced Qt base port once (Widgets + PNG only), then configure the
+desktop preset:
+
+```bat
+cd desktop
+D:\vcpkg\vcpkg.exe install --triplet x64-mingw-dynamic ^
+  --host-triplet x64-mingw-dynamic --x-install-root=D:\vcpkg\installed
+cd ..
+cmake --preset windows-desktop
+cmake --build --preset windows-desktop
+cmake-build-desktop-mingw\ptpn_desktop.exe
+```
+
+In CLion select the `windows-desktop` preset with the MinGW toolchain. The
+post-build step copies the Qt/MinGW runtime next to `ptpn_desktop.exe`. See
+[desktop/README.md](../desktop/README.md) for details and the `D:\mingw64`
+junction workaround for `windres` and paths containing spaces.
+
 vcpkg auto-detection is off by default on Linux and macOS. Re-enable it with
 `-DPTPN_USE_VCPKG=ON` when `VCPKG_ROOT` is set. On **Apple Silicon**, pass a
 triplet that matches the host to avoid the `x64-osx` / `arm64` mismatch that
