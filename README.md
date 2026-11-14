@@ -63,51 +63,6 @@ source.
 - **MCP server**: `ptpn mcp` exposes check/analyze/describe/fill/explain as
   tools over stdio JSON-RPC for LLM clients
 
-## Webapp
-
-A zero-dependency local web UI lives in [`webapp/`](webapp/README.md). It wraps
-`build/ptpn` in a small Python HTTP server and ships two front-ends:
-
-### Story (default at `/`)
-
-A guided, animated explanation of the method:
-
-- why WCET is not a schedule, using the `hw` fixed-priority example;
-- TDG → PTPN lowering mapped to places, tokens, timed transitions and priorities;
-- a step-through replay of the state-class graph: time elapse, firing,
-  E<sub>struct</sub> / E<sub>pri</sub> / suspended sets, DBM clocks and the
-  preemption of F by B;
-- a policy comparison on the same model (fixed, RM, DM, structural restart,
-  EDF, FIFO), including the analyzer's supported-class rejections;
-- the LLM workflow: RTSL / TDG JSON / PTPN front doors, pending
-  `measured by llm` timing, `check` / `fill` / analyze, and a repair prompt built
-  from the analyzer's verdict and witness.
-
-### Workbench (at `/workbench`)
-
-The original analysis workbench:
-
-- an RTSL/TDG editor with validation, line diagnostics, and pending
-  `measured by llm` measurement filling;
-- interactive TDG, PTPN, and state-class graphs (pan/zoom, inspectors);
-- WCRT/WCET envelopes, per-core utilization, a response-ratio dial, lock
-  contention, and the full metrics table;
-- a bottom run log with the analyzer's `[STATS]` timing lines.
-
-```bash
-./example/build.py                    # build the analyzer first
-python3 webapp/server.py              # story: http://127.0.0.1:8765/
-                                      # workbench: http://127.0.0.1:8765/workbench
-python3 webapp/server.py --demo       # precomputed showcase (no live API needed)
-python3 webapp/make_demo.py           # regenerate webapp/demo/demo-data.js
-python3 webapp/build_standalone.py    # single-file workbench demo
-python3 webapp/build_standalone.py --story  # single-file story demo
-```
-
-The front-end is plain HTML/CSS/JS with no build step. The same pages are used
-for the local live server and the precomputed demo; `--demo` swaps in
-`webapp/demo/demo-data.js`.
-
 ## Pipeline
 
 ```text

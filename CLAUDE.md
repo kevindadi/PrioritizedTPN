@@ -30,8 +30,6 @@ Binaries: `build/ptpn` (analyzer CLI), `build/test/ptpn_test` (unit tests).
 ./build/ptpn rtsl -f model.rtsl [--export-tdg PATH]      # full pipeline; --export-tdg writes JSON
 ```
 
-The end-to-end workflow (clarify -> write -> check -> fill -> analyze -> report) and the per-code action table live in `.claude/skills/rt-system/SKILL.md` (repo-local; not built or tested).
-
 ### Tests
 
 ```bash
@@ -43,26 +41,6 @@ ctest --test-dir build --output-on-failure
 Tests are discovered with `gtest_discover_tests` and `WORKING_DIRECTORY` = repo root, so tests reference `example/...` and `test/golden/...` relative to root (and the binary must be run from the repo root).
 
 Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/golden/*`; the header comment documents the exact commands that regenerate each golden file. Golden comparison is skipped when not compiled with libstdc++ (`__GLIBCXX__` guard) — regenerate goldens only on libstdc++ builds.
-
-### Webapp
-
-```bash
-python3 webapp/server.py               # story at /, workbench at /workbench
-python3 webapp/server.py --demo        # precomputed showcase (both pages)
-python3 webapp/make_demo.py            # regenerate webapp/demo/demo-data.js
-python3 webapp/build_standalone.py     # single-file workbench demo
-python3 webapp/build_standalone.py --story  # single-file story demo
-```
-
-`webapp/server.py` is a zero-dependency Python 3.9 stdlib HTTP wrapper around
-`build/ptpn`; the front-end is plain HTML/CSS/JS under `webapp/static/`.
-`story.html` is the narrative-first guided page; `index.html` is the analysis
-workbench. Both are skeleton-free fragments that the server wraps into a
-document. Story replay data comes from the SCG detail parsed in
-`_parse_scg_detail` (`E_struct`, `E_pri`, `suspended`, per-clock DBM bounds), not
-from browser-side scheduling logic. PTPN/SCG graph layouts use Graphviz
-`dot`/`neato`. Demo data (including `story.policies`) is generated from bundled
-examples; do not edit `webapp/demo/demo-data.js` by hand.
 
 ## Architecture
 
@@ -111,7 +89,7 @@ EDF/FIFO/LLF have an explicit **supported class**: static core partition, `cores
 - `src/cli/` — CLI11 layer (namespace `cli`): `main.cpp` (envelope scaffolding + dispatch), `command.h`, `option_groups.{h,cpp}`, and one file per subcommand under `commands/` (`tdg`, `rtsl`, `check`, `ptpn`, `allocate`)
 - `src/app/` — application layer (namespace `app`, no CLI11): `common` (options, legacy rendering, memory, timing helpers), `logging` (spdlog-backed timing/log helpers), `input` (RTSL + TDG loading), `check_cmd` (parse+validate only), `lowering` (TDG→PTPN adapter), `analysis` (orchestration, result diagnostics), `pipelines` (the `run_*_pipeline` entry points, public `pipelines.h`), and `allocation_cmd`.
 
-User-facing docs live in `docs/` (`install.md`, `usage.md`, `rtsl.md`, `diagnostics.md`, `architecture.md`, `json_format.md`). The diagnostics code table is authoritative in `docs/diagnostics.md`; keep new codes and behavior changes in sync with it and with the rt-system skill.
+User-facing docs live in `docs/` (`install.md`, `usage.md`, `rtsl.md`, `diagnostics.md`, `architecture.md`, `json_format.md`). The diagnostics code table is authoritative in `docs/diagnostics.md`; keep new codes and behavior changes in sync with it.
 
 ## Conventions and gotchas
 
