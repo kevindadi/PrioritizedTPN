@@ -12,12 +12,14 @@
 #include <QRadialGradient>
 #include <QRandomGenerator>
 #include <QResizeEvent>
+#include <QSet>
 #include <QToolTip>
 #include <QWheelEvent>
 #include <QtMath>
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 
 #include "theme.h"
@@ -183,19 +185,101 @@ void PetriView::layoutNodes() {
   }
 
   if (lanes.size() > 1 && lanes.size() <= 6) {
-    // Task lanes read much better than one long alternating column: each task
-    // chain becomes a horizontal row, with control/dependency arcs between rows.
+    // Task lanes read much better than one long alternating column. Order the
+    // nodes of each lane by walking the real arcs instead of sorting by layer:
+    // cycles such as A_period -> A_fire -> Aentry must keep their arrow order.
+    QVector<QVector<int>> flowAdj(count);
+    for (const PetriArc& arc : net_.arcs) {
+      const int from =
+          arc.fromPlace ? placeNode_.value(arc.from, -1) : transitionNode_.value(arc.from, -1);
+      const int to =
+          arc.fromPlace ? transitionNode_.value(arc.to, -1) : placeNode_.value(arc.to, -1);
+      if (from < 0 || to < 0 || laneKey(idOf(from)) != laneKey(idOf(to))) {
+        continue;
+      }
+      flowAdj[from].push_back(to);
+    }
+
     int laneIndex = 0;
     for (auto it = lanes.begin(); it != lanes.end(); ++it) {
       QVector<int>& lane = it.value();
-      std::sort(lane.begin(), lane.end(), [&](int lhs, int rhs) {
-        if (level.at(lhs) != level.at(rhs)) {
-          return level.at(lhs) < level.at(rhs);
+      QSet<int> laneNodes;
+      for (const int node : lane) {
+        laneNodes.insert(node);
+      }
+
+      QVector<int> ordered;
+      QSet<int> visited;
+      std::function<void(int)> walk = [&](int node) {
+        if (visited.contains(node)) {
+          return;
         }
-        return idOf(lhs) < idOf(rhs);
-      });
-      for (int index = 0; index < lane.size(); ++index) {
-        nodes_[lane.at(index)].pos =
+        visited.insert(node);
+        ordered.push_back(node);
+        for (const int next : flowAdj.at(node)) {
+          if (laneNodes.contains(next) && !visited.contains(next)) {
+            walk(next);
+          }
+        }
+      };
+
+      QVector<int> starts;
+      for (const int node : lane) {
+        bool hasIncoming = false;
+        for (const int candidate : lane) {
+          if (std::find(flowAdj.at(candidate).begin(), flowAdj.at(candidate).end(), node) !=
+              flowAdj.at(candidate).end()) {
+            hasIncoming = true;
+            break;
+          }
+        }
+        if (!hasIncoming) {
+          starts.push_back(node);
+        }
+      }
+      if (starts.isEmpty()) {
+        // A release cycle has no source. Start at the initially marked place
+        // whose outgoing transition has the most outputs (A_period -> A_fire,
+        // where A_fire forks into Aentry and the next period); this preserves
+        // the A_period -> A_fire -> Aentry arrow order.
+        int best = -1;
+        int bestOutgoing = -1;
+        for (const int node : lane) {
+          if (!nodes_.at(node).place ||
+              net_.initialMarking.value(nodes_.at(node).index, 0) <= 0) {
+            continue;
+          }
+          for (const int next : flowAdj.at(node)) {
+            const int outgoingCount = flowAdj.at(next).size();
+            if (outgoingCount > bestOutgoing) {
+              bestOutgoing = outgoingCount;
+              best = node;
+            }
+          }
+        }
+        if (best >= 0) {
+          starts.push_back(best);
+        }
+      }
+      if (starts.isEmpty()) {
+        for (const int node : lane) {
+          if (nodes_.at(node).place && net_.initialMarking.value(nodes_.at(node).index, 0) > 0) {
+            starts.push_back(node);
+          }
+        }
+      }
+      if (starts.isEmpty()) {
+        starts.push_back(lane.front());
+      }
+      for (const int start : starts) {
+        walk(start);
+      }
+      for (const int node : lane) {
+        walk(node);
+      }
+
+      for (int index = 0; index < ordered.size(); ++index) {
+        nodes_[ordered.at(index)].pos =
             QPointF(index * 165.0, (laneIndex - (lanes.size() - 1) / 2.0) * 145.0);
       }
       ++laneIndex;
@@ -282,7 +366,13 @@ void PetriView::rebuildEdges() {
     const QPointF end = edgeAnchor(to, nodes_.at(from).pos);
     const QPointF delta = end - start;
     QPainterPath path(start);
-    if (std::abs(delta.x()) >= std::abs(delta.y())) {
+    const bool sameRowBackEdge =
+        end.x() < start.x() - 1.0 && std::abs(end.y() - start.y()) < 30.0;
+    if (sameRowBackEdge) {
+      // Cycles such as A_fire -> A_period should read as a loop above the row,
+      // not as a second straight arrow overlapping the forward arc.
+      path.cubicTo(start + QPointF(-24.0, -64.0), end + QPointF(24.0, -64.0), end);
+    } else if (std::abs(delta.x()) >= std::abs(delta.y())) {
       const double direction = delta.x() >= 0 ? 1.0 : -1.0;
       path.cubicTo(start + QPointF(delta.x() * 0.45 * direction, 0.0),
                    end - QPointF(delta.x() * 0.45 * direction, 0.0), end);
