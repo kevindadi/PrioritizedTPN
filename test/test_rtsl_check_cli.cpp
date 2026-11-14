@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#if defined(__unix__) || defined(__APPLE__)
+#if !defined(_WIN32)
 #  include <sys/wait.h>
 #endif
 

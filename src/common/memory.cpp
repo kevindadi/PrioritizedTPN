@@ -1,6 +1,6 @@
 #if defined(_WIN32)
-#  include <psapi.h>
 #  include <windows.h>
+#  include <psapi.h>
 #elif defined(__APPLE__)
 #  include <mach/mach_init.h>
 #  include <mach/task.h>

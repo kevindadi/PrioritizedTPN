@@ -19,9 +19,11 @@ PTPN is a **Priority Timed Petri Net** analyzer for real-time scheduling. It low
 
 Manual CMake (CI path, system Boost): `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`. vcpkg auto-detection is off on Linux/macOS by default (`-DPTPN_USE_VCPKG=ON` re-enables); on Apple Silicon pass `-DVCPKG_TARGET_TRIPLET=arm64-osx`.
 
-`example/run.py` drives the example benchmarks (p/s/t-bench + l-bench) and resolves the `ptpn` binary via `--ptpn PATH` → `$PTPN_BUILD_DIR` → `.ptpn-build-dir` marker → `build/ptpn` (the marker and default `build/` live at the repo root, not under `example/`). `compile_commands.json` at the repo root is a symlink to the configured build directory's file (currently `build/`).
+Windows (CLion/MinGW): `cmake --preset windows-debug && cmake --build --preset windows-debug`; the presets in `CMakePresets.json` use MinGW-w64 (`x64-mingw-dynamic`), vcpkg at `D:/vcpkg`, and CLion's default `cmake-build-debug-mingw` / `cmake-build-release-mingw` directories. Put the MinGW `bin` directory on `PATH` for command-line builds; CLion's MinGW toolchain does it automatically.
 
-Binaries: `build/ptpn` (analyzer CLI), `build/test/ptpn_test` (unit tests).
+`example/run.py` drives the example benchmarks (p/s/t-bench + l-bench) and resolves the `ptpn` binary via `--ptpn PATH` → `$PTPN_BUILD_DIR` → `.ptpn-build-dir` marker → `build/ptpn` (the marker and default `build/` live at the repo root, not under `example/`). `compile_commands.json` at the repo root is a symlink to the configured build directory's file (a plain copy on Windows hosts where symlink creation is not permitted).
+
+Binaries: `build/ptpn` (analyzer CLI), `build/test/ptpn_test` (unit tests); the Windows presets place them under `cmake-build-debug-mingw/` and `cmake-build-release-mingw/`.
 
 ### RTSL commands
 
@@ -40,7 +42,7 @@ ctest --test-dir build --output-on-failure
 
 Tests are discovered with `gtest_discover_tests` and `WORKING_DIRECTORY` = repo root, so tests reference `example/...` and `test/golden/...` relative to root (and the binary must be run from the repo root).
 
-Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/golden/*`; the header comment documents the exact commands that regenerate each golden file. Golden comparison is skipped when not compiled with libstdc++ (`__GLIBCXX__` guard) — regenerate goldens only on libstdc++ builds.
+Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/golden/*`; the header comment documents the exact commands that regenerate each golden file. Golden comparison is skipped when not compiled with libstdc++ or when building on Windows (`_WIN32`, CRLF) — regenerate goldens only on POSIX libstdc++ builds.
 
 ## Architecture
 

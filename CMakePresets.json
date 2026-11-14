@@ -1,0 +1,87 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 27,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "displayName": "Windows MinGW + vcpkg (base)",
+      "description": "MinGW-w64 GCC + Ninja with the vcpkg manifest dependencies. VCPKG_ROOT points at the vcpkg checkout used on this machine; change it in one place if yours lives elsewhere.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/cmake-build-debug-mingw",
+      "environment": {
+        "VCPKG_ROOT": "D:/vcpkg"
+      },
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-dynamic"
+      }
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows MinGW Debug (Ninja + vcpkg)",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-release",
+      "displayName": "Windows MinGW Release (Ninja + vcpkg)",
+      "inherits": "windows-base",
+      "binaryDir": "${sourceDir}/cmake-build-release-mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug"
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "windows-debug",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "windows-debug"
+        },
+        {
+          "type": "build",
+          "name": "windows-debug"
+        },
+        {
+          "type": "test",
+          "name": "windows-debug"
+        }
+      ]
+    }
+  ]
+}

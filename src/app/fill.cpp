@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -489,7 +490,9 @@ int run_rtsl_fill(const FillOptions& options, ptpn::Diagnostics* diagnostics) {
         return report_failure(diagnostics, collector);
       }
     }
-    if (std::rename(temporary.c_str(), destination.c_str()) != 0) {
+    std::error_code rename_error;
+    std::filesystem::rename(temporary, destination, rename_error);
+    if (rename_error) {
       collector.add("E-INT-002", "failed to replace the output file: " + destination,
                     "output:" + destination, std::nullopt,
                     "check that the output path is writable");

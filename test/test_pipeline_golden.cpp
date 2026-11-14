@@ -54,8 +54,8 @@ std::string read_text(const std::string& path) {
 }
 
 void expect_matches_golden(const std::string& actual_path, const std::string& golden_path) {
-#ifndef __GLIBCXX__
-  GTEST_SKIP() << "golden files are generated with libstdc++";
+#if !defined(__GLIBCXX__) || defined(_WIN32)
+  GTEST_SKIP() << "golden files are generated with libstdc++ on POSIX";
 #endif
   EXPECT_EQ(read_text(actual_path), read_text(golden_path))
       << "regenerate " << golden_path << " if the change is intentional";

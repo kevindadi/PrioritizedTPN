@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#if defined(__unix__) || defined(__APPLE__)
+#if !defined(_WIN32)
 #  include <sys/wait.h>
 #endif
 
@@ -21,6 +21,14 @@
 namespace ptpn_test {
 
 inline std::string shell_quote(const std::string& value) {
+#if defined(_WIN32)
+  // cmd.exe needs double quotes around arguments that contain spaces. The CLI
+  // arguments used by these tests contain no embedded quotes or percent signs.
+  std::string quoted = "\"";
+  quoted += value;
+  quoted += '"';
+  return quoted;
+#else
   std::string quoted = "'";
   for (const char character : value) {
     if (character == '\'') {
@@ -31,6 +39,7 @@ inline std::string shell_quote(const std::string& value) {
   }
   quoted += "'";
   return quoted;
+#endif
 }
 
 inline std::string read_file(const std::string& path) {
@@ -88,6 +97,13 @@ inline CliResult run_cli(const std::vector<std::string>& arguments) {
     command += " " + shell_quote(argument);
   }
   command += " >" + shell_quote(stdout_path) + " 2>" + shell_quote(stderr_path);
+
+#if defined(_WIN32)
+  // cmd.exe strips the first and last quote when the /c payload starts with a
+  // quoted executable; wrap the whole payload so the executable and the
+  // redirection paths stay quoted.
+  command = "\"" + command + "\"";
+#endif
 
   const int status = std::system(command.c_str());
   CliResult result;

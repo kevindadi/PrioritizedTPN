@@ -5,11 +5,17 @@
 
 __pycache__/
 
-build
+build*/
+cmake-build-*/
+vcpkg_installed/
+.idea/
+.ptpn-build-dir
 tools.zip
 
 compile_commands.json
 *.json
+# Keep the CMake presets (vcpkg/CLion entry point) tracked despite the rule above
+!CMakePresets.json
 # Keep the project's Zed configuration tracked despite the `*.json` rule above
 !.zed/*.json
 paper/
@@ -22,7 +28,3 @@ paper/
 
 # Golden fixtures are committed despite the generated-artifact patterns above.
 !test/golden/**
-
-# Generated webapp demo payloads (python3 webapp/make_demo.py / build_standalone.py)
-webapp/demo/demo-data.js
-webapp/demo/ptpn-chronograph-demo.html

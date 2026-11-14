@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#if defined(__unix__) || defined(__APPLE__)
+#if !defined(_WIN32)
 #  include <sys/wait.h>
 #endif
 
@@ -288,8 +288,8 @@ TEST(RtslPipelineCli, TdgExportRemainsDotOutsideTheRtslSubcommand) {
 }
 
 TEST(RtslPipelineCli, ExportedGoldenMatchesTheCommittedTdg) {
-#ifndef __GLIBCXX__
-  GTEST_SKIP() << "golden files are generated with libstdc++";
+#if !defined(__GLIBCXX__) || defined(_WIN32)
+  GTEST_SKIP() << "golden files are generated with libstdc++ on POSIX";
 #endif
   const std::string exported = test_artifact_name(".tdg.json");
   const CliResult result = run_cli(

@@ -11,8 +11,21 @@
 
 #include <nlohmann/json.hpp>
 
-#if defined(__linux__)
+#if defined(_WIN32)
+#  define WIN32_LEAN_AND_MEAN
+#  define NOMINMAX
+#  include <windows.h>
+#elif defined(__linux__)
 #  include <unistd.h>
+#endif
+
+// The Windows CRT spells the process-stream pair with a leading underscore.
+#if defined(_WIN32)
+#  define PTPN_POPEN _popen
+#  define PTPN_PCLOSE _pclose
+#else
+#  define PTPN_POPEN popen
+#  define PTPN_PCLOSE pclose
 #endif
 
 namespace mcp {
@@ -22,6 +35,21 @@ namespace {
 using nlohmann::json;
 
 constexpr const char* kProtocolVersion = "2024-11-05";
+
+// Directory for the short-lived files written by the MCP tools. Windows has no
+// /tmp and exposes TEMP/TMP instead; POSIX uses TMPDIR with /tmp as fallback.
+std::string temporary_directory() {
+#if defined(_WIN32)
+  const char* value = std::getenv("TEMP");
+  if (value == nullptr || *value == '\0') {
+    value = std::getenv("TMP");
+  }
+  return (value != nullptr && *value != '\0') ? value : ".";
+#else
+  const char* value = std::getenv("TMPDIR");
+  return (value != nullptr && *value != '\0') ? value : "/tmp";
+#endif
+}
 
 std::string shell_quote(const std::string& value) {
 #if defined(_WIN32)
@@ -103,8 +131,8 @@ void add_flag(const json& arguments, const char* name, const char* flag,
 
 // Writes the inline `values` object to a temporary file for `--values`.
 std::string write_values_file(const json& values, std::string& error) {
-  const std::string path = std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/tmp") +
-                           "/ptpn-mcp-values-" + std::to_string(std::rand()) + ".json";
+  const std::string path = temporary_directory() + "/ptpn-mcp-values-" +
+                           std::to_string(std::rand()) + ".json";
   std::ofstream stream(path, std::ios::trunc);
   if (!stream || !(stream << values.dump(2))) {
     error = "cannot write the temporary values file " + path;
@@ -335,9 +363,8 @@ ToolResult call_tool(const std::string& name, const json& arguments, const CliRu
     }
     // allocate always writes its report file; the envelope carries the same
     // report as result.allocation, so the temporary copy is removed.
-    const std::string report_path =
-        std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/tmp") +
-        "/ptpn-mcp-alloc-" + std::to_string(std::rand()) + ".json";
+    const std::string report_path = temporary_directory() + "/ptpn-mcp-alloc-" +
+                                    std::to_string(std::rand()) + ".json";
     std::vector<std::string> args{"allocate", "-f", file, "-o", report_path};
     add_number(arguments, "objective", "--objective", args);
     add_number(arguments, "max_candidates", "--max-candidates", args);
@@ -424,9 +451,8 @@ CliRunner make_subprocess_runner(std::string executable) {
   return [executable = std::move(executable)](const std::vector<std::string>& args,
                                               std::string& stdout_text,
                                               std::string& stderr_text) {
-    const std::string stderr_path = std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR")
-                                                                     : "/tmp") +
-                                    "/ptpn-mcp-stderr-" + std::to_string(std::rand()) + ".log";
+    const std::string stderr_path = temporary_directory() + "/ptpn-mcp-stderr-" +
+                                    std::to_string(std::rand()) + ".log";
     std::string command = shell_quote(executable);
     for (const std::string& argument : args) {
       command += " " + shell_quote(argument);
@@ -436,7 +462,7 @@ CliRunner make_subprocess_runner(std::string executable) {
     stdout_text.clear();
     stderr_text.clear();
     int exit_code = 1;
-    FILE* pipe = popen(command.c_str(), "r");
+    FILE* pipe = PTPN_POPEN(command.c_str(), "r");
     if (pipe == nullptr) {
       stderr_text = "cannot spawn " + executable;
       return exit_code;
@@ -446,7 +472,7 @@ CliRunner make_subprocess_runner(std::string executable) {
     while ((read_bytes = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
       stdout_text.append(buffer.data(), read_bytes);
     }
-    const int status = pclose(pipe);
+    const int status = PTPN_PCLOSE(pipe);
 #if defined(WIFEXITED) && defined(WEXITSTATUS)
     exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 #else
@@ -464,7 +490,14 @@ CliRunner make_subprocess_runner(std::string executable) {
 }
 
 std::string default_cli_path() {
-#if defined(__linux__)
+#if defined(_WIN32)
+  std::array<char, MAX_PATH> buffer{};
+  const DWORD length =
+      GetModuleFileNameA(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+  if (length > 0 && length < buffer.size()) {
+    return std::string(buffer.data(), static_cast<std::size_t>(length));
+  }
+#elif defined(__linux__)
   std::array<char, 4096> buffer{};
   const ssize_t length = readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
   if (length > 0) {

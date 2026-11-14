@@ -90,6 +90,14 @@ project(PTPN LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# docs/diagnostics.md is embedded as generated C++ string literals and contains
+# UTF-8 glyphs (→, ≥, —). Without /utf-8, MSVC decodes the sources using the
+# ANSI code page, so the catalog ends up with bytes that are not valid UTF-8 and
+# nlohmann/json's dump() throws when the `explain` envelope is serialized.
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 # Suppress warnings from dependencies with older cmake_minimum_required
 cmake_policy(SET CMP0057 NEW)
 
@@ -150,6 +158,10 @@ add_library(ptpn_platform STATIC
     src/common/memory.cpp
 )
 target_include_directories(ptpn_platform PUBLIC src)
+if(WIN32)
+    # GetProcessMemoryInfo (src/common/memory.cpp) lives in the psapi library.
+    target_link_libraries(ptpn_platform PUBLIC psapi)
+endif()
 
 # Structured, versioned diagnostics shared by the parsers, the pipeline and
 # the CLI. nlohmann/json is a PUBLIC dependency because the envelope
@@ -579,17 +591,53 @@ target_link_libraries(ptpn PRIVATE ptpn_cli CLI11::CLI11 ptpn_platform spdlog::s
 # Test subdirectory
 add_subdirectory(test)
 
-# Expose compile_commands.json at repo root for IDE/clangd
-if(CMAKE_EXPORT_COMPILE_COMMANDS)
-    set(_compile_commands_link "${CMAKE_SOURCE_DIR}/compile_commands.json")
-    if(EXISTS "${_compile_commands_link}" AND NOT IS_SYMLINK "${_compile_commands_link}")
-        file(REMOVE "${_compile_commands_link}")
+# Expose compile_commands.json at repo root for IDE/clangd. Only the Ninja and
+# Makefile generators actually write the file (the Visual Studio generator
+# ignores CMAKE_EXPORT_COMPILE_COMMANDS), so leave any existing copy alone for
+# other generators.
+#
+# A symbolic link is the preferred form because it follows the configured build
+# directory, but Windows only permits symlink creation for elevated or
+# Developer-Mode accounts. CMake writes compile_commands.json only after
+# configure finishes, so on the first configure the copy has to be deferred to
+# build time; later configures can copy it directly.
+if(CMAKE_EXPORT_COMPILE_COMMANDS AND CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+    set(_ptpn_compile_commands_json "${CMAKE_BINARY_DIR}/compile_commands.json")
+    set(_ptpn_compile_commands_link "${CMAKE_SOURCE_DIR}/compile_commands.json")
+    if(EXISTS "${_ptpn_compile_commands_link}" AND NOT IS_SYMLINK "${_ptpn_compile_commands_link}")
+        file(REMOVE "${_ptpn_compile_commands_link}")
     endif()
-    if(NOT EXISTS "${_compile_commands_link}")
+    if(NOT EXISTS "${_ptpn_compile_commands_link}")
         file(CREATE_LINK
-            "${CMAKE_BINARY_DIR}/compile_commands.json"
-            "${_compile_commands_link}"
+            "${_ptpn_compile_commands_json}"
+            "${_ptpn_compile_commands_link}"
             SYMBOLIC
+            RESULT _ptpn_compile_commands_result
         )
+        if(NOT _ptpn_compile_commands_result STREQUAL "0")
+            if(EXISTS "${_ptpn_compile_commands_json}")
+                file(COPY_FILE
+                    "${_ptpn_compile_commands_json}"
+                    "${_ptpn_compile_commands_link}"
+                )
+                message(STATUS
+                    "compile_commands.json copied to the source tree "
+                    "(symlink unavailable: ${_ptpn_compile_commands_result})")
+            else()
+                add_custom_target(ptpn_compile_commands ALL
+                    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                        "${_ptpn_compile_commands_json}"
+                        "${_ptpn_compile_commands_link}"
+                    COMMENT "Copying compile_commands.json to the source tree"
+                    VERBATIM
+                )
+                message(STATUS
+                    "compile_commands.json will be copied on build "
+                    "(symlink unavailable: ${_ptpn_compile_commands_result})")
+            endif()
+        endif()
     endif()
+    unset(_ptpn_compile_commands_json)
+    unset(_ptpn_compile_commands_link)
+    unset(_ptpn_compile_commands_result)
 endif()

@@ -40,6 +40,42 @@ git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
 export VCPKG_ROOT=~/vcpkg
 ```
 
+**Windows (MinGW-w64 + vcpkg):**
+
+- MinGW-w64 (GCC 15) — CLion bundles one at `<CLion>/bin/mingw`; a standalone
+  x86_64 MinGW-w64 toolchain works too
+- CMake 3.27+ and Ninja — the copies bundled with CLion work
+- vcpkg checked out at `D:\vcpkg`; the manifest dependencies are installed into
+  the build tree (`cmake-build-debug-mingw/vcpkg_installed`), not globally
+
+[`CMakePresets.json`](../CMakePresets.json) sets `VCPKG_ROOT`, the
+`x64-mingw-dynamic` triplet, and CLion's default build directories
+(`cmake-build-debug-mingw` / `cmake-build-release-mingw`). Put the toolchain's
+`bin` directory on `PATH` (CLion's terminal does this when the MinGW toolchain is
+selected):
+
+```bat
+cmake --preset windows-debug
+cmake --build --preset windows-debug
+ctest --preset windows-debug
+```
+
+Change `environment.VCPKG_ROOT` in `CMakePresets.json` when vcpkg lives
+elsewhere. `compile_commands.json` is linked/copied to the repository root for
+clangd; when symlink creation is not permitted (no Developer Mode), CMake
+copies the file instead.
+
+**CLion:** open the repository. CLion loads `CMakePresets.json` under
+*Settings ▸ Build, Execution, Deployment ▸ CMake*; select the **MinGW**
+toolchain (the bundled one is preconfigured) and the `windows-debug` preset,
+then reload the project. Builds go to CLion's default `cmake-build-debug-mingw`
+directory. The `ptpn` and `ptpn_test` targets and the discovered GoogleTest
+cases appear in the run and test configurations. vcpkg runs automatically
+during the first configure (Boost is built for MinGW once).
+
+The golden-output tests are skipped on Windows: the committed fixtures are
+LF-only outputs produced by libstdc++ on POSIX, and text-mode writes add CRLF.
+
 vcpkg auto-detection is off by default on Linux and macOS. Re-enable it with
 `-DPTPN_USE_VCPKG=ON` when `VCPKG_ROOT` is set. On **Apple Silicon**, pass a
 triplet that matches the host to avoid the `x64-osx` / `arm64` mismatch that
@@ -76,6 +112,9 @@ Executables:
 
 - `build/ptpn` — analyzer CLI
 - `build/test/ptpn_test` — unit tests
+
+The Windows presets place the same binaries under `cmake-build-debug-mingw/`
+(or `cmake-build-release-mingw/`).
 
 ### Helper script (`example/build.py`)
 
@@ -125,8 +164,8 @@ ctest --test-dir build --output-on-failure
 Run the binary from the repository root: tests are discovered with
 `gtest_discover_tests` and a working directory of the repo root, and they
 reference `example/...` and `test/golden/...` relative to it. Golden
-comparisons are skipped on builds that do not use libstdc++, so regenerate
-goldens only on libstdc++ builds.
+comparisons are skipped on builds that do not use libstdc++ and on Windows
+(CRLF), so regenerate goldens only on POSIX libstdc++ builds.
 
 ## Formatting
 

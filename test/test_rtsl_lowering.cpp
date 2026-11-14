@@ -438,8 +438,8 @@ TEST(RtslLowering, JsonExportIsDeterministicAndRoundTrips) {
 }
 
 TEST(RtslLowering, GoldenJsonAndDotAreByteStable) {
-#ifndef __GLIBCXX__
-  GTEST_SKIP() << "golden files are generated with libstdc++";
+#if !defined(__GLIBCXX__) || defined(_WIN32)
+  GTEST_SKIP() << "golden files are generated with libstdc++ on POSIX";
 #endif
   ptpn::Diagnostics diagnostics;
   dsl::SourceMap source_map;

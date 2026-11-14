@@ -8,7 +8,7 @@
 #include "cli_test_helpers.h"
 #include "mcp/server.h"
 
-#if defined(__unix__) || defined(__APPLE__)
+#if !defined(_WIN32)
 #  include <cstdio>
 #  include <sys/wait.h>
 #  include <unistd.h>
@@ -222,7 +222,7 @@ TEST(McpTest, ProtocolErrorsUseJsonRpcCodes) {
   EXPECT_EQ(-32601, not_found.at("error").at("code").get<int>());
 }
 
-#if defined(__unix__) || defined(__APPLE__)
+#if !defined(_WIN32)
 TEST(McpTest, ServesTheRealBinaryEndToEnd) {
   int to_child[2];
   int from_child[2];
