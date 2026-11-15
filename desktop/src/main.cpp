@@ -9,7 +9,6 @@
 int main(int argc, char* argv[]) {
   QApplication application(argc, argv);
   application.setApplicationName(QStringLiteral("PTPN Timed Petri Lab"));
-  application.setApplicationDisplayName(QStringLiteral("PTPN  //  Timed Petri Lab"));
   application.setOrganizationName(QStringLiteral("PTPN"));
 
   if (QStyle* fusion = QStyleFactory::create(QStringLiteral("Fusion"))) {

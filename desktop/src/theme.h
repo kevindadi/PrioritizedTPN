@@ -95,6 +95,46 @@ inline QString globalStyleSheet() {
       border-radius: 9px;
       padding: 5px 12px;
     }
+    QLabel#workflowChip {
+      color: #67E8F9;
+      background: #0A1B28;
+      border: 1px solid #155E75;
+      border-radius: 8px;
+      padding: 5px 10px;
+      letter-spacing: 1px;
+    }
+    QLineEdit {
+      color: #DCE9F8;
+      background: #0B1422;
+      border: 1px solid #1E2F49;
+      border-radius: 8px;
+      padding: 5px 8px;
+      selection-background-color: #0E7490;
+    }
+    QLineEdit:focus {
+      border-color: #22D3EE;
+    }
+    QLineEdit#findBox {
+      color: #AFC4DC;
+      background: #091321;
+      border-color: #17253C;
+    }
+    QPushButton#previewButton {
+      color: #A5F3FC;
+      background: #0B1B2B;
+      border: 1px solid #164E63;
+      font-size: 8pt;
+      letter-spacing: 1px;
+    }
+    QPushButton#previewButton:hover {
+      background: #0E2B3D;
+      border-color: #22D3EE;
+    }
+    QPushButton#previewButton:disabled {
+      color: #40516A;
+      border-color: #17253C;
+      background: transparent;
+    }
     QPushButton {
       color: #DCE9F8;
       background: #111B2E;
@@ -188,6 +228,27 @@ inline QString globalStyleSheet() {
       border-radius: 10px;
       color: #8FA6C4;
       padding: 8px;
+    }
+    QPlainTextEdit#stageText {
+      background: #060C16;
+      border: none;
+      border-radius: 10px;
+      padding: 0px;
+      color: #AFC4DC;
+    }
+    QPlainTextEdit#assumptionText {
+      background: #08111D;
+      border: 1px solid #16243A;
+      border-radius: 9px;
+      padding: 8px;
+      color: #AFC4DC;
+    }
+    QPlainTextEdit#logView {
+      background: #060C16;
+      border: 1px solid #16243A;
+      border-radius: 9px;
+      padding: 7px;
+      color: #8FA6C4;
     }
     QScrollArea {
       border: none;

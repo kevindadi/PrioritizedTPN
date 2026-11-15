@@ -78,10 +78,11 @@ LF-only outputs produced by libstdc++ on POSIX, and text-mode writes add CRLF.
 
 ### Desktop analyzer (Qt 6, optional)
 
-The optional Qt Widgets front-end lives in [`desktop/`](../desktop/README.md).
-It runs the built `ptpn` CLI, renders the exported Petri net and state-class
-graph, and adds an interactive token game plus a metrics dashboard. It is off by
-default (`PTPN_BUILD_DESKTOP`) so the analyzer and tests never require Qt.
+The optional Qt Widgets workbench lives in [`desktop/`](../desktop/README.md).
+It runs the built `ptpn` CLI and presents the DAG, PTPN, state-class, timeline
+and report stages as text-first views; the PTPN/SCG graphs are explicit
+secondary previews. It is off by default (`PTPN_BUILD_DESKTOP`) so the analyzer
+and tests never require Qt.
 
 Build the reduced Qt base port once (Widgets + PNG only), then configure the
 desktop preset:
@@ -92,8 +93,8 @@ D:\vcpkg\vcpkg.exe install --triplet x64-mingw-dynamic ^
   --host-triplet x64-mingw-dynamic --x-install-root=D:\vcpkg\installed
 cd ..
 cmake --preset windows-desktop
-cmake --build --preset windows-desktop
-cmake-build-desktop-mingw\ptpn_desktop.exe
+cmake --build --preset windows-desktop --target ptpn_desktop
+cmake-build-desktop-mingw\desktop\ptpn_desktop.exe
 ```
 
 In CLion select the `windows-desktop` preset with the MinGW toolchain. The

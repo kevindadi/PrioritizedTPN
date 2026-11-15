@@ -72,6 +72,7 @@ struct AnalysisResult {
   PetriNet net;
   StateGraph scg;
   QJsonObject metrics;
+  QJsonObject tdg;
 };
 
 inline double jsonNumber(const QJsonObject& object, const char* key, double fallback = 0.0) {

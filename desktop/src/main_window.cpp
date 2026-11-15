@@ -15,6 +15,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLineEdit>
 #include <QLinearGradient>
 #include <QMimeData>
 #include <QPainter>
@@ -22,10 +23,9 @@
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QPair>
 #include <QRadialGradient>
-#include <QScrollArea>
 #include <QScrollBar>
+#include <QShortcut>
 #include <QShowEvent>
 #include <QSizePolicy>
 #include <QStatusBar>
@@ -51,10 +51,10 @@
 #endif
 
 #include "analysis_service.h"
-#include "metrics_panel.h"
-#include "petri_view.h"
-#include "state_graph_view.h"
+#include "preview_dialog.h"
+#include "text_view.h"
 #include "theme.h"
+#include "workbench_text.h"
 
 namespace {
 
@@ -63,8 +63,8 @@ constexpr double kPi = 3.14159265358979323846;
 class CompactTabWidget final : public QTabWidget {
  public:
   explicit CompactTabWidget(QWidget* parent = nullptr) : QTabWidget(parent) {}
-  QSize minimumSizeHint() const override { return QSize(220, 180); }
-  QSize sizeHint() const override { return QSize(760, 520); }
+  QSize minimumSizeHint() const override { return QSize(280, 180); }
+  QSize sizeHint() const override { return QSize(900, 560); }
 };
 
 class LogoWidget final : public QWidget {
@@ -138,35 +138,19 @@ QFrame* divider() {
 QWidget* statBlock(const QString& title, QLabel** value, const QColor& accent) {
   auto* frame = new QFrame;
   frame->setObjectName(QStringLiteral("softPanel"));
-  frame->setFixedHeight(62);
+  frame->setFixedHeight(66);
   auto* layout = new QVBoxLayout(frame);
-  layout->setContentsMargins(10, 7, 10, 7);
-  layout->setSpacing(1);
+  layout->setContentsMargins(10, 7, 10, 6);
+  layout->setSpacing(0);
   auto* label = new QLabel(title.toUpper());
   label->setStyleSheet(QStringLiteral("color:#64748B; font-size:8pt; font-weight:600;"));
   auto* number = new QLabel(QStringLiteral("—"));
-  number->setStyleSheet(QStringLiteral("color:%1; font-size:14pt; font-weight:700;")
+  number->setStyleSheet(QStringLiteral("color:%1; font-size:13pt; font-weight:700;")
                             .arg(accent.name()));
   layout->addWidget(label);
   layout->addWidget(number);
   *value = number;
   return frame;
-}
-
-QWidget* legendRow(const QColor& color, const QString& text) {
-  auto* row = new QWidget;
-  auto* layout = new QHBoxLayout(row);
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setSpacing(8);
-  auto* dot = new QLabel;
-  dot->setFixedSize(8, 8);
-  dot->setStyleSheet(QStringLiteral("background:%1; border-radius:4px;").arg(color.name()));
-  auto* label = new QLabel(text);
-  label->setStyleSheet(QStringLiteral("color:#7C8CA8; font-size:8pt;"));
-  layout->addWidget(dot);
-  layout->addWidget(label);
-  layout->addStretch();
-  return row;
 }
 
 QString formattedValue(const QJsonObject& metrics, const char* key, const QString& fallback) {
@@ -216,9 +200,22 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   setWindowIcon(QIcon(iconPixmap));
 
   QTimer::singleShot(240, this, [this] {
-    const QString demo = sourcePath(QStringLiteral("example/motivating-examples/hw.json"));
-    if (QFileInfo::exists(demo)) {
-      loadModel(demo);
+    QString startupFile;
+    for (const QString& argument : QCoreApplication::arguments().mid(1)) {
+      const QFileInfo info(argument);
+      const QString suffix = info.suffix().toLower();
+      if (info.isFile() &&
+          (suffix == QStringLiteral("rtsl") || suffix == QStringLiteral("json") ||
+           suffix == QStringLiteral("ptpn"))) {
+        startupFile = info.absoluteFilePath();
+        break;
+      }
+    }
+    if (startupFile.isEmpty()) {
+      startupFile = sourcePath(QStringLiteral("example/motivating-examples/hw.json"));
+    }
+    if (QFileInfo::exists(startupFile)) {
+      loadModel(startupFile);
     }
   });
 }
@@ -226,7 +223,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 MainWindow::~MainWindow() = default;
 
 void MainWindow::buildUi() {
-  setWindowTitle(QStringLiteral("PTPN  //  Timed Petri Lab"));
+  setWindowTitle(QStringLiteral("PTPN  //  Analysis Workbench"));
   resize(1520, 940);
   setMinimumSize(1120, 720);
   setAcceptDrops(true);
@@ -245,21 +242,39 @@ void MainWindow::buildUi() {
 
   tabs_ = new CompactTabWidget;
   tabs_->setDocumentMode(true);
-  tabs_->setMinimumSize(220, 180);
+  tabs_->setMinimumSize(280, 180);
   tabs_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
-  tabs_->addTab(buildPetriTab(), QStringLiteral("PETRI NET"));
+  tabs_->addTab(buildDagTab(), QStringLiteral("DAG"));
+  tabs_->addTab(buildPtpnTab(), QStringLiteral("PTPN"));
   tabs_->addTab(buildStateTab(), QStringLiteral("STATE SPACE"));
-  tabs_->addTab(buildMetricsTab(), QStringLiteral("TELEMETRY"));
+  tabs_->addTab(buildTimelineTab(), QStringLiteral("TIMELINE"));
+  tabs_->addTab(buildReportTab(), QStringLiteral("REPORT"));
   bodyLayout->addWidget(tabs_, 1);
   bodyLayout->addWidget(buildInspector());
   root->addWidget(body, 1);
   setCentralWidget(central);
 
   statusBar()->setSizeGripEnabled(true);
-  statusBar()->showMessage(QStringLiteral("READY  ·  waiting for a model"));
+  statusBar()->showMessage(QStringLiteral("READY  ·  text-first workbench"));
   elapsedLabel_ = new QLabel(QStringLiteral("—"));
   elapsedLabel_->setStyleSheet(QStringLiteral("color:#64748B; font-family:'Cascadia Mono';"));
   statusBar()->addPermanentWidget(elapsedLabel_);
+
+  // Keyboard-first navigation: the workbench is designed for dense text and
+  // large models, so tab switching and preview should not require the mouse.
+  for (int index = 0; index < 5; ++index) {
+    auto* shortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+%1").arg(index + 1)), this);
+    connect(shortcut, &QShortcut::activated, this,
+            [this, index] { tabs_->setCurrentIndex(index); });
+  }
+  auto* previewShortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+P")), this);
+  connect(previewShortcut, &QShortcut::activated, this, [this] {
+    if (tabs_->currentIndex() == 1) {
+      openPetriPreview();
+    } else if (tabs_->currentIndex() == 2) {
+      openStatePreview();
+    }
+  });
 }
 
 QWidget* MainWindow::buildHeader() {
@@ -277,18 +292,26 @@ QWidget* MainWindow::buildHeader() {
   auto* title = new QLabel(QStringLiteral("PTPN"));
   title->setObjectName(QStringLiteral("brand"));
   title->setFont(theme::display(20, QFont::Bold));
-  auto* subtitle = new QLabel(QStringLiteral("TIMED PETRI NET LAB"));
+  auto* subtitle = new QLabel(QStringLiteral("ANALYSIS WORKBENCH"));
   subtitle->setObjectName(QStringLiteral("brandSub"));
   subtitle->setFont(theme::mono(7, QFont::DemiBold));
   titleColumn->addWidget(title);
   titleColumn->addWidget(subtitle);
   layout->addLayout(titleColumn);
-  layout->addSpacing(18);
+  layout->addSpacing(10);
+
+  workflowChip_ = new QLabel(QStringLiteral("SPEC-FIRST"));
+  workflowChip_->setObjectName(QStringLiteral("workflowChip"));
+  workflowChip_->setAlignment(Qt::AlignCenter);
+  workflowChip_->setFixedWidth(142);
+  workflowChip_->setFont(theme::mono(7.4, QFont::DemiBold));
+  layout->addWidget(workflowChip_);
+  layout->addSpacing(6);
 
   pathChip_ = new QLabel(QStringLiteral("NO MODEL"));
   pathChip_->setObjectName(QStringLiteral("pathChip"));
   pathChip_->setFont(theme::mono(8));
-  pathChip_->setFixedWidth(330);
+  pathChip_->setFixedWidth(300);
   pathChip_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
   layout->addWidget(pathChip_);
   layout->addStretch(1);
@@ -317,11 +340,33 @@ QWidget* MainWindow::buildHeader() {
 QWidget* MainWindow::buildSidebar() {
   auto* panel = new QFrame;
   panel->setObjectName(QStringLiteral("panel"));
-  panel->setFixedWidth(276);
+  panel->setFixedWidth(286);
   auto* layout = new QVBoxLayout(panel);
   layout->setContentsMargins(16, 16, 16, 16);
-  layout->setSpacing(10);
+  layout->setSpacing(9);
 
+  layout->addWidget(sectionLabel(QStringLiteral("Workflow")));
+  workflowSidebarValue_ = new QLabel(QStringLiteral("SPEC-FIRST"));
+  workflowSidebarValue_->setFont(theme::display(15, QFont::Bold));
+  workflowSidebarValue_->setStyleSheet(QStringLiteral("color:#67E8F9;"));
+  layout->addWidget(workflowSidebarValue_);
+  workflowSidebarHint_ = new QLabel(QStringLiteral("RTSL / TDG  →  PTPN  →  SCG"));
+  workflowSidebarHint_->setObjectName(QStringLiteral("muted"));
+  workflowSidebarHint_->setWordWrap(true);
+  workflowSidebarHint_->setFont(theme::mono(7.2));
+  layout->addWidget(workflowSidebarHint_);
+
+  auto* binary = new QLabel(QStringLiteral("BINARY-FIRST  ·  ELF / static analysis"));
+  binary->setStyleSheet(QStringLiteral("color:#40516A; font-size:7pt; padding-top:4px;"));
+  binary->setWordWrap(true);
+  layout->addWidget(binary);
+  auto* next = new QLabel(QStringLiteral("NEXT"));
+  next->setStyleSheet(QStringLiteral("color:#334155; background:#0B1422; border:1px solid #17253C; "
+                                     "border-radius:6px; padding:2px 7px; font-size:7pt;"));
+  next->setFixedWidth(42);
+  layout->addWidget(next);
+
+  layout->addWidget(divider());
   layout->addWidget(sectionLabel(QStringLiteral("Model source")));
   modelName_ = new QLabel(QStringLiteral("No model loaded"));
   modelName_->setObjectName(QStringLiteral("muted"));
@@ -335,7 +380,6 @@ QWidget* MainWindow::buildSidebar() {
   layout->addWidget(open);
   connect(open, &QPushButton::clicked, this, &MainWindow::openFileDialog);
 
-  layout->addSpacing(4);
   auto* samples = new QLabel(QStringLiteral("SAMPLES"));
   samples->setStyleSheet(QStringLiteral("color:#52627A; font-size:7pt; letter-spacing:2px;"));
   layout->addWidget(samples);
@@ -360,6 +404,14 @@ QWidget* MainWindow::buildSidebar() {
 
   layout->addSpacing(2);
   layout->addWidget(divider());
+  layout->addWidget(sectionLabel(QStringLiteral("Artifacts")));
+  artifactsLabel_ = new QLabel(QStringLiteral("no run yet"));
+  artifactsLabel_->setObjectName(QStringLiteral("muted"));
+  artifactsLabel_->setFont(theme::mono(7.2));
+  artifactsLabel_->setWordWrap(true);
+  layout->addWidget(artifactsLabel_);
+
+  layout->addWidget(divider());
   layout->addWidget(sectionLabel(QStringLiteral("Verdict")));
   verdictValue_ = new QLabel(QStringLiteral("NO DATA"));
   verdictValue_->setFont(theme::display(18, QFont::Bold));
@@ -379,20 +431,13 @@ QWidget* MainWindow::buildSidebar() {
   grid->addWidget(statBlock(QStringLiteral("Cores"), &coresValue_, theme::c("#FBBF24")), 1, 1);
   layout->addLayout(grid);
 
-  layout->addWidget(divider());
-  layout->addWidget(sectionLabel(QStringLiteral("Legend")));
-  layout->addWidget(legendRow(theme::c("#22D3EE"), QStringLiteral("place / token")));
-  layout->addWidget(legendRow(theme::c("#F59E0B"), QStringLiteral("timed transition")));
-  layout->addWidget(legendRow(theme::c("#F472B6"), QStringLiteral("enabled / firing")));
-  layout->addWidget(legendRow(theme::c("#8B5CF6"), QStringLiteral("state class")));
-
   layout->addStretch();
   cliLabel_ = new QLabel(QStringLiteral("ENGINE  —"));
   cliLabel_->setObjectName(QStringLiteral("faint"));
   cliLabel_->setWordWrap(true);
   cliLabel_->setFont(theme::mono(6.5));
   layout->addWidget(cliLabel_);
-  auto* footer = new QLabel(QStringLiteral("PTPN  ·  DBM STATE-CLASS ENGINE"));
+  auto* footer = new QLabel(QStringLiteral("PTPN  ·  TEXT-FIRST WORKBENCH"));
   footer->setStyleSheet(QStringLiteral("color:#334155; font-size:7pt; letter-spacing:1px;"));
   layout->addWidget(footer);
 
@@ -402,168 +447,181 @@ QWidget* MainWindow::buildSidebar() {
 QWidget* MainWindow::buildInspector() {
   auto* panel = new QFrame;
   panel->setObjectName(QStringLiteral("panel"));
-  panel->setFixedWidth(312);
+  panel->setFixedWidth(330);
   auto* layout = new QVBoxLayout(panel);
-  layout->setContentsMargins(16, 16, 16, 16);
-  layout->setSpacing(9);
+  layout->setContentsMargins(15, 16, 15, 14);
+  layout->setSpacing(8);
 
-  layout->addWidget(sectionLabel(QStringLiteral("Inspector")));
-  inspectorTitle_ = new QLabel(QStringLiteral("Nothing selected"));
-  inspectorTitle_->setFont(theme::display(13, QFont::Bold));
-  inspectorTitle_->setStyleSheet(QStringLiteral("color:#E0F2FE;"));
-  layout->addWidget(inspectorTitle_);
+  layout->addWidget(sectionLabel(QStringLiteral("Assumptions & evidence")));
+  assumptionsView_ = new QPlainTextEdit;
+  assumptionsView_->setObjectName(QStringLiteral("assumptionText"));
+  assumptionsView_->setReadOnly(true);
+  assumptionsView_->setFrameShape(QFrame::NoFrame);
+  assumptionsView_->setFont(theme::mono(7.3));
+  assumptionsView_->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+  assumptionsView_->setMinimumHeight(205);
+  assumptionsView_->setMaximumHeight(300);
+  assumptionsView_->setPlainText(QStringLiteral("Run an analysis to populate the assumptions."));
+  layout->addWidget(assumptionsView_);
 
-  inspectorBody_ = new QLabel(
-      QStringLiteral("Click a place, transition or state class to inspect it."));
-  inspectorBody_->setObjectName(QStringLiteral("muted"));
-  inspectorBody_->setWordWrap(true);
-  inspectorBody_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-  inspectorBody_->setFont(theme::mono(8));
-  inspectorBody_->setMinimumHeight(168);
-  inspectorBody_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-  layout->addWidget(inspectorBody_);
+  layout->addWidget(divider());
+  layout->addWidget(sectionLabel(QStringLiteral("Details")));
+  detailTitle_ = new QLabel(QStringLiteral("NOTHING SELECTED"));
+  detailTitle_->setFont(theme::display(11, QFont::Bold));
+  detailTitle_->setStyleSheet(QStringLiteral("color:#E0F2FE;"));
+  layout->addWidget(detailTitle_);
+  detailBody_ = new QLabel(
+      QStringLiteral("The workbench is text-first. Use PREVIEW on PTPN or STATE SPACE to inspect "
+                     "a graph, then select a node for details."));
+  detailBody_->setObjectName(QStringLiteral("muted"));
+  detailBody_->setWordWrap(true);
+  detailBody_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  detailBody_->setFont(theme::mono(7.8));
+  detailBody_->setMinimumHeight(105);
+  detailBody_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  layout->addWidget(detailBody_);
 
   layout->addWidget(divider());
   layout->addWidget(sectionLabel(QStringLiteral("Run log")));
   logView_ = new QPlainTextEdit;
+  logView_->setObjectName(QStringLiteral("logView"));
   logView_->setReadOnly(true);
-  logView_->setMaximumBlockCount(1200);
-  logView_->setFont(theme::mono(7.5));
+  logView_->setMaximumBlockCount(1400);
+  logView_->setFont(theme::mono(7.1));
   logView_->setPlaceholderText(QStringLiteral("Analyzer output will appear here…"));
-  logView_->setMinimumHeight(210);
+  logView_->setMinimumHeight(120);
   layout->addWidget(logView_, 1);
 
   return panel;
 }
 
-QWidget* MainWindow::buildPetriTab() {
+QWidget* MainWindow::buildStagePage(const QString& title, const QString& subtitle, TextView** view,
+                                    QLabel** summary, QPushButton** previewButton,
+                                    bool previewable) {
   auto* page = new QWidget;
   auto* layout = new QVBoxLayout(page);
-  layout->setContentsMargins(10, 9, 10, 10);
-  layout->setSpacing(8);
+  layout->setContentsMargins(14, 12, 14, 14);
+  layout->setSpacing(6);
 
-  auto* toolbar = new QHBoxLayout;
-  toolbar->setSpacing(7);
-  toolbar->addWidget(sectionLabel(QStringLiteral("Petri net")));
-  auto* hint = new QLabel(QStringLiteral("drag  ·  wheel  ·  click an enabled transition"));
-  hint->setObjectName(QStringLiteral("faint"));
-  hint->setFont(theme::mono(7));
-  toolbar->addWidget(hint);
-  toolbar->addStretch();
+  auto* header = new QHBoxLayout;
+  header->setSpacing(9);
+  auto* titleLabel = new QLabel(title);
+  titleLabel->setFont(theme::display(15, QFont::Bold));
+  titleLabel->setStyleSheet(QStringLiteral("color:#E0F2FE;"));
+  header->addWidget(titleLabel);
 
-  auto* fit = new QPushButton(QStringLiteral("FIT"));
-  fit->setObjectName(QStringLiteral("ghost"));
-  auto* zoomOut = new QPushButton(QStringLiteral("−"));
-  zoomOut->setObjectName(QStringLiteral("ghost"));
-  auto* zoomIn = new QPushButton(QStringLiteral("+"));
-  zoomIn->setObjectName(QStringLiteral("ghost"));
-  auto* reset = new QPushButton(QStringLiteral("RESET"));
-  reset->setObjectName(QStringLiteral("ghost"));
-  autoButton_ = new QPushButton(QStringLiteral("AUTO"));
-  autoButton_->setObjectName(QStringLiteral("ghost"));
-  autoButton_->setCheckable(true);
-  speedButton_ = new QPushButton(QStringLiteral("1.0×"));
-  speedButton_->setObjectName(QStringLiteral("ghost"));
-  for (QPushButton* button : {fit, zoomOut, zoomIn, reset, autoButton_, speedButton_}) {
-    button->setCursor(Qt::PointingHandCursor);
-    toolbar->addWidget(button);
-  }
-  layout->addLayout(toolbar);
+  auto* summaryLabel = new QLabel(QStringLiteral("—"));
+  summaryLabel->setFont(theme::mono(7.2));
+  summaryLabel->setStyleSheet(QStringLiteral("color:#52627A;"));
+  header->addWidget(summaryLabel);
+  header->addStretch();
 
-  auto* frame = new QFrame;
-  frame->setObjectName(QStringLiteral("softPanel"));
-  auto* frameLayout = new QVBoxLayout(frame);
-  frameLayout->setContentsMargins(1, 1, 1, 1);
-  petriView_ = new PetriView;
-  petriView_->setMinimumSize(240, 180);
-  frameLayout->addWidget(petriView_);
-  layout->addWidget(frame, 1);
+  auto* search = new QLineEdit;
+  search->setObjectName(QStringLiteral("findBox"));
+  search->setPlaceholderText(QStringLiteral("FIND"));
+  search->setClearButtonEnabled(true);
+  search->setFixedWidth(142);
+  search->setFont(theme::mono(7.4));
+  header->addWidget(search);
 
-  connect(fit, &QPushButton::clicked, petriView_, &PetriView::fitView);
-  connect(zoomOut, &QPushButton::clicked, this, [this] { petriView_->zoomBy(0.85); });
-  connect(zoomIn, &QPushButton::clicked, this, [this] { petriView_->zoomBy(1.18); });
-  connect(reset, &QPushButton::clicked, petriView_, &PetriView::resetSimulation);
-  connect(autoButton_, &QPushButton::toggled, this, [this](bool enabled) {
-    petriView_->setAutoFire(enabled);
-    autoButton_->setText(enabled ? QStringLiteral("AUTO ON") : QStringLiteral("AUTO"));
-  });
-  connect(speedButton_, &QPushButton::clicked, this, [this] {
-    static const double speeds[] = {0.5, 1.0, 2.0, 4.0};
-    int index = 0;
-    for (int i = 0; i < 4; ++i) {
-      if (std::abs(speeds[i] - speed_) < 0.01) {
-        index = i;
-        break;
-      }
+  auto* copy = new QPushButton(QStringLiteral("COPY"));
+  copy->setObjectName(QStringLiteral("ghost"));
+  copy->setCursor(Qt::PointingHandCursor);
+  copy->setFixedWidth(56);
+  header->addWidget(copy);
+
+  auto* preview = new QPushButton(QStringLiteral("PREVIEW"));
+  preview->setObjectName(QStringLiteral("previewButton"));
+  preview->setCursor(Qt::PointingHandCursor);
+  preview->setFixedWidth(82);
+  preview->setVisible(previewable);
+  header->addWidget(preview);
+  layout->addLayout(header);
+
+  auto* subtitleLabel = new QLabel(subtitle);
+  subtitleLabel->setObjectName(QStringLiteral("faint"));
+  subtitleLabel->setFont(theme::mono(7.1));
+  layout->addWidget(subtitleLabel);
+
+  auto* line = new QFrame;
+  line->setFrameShape(QFrame::HLine);
+  line->setStyleSheet(QStringLiteral("color:#152238; background:#152238; max-height:1px;"));
+  layout->addWidget(line);
+
+  auto* text = new TextView;
+  text->setPlaceholderText(QStringLiteral("Run an analysis to populate this stage."));
+  layout->addWidget(text, 1);
+
+  connect(search, &QLineEdit::returnPressed, this, [this, text, search] {
+    const QString query = search->text();
+    if (query.isEmpty()) {
+      return;
     }
-    speed_ = speeds[(index + 1) % 4];
-    petriView_->setSpeed(speed_);
-    speedButton_->setText(QString::number(speed_, 'f', 1) + QStringLiteral("×"));
+    if (!text->find(query)) {
+      statusBar()->showMessage(QStringLiteral("No match in this stage"), 3500);
+    }
+  });
+  connect(copy, &QPushButton::clicked, this, [this, text] {
+    text->copyAll();
+    statusBar()->showMessage(QStringLiteral("Stage text copied"), 2500);
   });
 
+  *view = text;
+  *summary = summaryLabel;
+  *previewButton = preview;
+  return page;
+}
+
+QWidget* MainWindow::buildDagTab() {
+  QPushButton* unused = nullptr;
+  return buildStagePage(
+      QStringLiteral("TASK GRAPH"),
+      QStringLiteral("Text-first DAG / task view  ·  explicit timing provenance  ·  no graph by default"),
+      &dagView_, &dagSummary_, &unused, false);
+}
+
+QWidget* MainWindow::buildPtpnTab() {
+  QWidget* page = buildStagePage(
+      QStringLiteral("PTPN STRUCTURE"),
+      QStringLiteral("Places, transitions and arcs as dense text  ·  graph only on demand"),
+      &ptpnView_, &ptpnSummary_, &ptpnPreview_, true);
   return page;
 }
 
 QWidget* MainWindow::buildStateTab() {
-  auto* page = new QWidget;
-  auto* layout = new QVBoxLayout(page);
-  layout->setContentsMargins(10, 9, 10, 10);
-  layout->setSpacing(8);
-
-  auto* toolbar = new QHBoxLayout;
-  toolbar->setSpacing(7);
-  toolbar->addWidget(sectionLabel(QStringLiteral("State-class space")));
-  auto* hint = new QLabel(QStringLiteral("reachability graph  ·  DBM clock zones"));
-  hint->setObjectName(QStringLiteral("faint"));
-  hint->setFont(theme::mono(7));
-  toolbar->addWidget(hint);
-  toolbar->addStretch();
-  auto* fit = new QPushButton(QStringLiteral("FIT"));
-  fit->setObjectName(QStringLiteral("ghost"));
-  auto* zoomOut = new QPushButton(QStringLiteral("−"));
-  zoomOut->setObjectName(QStringLiteral("ghost"));
-  auto* zoomIn = new QPushButton(QStringLiteral("+"));
-  zoomIn->setObjectName(QStringLiteral("ghost"));
-  for (QPushButton* button : {fit, zoomOut, zoomIn}) {
-    button->setCursor(Qt::PointingHandCursor);
-    toolbar->addWidget(button);
-  }
-  layout->addLayout(toolbar);
-
-  auto* frame = new QFrame;
-  frame->setObjectName(QStringLiteral("softPanel"));
-  auto* frameLayout = new QVBoxLayout(frame);
-  frameLayout->setContentsMargins(1, 1, 1, 1);
-  stateView_ = new StateGraphView;
-  stateView_->setMinimumSize(240, 180);
-  frameLayout->addWidget(stateView_);
-  layout->addWidget(frame, 1);
-
-  connect(fit, &QPushButton::clicked, stateView_, &StateGraphView::fitView);
-  connect(zoomOut, &QPushButton::clicked, this, [this] { stateView_->zoomBy(0.85); });
-  connect(zoomIn, &QPushButton::clicked, this, [this] { stateView_->zoomBy(1.18); });
-  return page;
+  return buildStagePage(
+      QStringLiteral("STATE-CLASS SPACE"),
+      QStringLiteral("Reachability classes and transitions as text  ·  inspect the graph on demand"),
+      &stateView_, &stateSummary_, &statePreview_, true);
 }
 
-QWidget* MainWindow::buildMetricsTab() {
-  auto* page = new QWidget;
-  auto* layout = new QVBoxLayout(page);
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setSpacing(0);
-  metricsPanel_ = new MetricsPanel;
-  auto* scroll = new QScrollArea;
-  scroll->setWidgetResizable(true);
-  scroll->setFrameShape(QFrame::NoFrame);
-  scroll->setMinimumSize(0, 0);
-  scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-  scroll->setWidget(metricsPanel_);
-  layout->addWidget(scroll);
-  return page;
+QWidget* MainWindow::buildTimelineTab() {
+  QPushButton* unused = nullptr;
+  return buildStagePage(
+      QStringLiteral("TIMELINE / ENVELOPES"),
+      QStringLiteral("Text response envelopes  ·  not a concrete execution schedule"),
+      &timelineView_, &timelineSummary_, &unused, false);
+}
+
+QWidget* MainWindow::buildReportTab() {
+  QPushButton* unused = nullptr;
+  return buildStagePage(
+      QStringLiteral("REPORT"),
+      QStringLiteral("Copyable analysis report  ·  assumptions and evidence included"),
+      &reportView_, &reportSummary_, &unused, false);
 }
 
 void MainWindow::wire() {
   connect(openButton_, &QPushButton::clicked, this, &MainWindow::openFileDialog);
   connect(runButton_, &QPushButton::clicked, this, &MainWindow::runAnalysis);
+  connect(ptpnPreview_, &QPushButton::clicked, this, &MainWindow::openPetriPreview);
+  connect(statePreview_, &QPushButton::clicked, this, &MainWindow::openStatePreview);
+  if (ptpnPreview_ != nullptr) {
+    ptpnPreview_->setEnabled(false);
+  }
+  if (statePreview_ != nullptr) {
+    statePreview_->setEnabled(false);
+  }
 
   connect(service_, &AnalysisService::started, this, [this](const QString&) {
     setBusy(true);
@@ -571,20 +629,6 @@ void MainWindow::wire() {
     statusBar()->showMessage(QStringLiteral("ANALYZING  ·  exploring state classes…"));
   });
   connect(service_, &AnalysisService::finished, this, &MainWindow::handleResult);
-
-  connect(petriView_, &PetriView::statusMessage, this,
-          [this](const QString& message) { statusBar()->showMessage(message, 5000); });
-  connect(petriView_, &PetriView::nodeSelected, this,
-          [this](const QString& kind, int index) {
-            if (kind == QStringLiteral("place")) {
-              showPlaceInfo(index);
-            } else {
-              showTransitionInfo(index);
-            }
-          });
-  connect(stateView_, &StateGraphView::nodeSelected, this, &MainWindow::showStateInfo);
-  connect(stateView_, &StateGraphView::statusMessage, this,
-          [this](const QString& message) { statusBar()->showMessage(message, 5000); });
 }
 
 void MainWindow::openFileDialog() {
@@ -604,9 +648,20 @@ void MainWindow::loadModel(const QString& path) {
   }
   currentFile_ = info.absoluteFilePath();
   const QString nativePath = QDir::toNativeSeparators(currentFile_);
-  pathChip_->setText(pathChip_->fontMetrics().elidedText(nativePath, Qt::ElideLeft, 302));
+  pathChip_->setText(pathChip_->fontMetrics().elidedText(nativePath, Qt::ElideLeft, 272));
   pathChip_->setToolTip(nativePath);
   modelName_->setText(info.fileName() + QStringLiteral("\n") + info.absolutePath());
+  const QString workflow = workflowShortName(currentFile_);
+  workflowChip_->setText(workflow);
+  workflowSidebarValue_->setText(workflow);
+  const QString suffix = info.suffix().toLower();
+  if (suffix == QStringLiteral("rtsl")) {
+    workflowSidebarHint_->setText(QStringLiteral("RTSL  →  TDG  →  PTPN  →  SCG"));
+  } else if (suffix == QStringLiteral("json")) {
+    workflowSidebarHint_->setText(QStringLiteral("TDG JSON  →  PTPN  →  SCG"));
+  } else {
+    workflowSidebarHint_->setText(QStringLiteral("PTPN  →  SCG  ·  structure input"));
+  }
   setWindowTitle(QStringLiteral("PTPN  //  ") + info.fileName());
   runAnalysis();
 }
@@ -619,12 +674,10 @@ void MainWindow::runAnalysis() {
     openFileDialog();
     return;
   }
-  qApp->setOverrideCursor(Qt::WaitCursor);
   logView_->clear();
-  logView_->appendPlainText(QStringLiteral("> ptpn ") + QDir::toNativeSeparators(currentFile_));
+  logView_->appendPlainText(QStringLiteral("> ") + QDir::toNativeSeparators(currentFile_));
   tabs_->setCurrentIndex(0);
   service_->analyze(currentFile_);
-  qApp->restoreOverrideCursor();
 }
 
 void MainWindow::setBusy(bool busy) {
@@ -637,10 +690,8 @@ void MainWindow::setBusy(bool busy) {
 void MainWindow::handleResult(const AnalysisResult& result) {
   setBusy(false);
   result_ = result;
-
-  metricsPanel_->setResult(result_);
-  petriView_->setNet(result.net);
-  stateView_->setGraph(result.scg);
+  docs_ = renderWorkbench(result_);
+  applyDocs(docs_);
 
   logView_->setPlainText(result.logs.isEmpty()
                              ? QStringLiteral("(no output)\n")
@@ -652,11 +703,12 @@ void MainWindow::handleResult(const AnalysisResult& result) {
     setStatusPill(QStringLiteral("ERROR"), theme::c("#FB7185"));
     verdictValue_->setText(QStringLiteral("NO RESULT"));
     verdictValue_->setStyleSheet(QStringLiteral("color:#FB7185;"));
-    verdictSub_->setText(result.error.left(160));
-    inspectorTitle_->setText(QStringLiteral("ANALYSIS FAILED"));
-    inspectorBody_->setText(result.error.isEmpty() ? QStringLiteral("ptpn returned no result.")
-                                                   : result.error);
-    statusBar()->showMessage(QStringLiteral("ANALYSIS FAILED  ·  check the run log"), 8000);
+    verdictSub_->setText(result.error.left(180));
+    detailTitle_->setText(QStringLiteral("ANALYSIS FAILED"));
+    detailBody_->setText(result.error.isEmpty() ? QStringLiteral("ptpn returned no result.")
+                                                : result.error);
+    statusBar()->showMessage(QStringLiteral("ANALYSIS FAILED  ·  read the text error and run log"),
+                             8000);
     return;
   }
 
@@ -665,48 +717,96 @@ void MainWindow::handleResult(const AnalysisResult& result) {
   const bool schedulable = jsonBool(result.metrics, "schedulable", false);
   setStatusPill(schedulable ? QStringLiteral("SCHEDULABLE") : QStringLiteral("UNSCHEDULABLE"),
                 schedulable ? theme::c("#34D399") : theme::c("#FB7185"));
-  inspectorTitle_->setText(QStringLiteral("MODEL READY"));
-  inspectorBody_->setText(
+  detailTitle_->setText(QStringLiteral("MODEL READY"));
+  detailBody_->setText(
       QStringLiteral("%1 places · %2 transitions\n%3 state classes · %4 edges\n\n"
-                     "Click a place, transition or state class to inspect it.")
+                     "Open PREVIEW on PTPN or STATE SPACE to inspect a graph. Text remains the "
+                     "primary workbench.")
           .arg(result.net.places.size())
           .arg(result.net.transitions.size())
           .arg(result.scg.nodes.size())
           .arg(result.scg.edges.size()));
-  statusBar()->showMessage(QStringLiteral("READY  ·  %1 places  ·  %2 state classes")
-                               .arg(result.net.places.size())
+  statusBar()->showMessage(QStringLiteral("READY  ·  %1 state classes  ·  text view")
                                .arg(result.scg.nodes.size()),
                            5000);
 }
 
+void MainWindow::applyDocs(const WorkbenchDocs& docs) {
+  if (dagView_ != nullptr) {
+    dagView_->setStageText(docs.dag);
+  }
+  if (ptpnView_ != nullptr) {
+    ptpnView_->setStageText(docs.ptpn);
+  }
+  if (stateView_ != nullptr) {
+    stateView_->setStageText(docs.state);
+  }
+  if (timelineView_ != nullptr) {
+    timelineView_->setStageText(docs.timeline);
+  }
+  if (reportView_ != nullptr) {
+    reportView_->setStageText(docs.report);
+  }
+  if (assumptionsView_ != nullptr) {
+    assumptionsView_->setPlainText(docs.assumptions);
+  }
+  dagSummary_->setText(docs.dagSummary);
+  ptpnSummary_->setText(docs.ptpnSummary);
+  stateSummary_->setText(docs.stateSummary);
+  timelineSummary_->setText(docs.timelineSummary);
+  reportSummary_->setText(docs.reportSummary);
+  if (artifactsLabel_ != nullptr) {
+    artifactsLabel_->setText(
+        QStringLiteral("DAG    %1\nPTPN   %2\nSCG    %3\nRUN    %4 ms")
+            .arg(docs.dagSummary)
+            .arg(docs.ptpnSummary)
+            .arg(docs.stateSummary)
+            .arg(result_.elapsedMs));
+  }
+  workflowChip_->setText(workflowShortName(result_.path));
+  workflowSidebarValue_->setText(workflowShortName(result_.path));
+
+  if (ptpnPreview_ != nullptr) {
+    ptpnPreview_->setEnabled(result_.ok && result_.net.valid);
+  }
+  if (statePreview_ != nullptr) {
+    statePreview_->setEnabled(result_.ok && result_.scg.valid);
+  }
+}
+
 void MainWindow::updateSummary() {
   const QJsonObject& metrics = result_.metrics;
-  const bool ok = result_.ok;
-  const bool schedulable = jsonBool(metrics, "schedulable", false);
-  const bool truncated = jsonBool(metrics, "truncated", false);
-  const bool exact = jsonBool(metrics, "exact", true);
-
-  if (!ok) {
+  if (!result_.ok) {
     verdictValue_->setText(QStringLiteral("NO DATA"));
     verdictValue_->setStyleSheet(QStringLiteral("color:#7C8CA8;"));
     verdictSub_->setText(QStringLiteral("analysis did not complete"));
+    statesValue_->setText(QStringLiteral("—"));
+    hyperValue_->setText(QStringLiteral("—"));
+    wcrtValue_->setText(QStringLiteral("—"));
+    coresValue_->setText(QStringLiteral("—"));
     return;
   }
 
-  verdictValue_->setText(schedulable ? QStringLiteral("SCHEDULABLE") : QStringLiteral("UNSCHEDULABLE"));
+  const bool schedulable = jsonBool(metrics, "schedulable", false);
+  const bool truncated = jsonBool(metrics, "truncated", false);
+  const bool exact = jsonBool(metrics, "exact", true);
+  verdictValue_->setText(schedulable ? QStringLiteral("SCHEDULABLE")
+                                     : QStringLiteral("UNSCHEDULABLE"));
   verdictValue_->setStyleSheet(schedulable ? QStringLiteral("color:#34D399;")
                                            : QStringLiteral("color:#FB7185;"));
   QString detail = jsonString(metrics, "schedulability",
-                              schedulable ? QStringLiteral("schedulable") : QStringLiteral("infeasible"));
+                              schedulable ? QStringLiteral("schedulable")
+                                          : QStringLiteral("infeasible"));
   detail += exact ? QStringLiteral("  ·  exact") : QStringLiteral("  ·  approximate");
   if (truncated) {
     detail += QStringLiteral("  ·  truncated");
   }
   verdictSub_->setText(detail);
 
-  statesValue_->setText(formattedValue(metrics, "states", QString::number(result_.net.places.size())));
+  statesValue_->setText(formattedValue(metrics, "states", QString::number(result_.scg.nodes.size())));
   const double hyperperiod = jsonNumber(metrics, "hyperperiod", 0.0);
-  hyperValue_->setText(hyperperiod > 0.0 ? QString::number(hyperperiod, 'f', 0) : QStringLiteral("—"));
+  hyperValue_->setText(hyperperiod > 0.0 ? QString::number(hyperperiod, 'f', 0)
+                                         : QStringLiteral("—"));
 
   double maxWcrt = 0.0;
   const QJsonArray tasks = metrics.value(QStringLiteral("tasks")).toArray();
@@ -715,6 +815,27 @@ void MainWindow::updateSummary() {
   }
   wcrtValue_->setText(tasks.isEmpty() ? QStringLiteral("—") : QString::number(maxWcrt, 'f', 0));
   coresValue_->setText(QString::number(metrics.value(QStringLiteral("cores")).toArray().size()));
+}
+
+void MainWindow::openPetriPreview() {
+  if (!result_.net.valid) {
+    return;
+  }
+  PreviewDialog dialog(PreviewDialog::Kind::Petri, this);
+  dialog.setPetriNet(result_.net);
+  connect(&dialog, &PreviewDialog::placeSelected, this, &MainWindow::showPlaceInfo);
+  connect(&dialog, &PreviewDialog::transitionSelected, this, &MainWindow::showTransitionInfo);
+  dialog.exec();
+}
+
+void MainWindow::openStatePreview() {
+  if (!result_.scg.valid) {
+    return;
+  }
+  PreviewDialog dialog(PreviewDialog::Kind::State, this);
+  dialog.setStateGraph(result_.scg);
+  connect(&dialog, &PreviewDialog::stateSelected, this, &MainWindow::showStateInfo);
+  dialog.exec();
 }
 
 void MainWindow::showPlaceInfo(int index) {
@@ -732,8 +853,8 @@ void MainWindow::showPlaceInfo(int index) {
       ++incoming;
     }
   }
-  inspectorTitle_->setText(QStringLiteral("PLACE  /  ") + place.id);
-  inspectorBody_->setText(
+  detailTitle_->setText(QStringLiteral("PLACE  /  ") + place.id);
+  detailBody_->setText(
       QStringLiteral("tokens       %1\ncapacity     %2\ninitial      %3\nincoming     %4 arcs\n"
                      "outgoing     %5 arcs")
           .arg(place.tokens)
@@ -763,8 +884,8 @@ void MainWindow::showTransitionInfo(int index) {
                                    .arg(QString::number(transition.intervalMin, 'f', 0),
                                         QString::number(transition.intervalMax, 'f', 0))
                              : QStringLiteral("untimed");
-  inspectorTitle_->setText(QStringLiteral("TRANSITION  /  ") + transition.id);
-  inspectorBody_->setText(
+  detailTitle_->setText(QStringLiteral("TRANSITION  /  ") + transition.id);
+  detailBody_->setText(
       QStringLiteral("core         %1\npriority     %2\nwindow       %3\nsuspendable  %4\n\n"
                      "inputs       %5\noutputs      %6")
           .arg(transition.core)
@@ -780,8 +901,8 @@ void MainWindow::showStateInfo(int index) {
     return;
   }
   const StateNode& state = result_.scg.nodes.at(index);
-  inspectorTitle_->setText(QStringLiteral("STATE CLASS  /  S%1").arg(state.index));
-  inspectorBody_->setText(
+  detailTitle_->setText(QStringLiteral("STATE CLASS  /  S%1").arg(state.index));
+  detailBody_->setText(
       QStringLiteral("marking      %1\n\nactive       %2\n\nsuspended    %3\n\nelapsed      %4")
           .arg(state.marking.isEmpty() ? QStringLiteral("—") : state.marking,
                state.active.isEmpty() ? QStringLiteral("—") : state.active,
@@ -800,6 +921,20 @@ void MainWindow::setStatusPill(const QString& text, const QColor& color) {
           .arg(color.red())
           .arg(color.green())
           .arg(color.blue()));
+}
+
+QString MainWindow::workflowShortName(const QString& path) {
+  const QString suffix = QFileInfo(path).suffix().toLower();
+  if (suffix == QStringLiteral("rtsl")) {
+    return QStringLiteral("SPEC · RTSL");
+  }
+  if (suffix == QStringLiteral("json")) {
+    return QStringLiteral("SPEC · TDG");
+  }
+  if (suffix == QStringLiteral("ptpn")) {
+    return QStringLiteral("MANUAL · PTPN");
+  }
+  return QStringLiteral("SPEC-FIRST");
 }
 
 QString MainWindow::resolveCliPath() const {

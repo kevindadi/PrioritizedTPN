@@ -14,8 +14,12 @@ set(PTPN_DESKTOP_SOURCES
     src/petri_view.h
     src/state_graph_view.cpp
     src/state_graph_view.h
-    src/metrics_panel.cpp
-    src/metrics_panel.h
+    src/preview_dialog.cpp
+    src/preview_dialog.h
+    src/text_view.cpp
+    src/text_view.h
+    src/workbench_text.cpp
+    src/workbench_text.h
     src/app_model.h
     src/theme.h
 )

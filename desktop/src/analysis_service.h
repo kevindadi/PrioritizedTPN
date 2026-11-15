@@ -40,6 +40,7 @@ class AnalysisService : public QObject {
   QString statePath_;
   QString metricsPath_;
   QString wcetPath_;
+  QString tdgPath_;
   QElapsedTimer timer_;
   bool failureReported_ = false;
 };

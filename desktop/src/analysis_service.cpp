@@ -98,10 +98,11 @@ void AnalysisService::analyze(const QString& filePath) {
   statePath_ = makeArtifactPath(QStringLiteral("scg"), QStringLiteral(".dot"));
   metricsPath_ = makeArtifactPath(QStringLiteral("metrics"), QStringLiteral(".json"));
   wcetPath_ = makeArtifactPath(QStringLiteral("wcet"), QStringLiteral(".json"));
+  tdgPath_.clear();
   failureReported_ = false;
 
   const QString subcommand = subcommandFor(filePath);
-  const QStringList arguments = {
+  QStringList arguments = {
       subcommand,
       QStringLiteral("-f"),
       filePath,
@@ -116,6 +117,10 @@ void AnalysisService::analyze(const QString& filePath) {
       QStringLiteral("--max-states"),
       QStringLiteral("20000"),
   };
+  if (subcommand == QStringLiteral("rtsl")) {
+    tdgPath_ = makeArtifactPath(QStringLiteral("dag"), QStringLiteral(".json"));
+    arguments << QStringLiteral("--export-tdg") << tdgPath_;
+  }
 
   timer_.start();
   emit started(filePath);
@@ -165,6 +170,24 @@ void AnalysisService::handleFinished(int exitCode, QProcess::ExitStatus status) 
     const QJsonDocument document = QJsonDocument::fromJson(metricsJson);
     if (document.isObject()) {
       result.metrics = document.object();
+    }
+  }
+
+  // The DAG is the first-class intermediate representation for the spec-first
+  // workflow. RTSL materializes it through --export-tdg; a TDG JSON input is
+  // already that representation. PTPN inputs have no DAG, so the text layer
+  // falls back to metrics and the lowered structure.
+  QString tdgText;
+  const QString suffix = QFileInfo(currentPath_).suffix().toLower();
+  if (suffix == QStringLiteral("rtsl")) {
+    tdgText = readTextFile(tdgPath_);
+  } else if (suffix == QStringLiteral("json")) {
+    tdgText = readTextFile(currentPath_);
+  }
+  if (!tdgText.isEmpty()) {
+    const QJsonDocument document = QJsonDocument::fromJson(tdgText.toUtf8());
+    if (document.isObject()) {
+      result.tdg = document.object();
     }
   }
 
