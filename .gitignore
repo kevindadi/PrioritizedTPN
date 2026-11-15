@@ -16,8 +16,6 @@ compile_commands.json
 *.json
 # Keep the CMake presets (vcpkg/CLion entry point) tracked despite the rule above
 !CMakePresets.json
-# Keep the optional Qt desktop manifest tracked despite the `*.json` rule above
-!desktop/vcpkg.json
 # Keep the project's Zed configuration tracked despite the `*.json` rule above
 !.zed/*.json
 paper/

@@ -44,9 +44,22 @@ Tests are discovered with `gtest_discover_tests` and `WORKING_DIRECTORY` = repo 
 
 Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/golden/*`; the header comment documents the exact commands that regenerate each golden file. Golden comparison is skipped when not compiled with libstdc++ or when building on Windows (`_WIN32`, CRLF) — regenerate goldens only on POSIX libstdc++ builds.
 
-### Desktop (Qt, optional)
+### Desktop (Rust submodule)
 
-`desktop/` is an optional Qt 6 Widgets workbench. It launches `ptpn` as a child process and presents the DAG, PTPN, state-class, timeline and report stages as **text-first** views; graphs are secondary previews opened explicitly. The right panel keeps policy, core/priority coverage, timing provenance, exactness and truncation visible. It has a specification-first intake and a binary-first intake that consumes an external ELF parser bundle (`<elf>.bundle.json`: ELF metadata, CFG, thread control, unified net) and exposes ELF/CFG/THREADS/NET text plus graph previews; binary analysis is intentionally pending. It is outside the core build graph: enable it with `-DPTPN_BUILD_DESKTOP=ON` (the `windows-desktop` preset does) and install the reduced `qtbase` port from `desktop/vcpkg.json` into `D:/vcpkg/installed` first. See `desktop/README.md`.
+`rt-pn/` is a git submodule containing the native desktop workbench (Tauri 2 +
+React/TypeScript). It launches the built `ptpn` CLI as a child process and
+presents the DAG, PTPN, state-class, timeline and report stages as **text-first**
+views (CodeMirror); graphs are secondary previews opened explicitly (React
+Flow). The right panel keeps policy, core/priority coverage, timing provenance,
+exactness and truncation visible. The workbench has a specification-first intake
+and a binary-first intake that consumes an external ELF parser bundle
+(`<elf>.bundle.json` or `<stem>.bundle.json`: ELF metadata, CFG, thread control,
+unified net) and exposes ELF/CFG/THREADS/NET text plus graph previews; binary
+analysis is intentionally pending.
+
+The Rust desktop does not replace or reimplement any analyzer logic. It invokes
+the same C++ CLI with the export flags and parses the resulting DOT/JSON. Keep
+`ptpn` behavior unchanged when changing the workbench. See `rt-pn/README.md`.
 
 ## Architecture
 

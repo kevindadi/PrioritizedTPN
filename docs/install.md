@@ -76,34 +76,30 @@ during the first configure (Boost is built for MinGW once).
 The golden-output tests are skipped on Windows: the committed fixtures are
 LF-only outputs produced by libstdc++ on POSIX, and text-mode writes add CRLF.
 
-### Desktop analyzer (Qt 6, optional)
+### Desktop workbench (Rust/Tauri, submodule)
 
-The optional Qt Widgets workbench lives in [`desktop/`](../desktop/README.md).
-It runs the built `ptpn` CLI and presents the DAG, PTPN, state-class, timeline
-and report stages as text-first views; the PTPN/SCG graphs are explicit
-secondary previews. A first-run chooser separates specification-first intake
-from binary-first intake, where an ELF is paired with an external parser bundle
-(`<elf>.bundle.json`) carrying ELF metadata, CFG, thread control and the unified
-net. Binary analysis is intentionally pending. It is off by default
-(`PTPN_BUILD_DESKTOP`) so the analyzer and tests never require Qt.
-
-Build the reduced Qt base port once (Widgets + PNG only), then configure the
-desktop preset:
+The native workbench lives in the `rt-pn/` git submodule and is built with
+Tauri 2 + React. It runs the already-built `ptpn` CLI and presents the DAG,
+PTPN, state-class, timeline and report stages as text-first views; PTPN/SCG
+graphs and binary CFG/thread/net views are explicit previews. A first-run
+chooser separates specification-first intake from binary-first intake, where an
+ELF is paired with an external parser bundle (`<elf>.bundle.json` or
+`<stem>.bundle.json`) carrying ELF metadata, CFG, thread control and the unified
+net. Binary analysis is intentionally pending.
 
 ```bat
-cd desktop
-D:\vcpkg\vcpkg.exe install --triplet x64-mingw-dynamic ^
-  --host-triplet x64-mingw-dynamic --x-install-root=D:\vcpkg\installed
-cd ..
-cmake --preset windows-desktop
-cmake --build --preset windows-desktop --target ptpn_desktop
-cmake-build-desktop-mingw\desktop\ptpn_desktop.exe
+git submodule update --init rt-pn
+cd rt-pn
+npm install
+npm run tauri dev
 ```
 
-In CLion select the `windows-desktop` preset with the MinGW toolchain. The
-post-build step copies the Qt/MinGW runtime next to `ptpn_desktop.exe`. See
-[desktop/README.md](../desktop/README.md) for details and the `D:\mingw64`
-junction workaround for `windres` and paths containing spaces.
+`ptpn` is resolved from `PTPN_BIN`, the conventional `cmake-build-*-mingw`
+directories, or `PATH`. Analysis exports default to
+`%LOCALAPPDATA%\RT-PN\artifacts`; set `PTPN_ARTIFACT_DIR` to override it. For a
+standalone build run `npm run tauri build` inside the submodule. The workbench
+does not require Qt or vcpkg; the C++ CLI and its existing build instructions
+are unchanged.
 
 vcpkg auto-detection is off by default on Linux and macOS. Re-enable it with
 `-DPTPN_USE_VCPKG=ON` when `VCPKG_ROOT` is set. On **Apple Silicon**, pass a

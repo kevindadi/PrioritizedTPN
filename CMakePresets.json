@@ -37,18 +37,6 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
-    },
-    {
-      "name": "windows-desktop",
-      "displayName": "Windows MinGW Desktop (Qt 6)",
-      "description": "CLI + Qt desktop analyzer. Install the qtbase port described in desktop/vcpkg.json into D:/vcpkg/installed first.",
-      "inherits": "windows-base",
-      "binaryDir": "${sourceDir}/cmake-build-desktop-mingw",
-      "cacheVariables": {
-        "PTPN_BUILD_DESKTOP": "ON",
-        "CMAKE_PREFIX_PATH": "D:/vcpkg/installed/x64-mingw-dynamic",
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
     }
   ],
   "buildPresets": [
@@ -59,10 +47,6 @@
     {
       "name": "windows-release",
       "configurePreset": "windows-release"
-    },
-    {
-      "name": "windows-desktop",
-      "configurePreset": "windows-desktop"
     }
   ],
   "testPresets": [
@@ -76,13 +60,6 @@
     {
       "name": "windows-release",
       "configurePreset": "windows-release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "windows-desktop",
-      "configurePreset": "windows-desktop",
       "output": {
         "outputOnFailure": true
       }
