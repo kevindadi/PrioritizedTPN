@@ -401,6 +401,9 @@ ParsedModel parseModel(const AnalysisResult& result) {
 }
 
 QString workflowFor(const AnalysisResult& result) {
+  if (!result.workflowLabel.isEmpty()) {
+    return result.workflowLabel;
+  }
   const QString suffix = QFileInfo(result.path).suffix().toLower();
   if (suffix == QStringLiteral("rtsl")) {
     return QStringLiteral("SPEC-FIRST · RTSL");
@@ -415,6 +418,9 @@ QString workflowFor(const AnalysisResult& result) {
 }
 
 QString inputKindFor(const AnalysisResult& result) {
+  if (!result.binaryArtifact.isEmpty()) {
+    return QStringLiteral("ELF / STATIC DAG");
+  }
   const QString suffix = QFileInfo(result.path).suffix().toLower();
   if (suffix == QStringLiteral("rtsl")) {
     return QStringLiteral("RTSL");
@@ -481,6 +487,9 @@ QString buildDag(const AnalysisResult& result, const ParsedModel& parsed) {
   lines << QStringLiteral("TASK GRAPH  ·  ") + workflowFor(result);
   lines << QStringLiteral("INPUT  ") + QFileInfo(result.path).fileName() + QStringLiteral("  ·  ") +
                inputKindFor(result);
+  if (!result.binaryArtifact.isEmpty()) {
+    lines << QStringLiteral("ELF    ") + QFileInfo(result.binaryArtifact).fileName();
+  }
   lines << rule();
   lines.append(configurationLines(parsed));
   lines << QString();
@@ -781,6 +790,9 @@ QString buildAssumptions(const AnalysisResult& result, const ParsedModel& parsed
   QStringList lines;
   lines << QStringLiteral("WORKFLOW      ") + workflowFor(result);
   lines << QStringLiteral("INPUT         ") + QFileInfo(result.path).fileName();
+  if (!result.binaryArtifact.isEmpty()) {
+    lines << QStringLiteral("ELF           ") + QFileInfo(result.binaryArtifact).fileName();
+  }
   lines << QStringLiteral("POLICY        ") + parsed.config.policy;
   lines << QStringLiteral("CORES         ") + QString::number(parsed.config.numCpus) +
                QStringLiteral(" real  ·  ") + QString::number(parsed.config.coresPerCpu) +
@@ -854,6 +866,9 @@ QString buildReport(const AnalysisResult& result, const ParsedModel& parsed,
   QStringList lines;
   lines << QStringLiteral("PTPN ANALYSIS REPORT");
   lines << QStringLiteral("input      ") + result.path;
+  if (!result.binaryArtifact.isEmpty()) {
+    lines << QStringLiteral("elf        ") + result.binaryArtifact;
+  }
   lines << QStringLiteral("workflow   ") + workflowFor(result);
   lines << rule();
   lines << QStringLiteral("VERDICT");
@@ -927,6 +942,20 @@ WorkbenchDocs renderWorkbench(const AnalysisResult& result) {
   docs.workflow = workflowFor(result);
   docs.inputKind = inputKindFor(result);
   const ParsedModel parsed = parseModel(result);
+  docs.binaryWorkflow = !result.binaryArtifact.isEmpty();
+  docs.dagEdgeCount = parsed.edges.size();
+  for (const TaskInfo& task : parsed.tasks) {
+    if (task.type != QStringLiteral("task")) {
+      continue;
+    }
+    ++docs.taskCount;
+    if (task.hasCore && task.core >= 0) {
+      ++docs.knownCoreCount;
+    }
+    if (task.hasPriority) {
+      ++docs.knownPriorityCount;
+    }
+  }
 
   docs.dagSummary = QStringLiteral("%1 TASKS  ·  %2 %3")
                         .arg(parsed.tasks.size())
@@ -953,13 +982,17 @@ WorkbenchDocs renderWorkbench(const AnalysisResult& result) {
 
   if (!result.ok) {
     const QString failed = failureDoc(result);
-    docs.dag = failed;
+    // Keep the imported DAG visible even when the analyzer rejects the model:
+    // this is exactly where missing core/priority assumptions need to be read.
+    docs.dag = failed + QStringLiteral("\n\n") + buildDag(result, parsed);
     docs.ptpn = failed;
     docs.state = failed;
     docs.timeline = failed;
     docs.report = failed;
-    docs.assumptions = QStringLiteral("VERDICT       ") + tag(QStringLiteral("unknown")) +
-                       QStringLiteral("\nERROR         ") + result.error.left(180);
+    docs.assumptions = buildAssumptions(result, parsed);
+    if (!result.error.isEmpty()) {
+      docs.assumptions += QStringLiteral("\nERROR         ") + result.error.left(300);
+    }
     return docs;
   }
 
@@ -969,5 +1002,17 @@ WorkbenchDocs renderWorkbench(const AnalysisResult& result) {
   docs.state = buildState(result);
   docs.timeline = buildTimeline(result, parsed);
   docs.report = buildReport(result, parsed, docs.assumptions);
+  if (docs.incompleteAssumptions()) {
+    const QString warning =
+        QStringLiteral("ASSUMPTIONS INCOMPLETE\n"
+                       "Core %1/%2 known  ·  priority %3/%4 known\n"
+                       "The analyzer used parser defaults for missing fields. This is not a "
+                       "certified binary-first verdict.\n\n")
+            .arg(docs.knownCoreCount)
+            .arg(docs.taskCount)
+            .arg(docs.knownPriorityCount)
+            .arg(docs.taskCount);
+    docs.report.prepend(warning);
+  }
   return docs;
 }

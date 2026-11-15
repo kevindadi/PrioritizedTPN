@@ -286,6 +286,25 @@ inline QString globalStyleSheet() {
       border: 1px solid #164E63;
       padding: 6px;
     }
+    QMenu {
+      background: #0B1422;
+      color: #DCE9F8;
+      border: 1px solid #1E2F49;
+      padding: 4px;
+    }
+    QMenu::item {
+      padding: 6px 18px;
+      border-radius: 5px;
+    }
+    QMenu::item:selected {
+      background: #13243A;
+      color: #A5F3FC;
+    }
+    QMenu::separator {
+      height: 1px;
+      background: #17253C;
+      margin: 4px 8px;
+    }
     QStatusBar {
       background: #070C15;
       color: #64748B;

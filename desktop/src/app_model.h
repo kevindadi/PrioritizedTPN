@@ -73,6 +73,8 @@ struct AnalysisResult {
   StateGraph scg;
   QJsonObject metrics;
   QJsonObject tdg;
+  QString workflowLabel;
+  QString binaryArtifact;
 };
 
 inline double jsonNumber(const QJsonObject& object, const char* key, double fallback = 0.0) {

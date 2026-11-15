@@ -81,8 +81,10 @@ LF-only outputs produced by libstdc++ on POSIX, and text-mode writes add CRLF.
 The optional Qt Widgets workbench lives in [`desktop/`](../desktop/README.md).
 It runs the built `ptpn` CLI and presents the DAG, PTPN, state-class, timeline
 and report stages as text-first views; the PTPN/SCG graphs are explicit
-secondary previews. It is off by default (`PTPN_BUILD_DESKTOP`) so the analyzer
-and tests never require Qt.
+secondary previews. A first-run chooser separates specification-first intake
+from binary-first intake, where an ELF is paired with a `<elf>.dag.json` sidecar
+from an external static analyzer. It is off by default (`PTPN_BUILD_DESKTOP`) so
+the analyzer and tests never require Qt.
 
 Build the reduced Qt base port once (Widgets + PNG only), then configure the
 desktop preset:

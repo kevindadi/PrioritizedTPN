@@ -20,6 +20,8 @@ set(PTPN_DESKTOP_SOURCES
     src/text_view.h
     src/workbench_text.cpp
     src/workbench_text.h
+    src/workflow_dialog.cpp
+    src/workflow_dialog.h
     src/app_model.h
     src/theme.h
 )

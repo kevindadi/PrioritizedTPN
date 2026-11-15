@@ -19,6 +19,16 @@ struct WorkbenchDocs {
   QString stateSummary;
   QString timelineSummary;
   QString reportSummary;
+
+  int taskCount = 0;
+  int dagEdgeCount = 0;
+  int knownCoreCount = 0;
+  int knownPriorityCount = 0;
+  bool binaryWorkflow = false;
+
+  bool incompleteAssumptions() const {
+    return taskCount > 0 && (knownCoreCount < taskCount || knownPriorityCount < taskCount);
+  }
 };
 
 // Builds the text-first workbench surfaces from the analyzer result. The text

@@ -23,7 +23,12 @@ provenance, core/priority coverage, exactness, truncation and evidence counts.
 
 ## Workflows
 
-The current phase implements the **specification-first** path:
+![Workflow chooser](preview-workflow.png)
+
+On first launch the workbench asks for an intake contract instead of silently
+opening a demo. `NEW WORKSPACE` reopens the chooser later.
+
+### Specification-first
 
 ```text
 RTSL / TDG JSON / PTPN
@@ -38,8 +43,33 @@ RTSL / TDG JSON / PTPN
 RTSL inputs ask the analyzer to materialize the lowered TDG with
 `--export-tdg`; TDG JSON inputs are shown directly. PTPN inputs have no DAG, so
 the DAG stage reconstructs a task snapshot from metrics and explains that in the
-text. The **binary-first** path (ELF / static analysis → DAG) is represented in
-the workflow panel as the next stage; the backend adapter is not wired yet.
+text.
+
+### Binary-first
+
+![Binary-first conditional verdict](preview-binary-conditional.png)
+
+The desktop app does **not** parse ELF in-process. It consumes the DAG produced
+by an external static analyzer, using the sidecar contract:
+
+```text
+firmware.elf
+firmware.elf.dag.json      ← TDG JSON emitted by the static analyzer
+```
+
+`IMPORT ELF` (or passing the `.elf` path on the command line) looks for
+`<elf>.dag.json` / `<elf>.tdg.json` and falls back to `<basename>.dag.json`.
+If the sidecar is missing, the app says so instead of fabricating a DAG.
+
+Missing core/priority fields are kept as explicit assumptions. The analyzer may
+still run with parser defaults for inspection, but the verdict becomes
+**`CONDITIONAL` / `ASSUMPTIONS`**, the assumptions panel shows `core 0/N` and
+`priority 0/N`, and the report says the result is not certified. This is
+deliberately different from a green `SCHEDULABLE` with invented metadata.
+
+The static analyzer itself is not bundled yet; the desktop adapter and the
+sidecar contract are ready for it.
+
 
 ## Build
 
@@ -90,12 +120,12 @@ large models and precise reading.
 
 ## Notes
 
-- On startup the app loads `example/motivating-examples/hw.json` when no file
-  argument is given. Pass a file path on the command line to open it directly.
+- With no file argument the app opens the workflow chooser. Pass a `.rtsl`,
+  `.json`, `.ptpn` or `.elf` path on the command line to bypass it.
 - Drop `.rtsl`, `.json` or `.ptpn` files onto the window.
 - `Ctrl+1` … `Ctrl+5` switch stages; `Ctrl+P` opens the graph preview for the
   current PTPN/STATE SPACE page.
 - Pending RTSL measurements are reported exactly as the analyzer reports them
   (`E-VAL-213`); the workbench does not invent timing values.
-- `binary-first` (ELF / static analysis) is the next workflow; the current UI
-  keeps it visible but does not claim support.
+- The sidebar keeps artifact counts and a session run history; unresolved
+  binary-first assumptions remain visible there and in the right-hand panel.

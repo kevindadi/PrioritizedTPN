@@ -17,6 +17,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QLinearGradient>
+#include <QMessageBox>
+#include <QMenu>
 #include <QMimeData>
 #include <QPainter>
 #include <QPainterPath>
@@ -24,6 +26,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadialGradient>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QShortcut>
 #include <QShowEvent>
@@ -31,6 +34,7 @@
 #include <QStatusBar>
 #include <QStringList>
 #include <QTabWidget>
+#include <QTime>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -55,6 +59,7 @@
 #include "text_view.h"
 #include "theme.h"
 #include "workbench_text.h"
+#include "workflow_dialog.h"
 
 namespace {
 
@@ -201,21 +206,26 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
   QTimer::singleShot(240, this, [this] {
     QString startupFile;
+    QString startupElf;
     for (const QString& argument : QCoreApplication::arguments().mid(1)) {
       const QFileInfo info(argument);
       const QString suffix = info.suffix().toLower();
-      if (info.isFile() &&
-          (suffix == QStringLiteral("rtsl") || suffix == QStringLiteral("json") ||
-           suffix == QStringLiteral("ptpn"))) {
+      if (!info.isFile()) {
+        continue;
+      }
+      if (suffix == QStringLiteral("elf")) {
+        startupElf = info.absoluteFilePath();
+      } else if (suffix == QStringLiteral("rtsl") || suffix == QStringLiteral("json") ||
+                 suffix == QStringLiteral("ptpn")) {
         startupFile = info.absoluteFilePath();
-        break;
       }
     }
-    if (startupFile.isEmpty()) {
-      startupFile = sourcePath(QStringLiteral("example/motivating-examples/hw.json"));
-    }
-    if (QFileInfo::exists(startupFile)) {
+    if (!startupElf.isEmpty()) {
+      importBinaryPath(startupElf, false);
+    } else if (!startupFile.isEmpty()) {
       loadModel(startupFile);
+    } else {
+      QTimer::singleShot(120, this, &MainWindow::showWorkflowHub);
     }
   });
 }
@@ -300,7 +310,7 @@ QWidget* MainWindow::buildHeader() {
   layout->addLayout(titleColumn);
   layout->addSpacing(10);
 
-  workflowChip_ = new QLabel(QStringLiteral("SPEC-FIRST"));
+  workflowChip_ = new QLabel(QStringLiteral("NO WORKFLOW"));
   workflowChip_->setObjectName(QStringLiteral("workflowChip"));
   workflowChip_->setAlignment(Qt::AlignCenter);
   workflowChip_->setFixedWidth(142);
@@ -326,6 +336,7 @@ QWidget* MainWindow::buildHeader() {
   runButton_->setObjectName(QStringLiteral("primary"));
   runButton_->setCursor(Qt::PointingHandCursor);
   runButton_->setFixedWidth(128);
+  runButton_->setEnabled(false);
   layout->addWidget(runButton_);
 
   statusPill_ = new QLabel(QStringLiteral("BOOT"));
@@ -338,19 +349,26 @@ QWidget* MainWindow::buildHeader() {
 }
 
 QWidget* MainWindow::buildSidebar() {
+  auto* scroll = new QScrollArea;
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+  scroll->setFixedWidth(286);
+  scroll->setStyleSheet(QStringLiteral("QScrollArea { background: transparent; border: none; }"));
+
   auto* panel = new QFrame;
   panel->setObjectName(QStringLiteral("panel"));
-  panel->setFixedWidth(286);
   auto* layout = new QVBoxLayout(panel);
   layout->setContentsMargins(16, 16, 16, 16);
   layout->setSpacing(9);
 
   layout->addWidget(sectionLabel(QStringLiteral("Workflow")));
-  workflowSidebarValue_ = new QLabel(QStringLiteral("SPEC-FIRST"));
+  workflowSidebarValue_ = new QLabel(QStringLiteral("NO PROJECT"));
   workflowSidebarValue_->setFont(theme::display(15, QFont::Bold));
   workflowSidebarValue_->setStyleSheet(QStringLiteral("color:#67E8F9;"));
   layout->addWidget(workflowSidebarValue_);
-  workflowSidebarHint_ = new QLabel(QStringLiteral("RTSL / TDG  →  PTPN  →  SCG"));
+  workflowSidebarHint_ = new QLabel(QStringLiteral("Choose a workflow to begin"));
   workflowSidebarHint_->setObjectName(QStringLiteral("muted"));
   workflowSidebarHint_->setWordWrap(true);
   workflowSidebarHint_->setFont(theme::mono(7.2));
@@ -360,11 +378,18 @@ QWidget* MainWindow::buildSidebar() {
   binary->setStyleSheet(QStringLiteral("color:#40516A; font-size:7pt; padding-top:4px;"));
   binary->setWordWrap(true);
   layout->addWidget(binary);
-  auto* next = new QLabel(QStringLiteral("NEXT"));
-  next->setStyleSheet(QStringLiteral("color:#334155; background:#0B1422; border:1px solid #17253C; "
-                                     "border-radius:6px; padding:2px 7px; font-size:7pt;"));
-  next->setFixedWidth(42);
-  layout->addWidget(next);
+  auto* importBinary = new QPushButton(QStringLiteral("IMPORT ELF"));
+  importBinary->setObjectName(QStringLiteral("ghost"));
+  importBinary->setCursor(Qt::PointingHandCursor);
+  importBinary->setFixedWidth(92);
+  layout->addWidget(importBinary);
+  connect(importBinary, &QPushButton::clicked, this, &MainWindow::importBinary);
+
+  auto* newWorkspace = new QPushButton(QStringLiteral("NEW WORKSPACE"));
+  newWorkspace->setObjectName(QStringLiteral("ghost"));
+  newWorkspace->setCursor(Qt::PointingHandCursor);
+  layout->addWidget(newWorkspace);
+  connect(newWorkspace, &QPushButton::clicked, this, &MainWindow::showWorkflowHub);
 
   layout->addWidget(divider());
   layout->addWidget(sectionLabel(QStringLiteral("Model source")));
@@ -384,23 +409,27 @@ QWidget* MainWindow::buildSidebar() {
   samples->setStyleSheet(QStringLiteral("color:#52627A; font-size:7pt; letter-spacing:2px;"));
   layout->addWidget(samples);
 
+  auto* examplesButton = new QPushButton(QStringLiteral("EXAMPLES"));
+  examplesButton->setObjectName(QStringLiteral("chip"));
+  examplesButton->setCursor(Qt::PointingHandCursor);
+  auto* examplesMenu = new QMenu(examplesButton);
   const QVector<QPair<QString, QString>> examples = {
       {QStringLiteral("HARDWARE  /  HW"), QStringLiteral("example/motivating-examples/hw.json")},
       {QStringLiteral("S-BENCH  /  A"), QStringLiteral("example/s-bench/a.json")},
       {QStringLiteral("P-BENCH  /  INITIAL"), QStringLiteral("example/p-bench/initial.json")},
       {QStringLiteral("RTSL  /  DEMO"), QStringLiteral("example/introduction/demo.rtsl")},
+      {QStringLiteral("RTSL  /  FILLED"), QStringLiteral("example/introduction/demo-filled.rtsl")},
   };
   for (const auto& example : examples) {
     const QString path = sourcePath(example.second);
     if (!QFileInfo::exists(path)) {
       continue;
     }
-    auto* chip = new QPushButton(example.first);
-    chip->setObjectName(QStringLiteral("chip"));
-    chip->setCursor(Qt::PointingHandCursor);
-    layout->addWidget(chip);
-    connect(chip, &QPushButton::clicked, this, [this, path] { loadModel(path); });
+    QAction* action = examplesMenu->addAction(example.first);
+    connect(action, &QAction::triggered, this, [this, path] { loadModel(path); });
   }
+  examplesButton->setMenu(examplesMenu);
+  layout->addWidget(examplesButton);
 
   layout->addSpacing(2);
   layout->addWidget(divider());
@@ -410,6 +439,14 @@ QWidget* MainWindow::buildSidebar() {
   artifactsLabel_->setFont(theme::mono(7.2));
   artifactsLabel_->setWordWrap(true);
   layout->addWidget(artifactsLabel_);
+
+  layout->addWidget(divider());
+  layout->addWidget(sectionLabel(QStringLiteral("Run history")));
+  runHistoryLabel_ = new QLabel(QStringLiteral("no runs in this session"));
+  runHistoryLabel_->setObjectName(QStringLiteral("muted"));
+  runHistoryLabel_->setFont(theme::mono(7.1));
+  runHistoryLabel_->setWordWrap(true);
+  layout->addWidget(runHistoryLabel_);
 
   layout->addWidget(divider());
   layout->addWidget(sectionLabel(QStringLiteral("Verdict")));
@@ -441,7 +478,8 @@ QWidget* MainWindow::buildSidebar() {
   footer->setStyleSheet(QStringLiteral("color:#334155; font-size:7pt; letter-spacing:1px;"));
   layout->addWidget(footer);
 
-  return panel;
+  scroll->setWidget(panel);
+  return scroll;
 }
 
 QWidget* MainWindow::buildInspector() {
@@ -631,6 +669,88 @@ void MainWindow::wire() {
   connect(service_, &AnalysisService::finished, this, &MainWindow::handleResult);
 }
 
+void MainWindow::showWorkflowHub() {
+  WorkflowDialog dialog(this);
+  if (dialog.exec() != QDialog::Accepted) {
+    return;
+  }
+  switch (dialog.choice()) {
+    case WorkflowDialog::Choice::Specification:
+      openFileDialog();
+      break;
+    case WorkflowDialog::Choice::Binary:
+      importBinary();
+      break;
+    case WorkflowDialog::Choice::Example:
+      loadModel(sourcePath(QStringLiteral("example/motivating-examples/hw.json")));
+      break;
+    case WorkflowDialog::Choice::None:
+      break;
+  }
+}
+
+void MainWindow::importBinary() {
+  const QString start = currentFile_.isEmpty()
+                            ? QDir::homePath()
+                            : QFileInfo(currentFile_).absolutePath();
+  const QString elf = QFileDialog::getOpenFileName(
+      this, QStringLiteral("Import an ELF artifact"), start,
+      QStringLiteral("ELF binaries (*.elf *.out *.axf);;All files (*.*)"));
+  if (!elf.isEmpty()) {
+    importBinaryPath(elf, true);
+  }
+}
+
+bool MainWindow::importBinaryPath(const QString& elfPath, bool interactive) {
+  const QFileInfo elfInfo(elfPath);
+  if (!elfInfo.exists() || !elfInfo.isFile()) {
+    const QString message = QStringLiteral("ELF file does not exist: ") + elfPath;
+    if (interactive) {
+      QMessageBox::warning(this, QStringLiteral("Binary-first import"), message);
+    } else {
+      statusBar()->showMessage(message, 7000);
+    }
+    return false;
+  }
+
+  const QString dag = findBinaryDag(elfInfo.absoluteFilePath());
+  if (dag.isEmpty()) {
+    const QString message =
+        QStringLiteral("No DAG sidecar found for %1.\n\nExpected:\n  %1.dag.json\n\n"
+                       "Binary-first expects an external static analyzer to emit the TDG JSON; "
+                       "the ELF → DAG analyzer is not bundled with the desktop app yet.")
+            .arg(QDir::toNativeSeparators(elfInfo.absoluteFilePath()));
+    if (interactive) {
+      QMessageBox::information(this, QStringLiteral("Binary-first import"), message);
+    } else {
+      statusBar()->showMessage(QStringLiteral("No DAG sidecar for this ELF"), 7000);
+    }
+    return false;
+  }
+
+  binaryElf_ = elfInfo.absoluteFilePath();
+  loadModel(dag, QStringLiteral("BINARY · ELF"));
+  return true;
+}
+
+QString MainWindow::findBinaryDag(const QString& elfPath) {
+  const QFileInfo info(elfPath);
+  const QStringList candidates = {
+      elfPath + QStringLiteral(".dag.json"),
+      elfPath + QStringLiteral(".tdg.json"),
+      info.absolutePath() + QLatin1Char('/') + info.completeBaseName() + QStringLiteral(".dag.json"),
+      info.absolutePath() + QLatin1Char('/') + info.completeBaseName() + QStringLiteral(".tdg.json"),
+      info.absolutePath() + QLatin1Char('/') + info.completeBaseName() + QStringLiteral(".json"),
+  };
+  for (const QString& candidate : candidates) {
+    const QFileInfo dag(candidate);
+    if (dag.exists() && dag.isFile()) {
+      return dag.absoluteFilePath();
+    }
+  }
+  return {};
+}
+
 void MainWindow::openFileDialog() {
   const QString path = QFileDialog::getOpenFileName(
       this, QStringLiteral("Open a PTPN model"), sourcePath(QStringLiteral("example")),
@@ -640,29 +760,49 @@ void MainWindow::openFileDialog() {
   }
 }
 
-void MainWindow::loadModel(const QString& path) {
+void MainWindow::loadModel(const QString& path, const QString& workflowLabel) {
   const QFileInfo info(path);
   if (!info.exists() || !info.isFile()) {
     statusBar()->showMessage(QStringLiteral("Cannot open %1").arg(path), 6000);
     return;
   }
+  workflowOverride_ = workflowLabel;
+  if (workflowLabel.isEmpty()) {
+    binaryElf_.clear();
+  }
+  if (info.absoluteFilePath() != currentFile_) {
+    runHistory_.clear();
+    if (runHistoryLabel_ != nullptr) {
+      runHistoryLabel_->setText(QStringLiteral("no runs in this session"));
+    }
+  }
   currentFile_ = info.absoluteFilePath();
   const QString nativePath = QDir::toNativeSeparators(currentFile_);
   pathChip_->setText(pathChip_->fontMetrics().elidedText(nativePath, Qt::ElideLeft, 272));
   pathChip_->setToolTip(nativePath);
-  modelName_->setText(info.fileName() + QStringLiteral("\n") + info.absolutePath());
-  const QString workflow = workflowShortName(currentFile_);
+  if (!binaryElf_.isEmpty()) {
+    modelName_->setText(QFileInfo(binaryElf_).fileName() + QStringLiteral("\nDAG: ") +
+                        info.fileName());
+  } else {
+    modelName_->setText(info.fileName() + QStringLiteral("\n") + info.absolutePath());
+  }
+  const QString workflow =
+      workflowLabel.isEmpty() ? workflowShortName(currentFile_) : workflowLabel;
   workflowChip_->setText(workflow);
   workflowSidebarValue_->setText(workflow);
   const QString suffix = info.suffix().toLower();
-  if (suffix == QStringLiteral("rtsl")) {
+  if (!binaryElf_.isEmpty()) {
+    workflowSidebarHint_->setText(QStringLiteral("ELF  →  DAG  →  PTPN  →  SCG"));
+  } else if (suffix == QStringLiteral("rtsl")) {
     workflowSidebarHint_->setText(QStringLiteral("RTSL  →  TDG  →  PTPN  →  SCG"));
   } else if (suffix == QStringLiteral("json")) {
     workflowSidebarHint_->setText(QStringLiteral("TDG JSON  →  PTPN  →  SCG"));
   } else {
     workflowSidebarHint_->setText(QStringLiteral("PTPN  →  SCG  ·  structure input"));
   }
-  setWindowTitle(QStringLiteral("PTPN  //  ") + info.fileName());
+  setWindowTitle(QStringLiteral("PTPN  //  ") +
+                 (binaryElf_.isEmpty() ? info.fileName() : QFileInfo(binaryElf_).fileName()));
+  runButton_->setEnabled(true);
   runAnalysis();
 }
 
@@ -682,7 +822,7 @@ void MainWindow::runAnalysis() {
 
 void MainWindow::setBusy(bool busy) {
   busy_ = busy;
-  runButton_->setEnabled(!busy);
+  runButton_->setEnabled(!busy && !currentFile_.isEmpty());
   openButton_->setEnabled(!busy);
   runButton_->setText(busy ? QStringLiteral("ANALYZING…") : QStringLiteral("RUN ANALYSIS"));
 }
@@ -690,8 +830,31 @@ void MainWindow::setBusy(bool busy) {
 void MainWindow::handleResult(const AnalysisResult& result) {
   setBusy(false);
   result_ = result;
+  result_.workflowLabel = workflowOverride_;
+  result_.binaryArtifact = binaryElf_;
   docs_ = renderWorkbench(result_);
   applyDocs(docs_);
+
+  RunRecord record;
+  record.time = QTime::currentTime().toString(QStringLiteral("HH:mm"));
+  if (!result.ok) {
+    record.verdict = QStringLiteral("ERROR");
+  } else if (docs_.incompleteAssumptions()) {
+    record.verdict = QStringLiteral("CONDITIONAL");
+  } else {
+    record.verdict = jsonBool(result.metrics, "schedulable", false)
+                         ? QStringLiteral("SCHEDULABLE")
+                         : QStringLiteral("UNSCHEDULABLE");
+  }
+  record.detail = QStringLiteral("%1T/%2E · %3S")
+                      .arg(docs_.taskCount)
+                      .arg(docs_.dagEdgeCount)
+                      .arg(result.scg.nodes.size());
+  runHistory_.prepend(record);
+  while (runHistory_.size() > 5) {
+    runHistory_.removeLast();
+  }
+  updateRunHistory();
 
   logView_->setPlainText(result.logs.isEmpty()
                              ? QStringLiteral("(no output)\n")
@@ -714,6 +877,32 @@ void MainWindow::handleResult(const AnalysisResult& result) {
 
   updateSummary();
   tabs_->setCurrentIndex(0);
+  const bool conditional = docs_.incompleteAssumptions();
+  if (conditional) {
+    verdictValue_->setText(QStringLiteral("CONDITIONAL"));
+    verdictValue_->setStyleSheet(QStringLiteral("color:#FBBF24;"));
+    verdictSub_->setText(QStringLiteral("core/priority unresolved  ·  parser defaults used"));
+    setStatusPill(QStringLiteral("ASSUMPTIONS"), theme::c("#FBBF24"));
+    detailTitle_->setText(QStringLiteral("MODEL READY  ·  CONDITIONAL"));
+    detailBody_->setText(
+        QStringLiteral("%1 places · %2 transitions\n%3 state classes · %4 edges\n\n"
+                       "ASSUMPTIONS INCOMPLETE  ·  core %5/%6 known  ·  priority %7/%8 known.\n"
+                       "The analyzer used parser defaults; this is not a certified binary-first "
+                       "verdict. Text remains the primary workbench.")
+            .arg(result.net.places.size())
+            .arg(result.net.transitions.size())
+            .arg(result.scg.nodes.size())
+            .arg(result.scg.edges.size())
+            .arg(docs_.knownCoreCount)
+            .arg(docs_.taskCount)
+            .arg(docs_.knownPriorityCount)
+            .arg(docs_.taskCount));
+    statusBar()->showMessage(
+        QStringLiteral("ASSUMPTIONS INCOMPLETE  ·  core/priority defaults used  ·  not certified"),
+        8000);
+    return;
+  }
+
   const bool schedulable = jsonBool(result.metrics, "schedulable", false);
   setStatusPill(schedulable ? QStringLiteral("SCHEDULABLE") : QStringLiteral("UNSCHEDULABLE"),
                 schedulable ? theme::c("#34D399") : theme::c("#FB7185"));
@@ -756,15 +945,25 @@ void MainWindow::applyDocs(const WorkbenchDocs& docs) {
   timelineSummary_->setText(docs.timelineSummary);
   reportSummary_->setText(docs.reportSummary);
   if (artifactsLabel_ != nullptr) {
-    artifactsLabel_->setText(
-        QStringLiteral("DAG    %1\nPTPN   %2\nSCG    %3\nRUN    %4 ms")
-            .arg(docs.dagSummary)
-            .arg(docs.ptpnSummary)
-            .arg(docs.stateSummary)
-            .arg(result_.elapsedMs));
+    QString artifactText;
+    if (!binaryElf_.isEmpty()) {
+      artifactText += QStringLiteral("ELF   ") + QFileInfo(binaryElf_).fileName() + QLatin1Char('\n');
+    }
+    artifactText += QStringLiteral("DAG   %1T · %2E\nPTPN  %3P · %4T · %5A\nSCG   %6S · %7E\nRUN   %8 ms")
+                        .arg(docs_.taskCount)
+                        .arg(docs_.dagEdgeCount)
+                        .arg(result_.net.places.size())
+                        .arg(result_.net.transitions.size())
+                        .arg(result_.net.arcs.size())
+                        .arg(result_.scg.nodes.size())
+                        .arg(result_.scg.edges.size())
+                        .arg(result_.elapsedMs);
+    artifactsLabel_->setText(artifactText);
   }
-  workflowChip_->setText(workflowShortName(result_.path));
-  workflowSidebarValue_->setText(workflowShortName(result_.path));
+  const QString workflow =
+      workflowOverride_.isEmpty() ? workflowShortName(result_.path) : workflowOverride_;
+  workflowChip_->setText(workflow);
+  workflowSidebarValue_->setText(workflow);
 
   if (ptpnPreview_ != nullptr) {
     ptpnPreview_->setEnabled(result_.ok && result_.net.valid);
@@ -772,6 +971,21 @@ void MainWindow::applyDocs(const WorkbenchDocs& docs) {
   if (statePreview_ != nullptr) {
     statePreview_->setEnabled(result_.ok && result_.scg.valid);
   }
+}
+
+void MainWindow::updateRunHistory() {
+  if (runHistoryLabel_ == nullptr) {
+    return;
+  }
+  if (runHistory_.isEmpty()) {
+    runHistoryLabel_->setText(QStringLiteral("no runs in this session"));
+    return;
+  }
+  QStringList lines;
+  for (const RunRecord& record : runHistory_) {
+    lines << QStringLiteral("%1  %2  %3").arg(record.time, record.verdict, record.detail);
+  }
+  runHistoryLabel_->setText(lines.join(QLatin1Char('\n')));
 }
 
 void MainWindow::updateSummary() {

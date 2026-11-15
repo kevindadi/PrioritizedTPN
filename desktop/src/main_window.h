@@ -42,13 +42,17 @@ class MainWindow : public QMainWindow {
   QWidget* buildTimelineTab();
   QWidget* buildReportTab();
   void wire();
+  void showWorkflowHub();
   void openFileDialog();
-  void loadModel(const QString& path);
+  void importBinary();
+  bool importBinaryPath(const QString& elfPath, bool interactive);
+  void loadModel(const QString& path, const QString& workflowLabel = QString());
   void runAnalysis();
   void setBusy(bool busy);
   void handleResult(const AnalysisResult& result);
   void applyDocs(const WorkbenchDocs& docs);
   void updateSummary();
+  void updateRunHistory();
   void openPetriPreview();
   void openStatePreview();
   void showPlaceInfo(int index);
@@ -58,6 +62,13 @@ class MainWindow : public QMainWindow {
   QString resolveCliPath() const;
   static QString sourcePath(const QString& relative);
   static QString workflowShortName(const QString& path);
+  static QString findBinaryDag(const QString& elfPath);
+
+  struct RunRecord {
+    QString time;
+    QString verdict;
+    QString detail;
+  };
 
   AnalysisResult result_;
   WorkbenchDocs docs_;
@@ -83,6 +94,7 @@ class MainWindow : public QMainWindow {
   QLabel* workflowSidebarValue_ = nullptr;
   QLabel* workflowSidebarHint_ = nullptr;
   QLabel* artifactsLabel_ = nullptr;
+  QLabel* runHistoryLabel_ = nullptr;
   QLabel* pathChip_ = nullptr;
   QLabel* modelName_ = nullptr;
   QLabel* statusPill_ = nullptr;
@@ -101,6 +113,9 @@ class MainWindow : public QMainWindow {
   QPushButton* runButton_ = nullptr;
   QPushButton* openButton_ = nullptr;
   QString currentFile_;
+  QString workflowOverride_;
+  QString binaryElf_;
+  QVector<RunRecord> runHistory_;
   bool busy_ = false;
   bool darkTitleApplied_ = false;
 };

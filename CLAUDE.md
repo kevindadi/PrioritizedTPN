@@ -46,7 +46,7 @@ Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/
 
 ### Desktop (Qt, optional)
 
-`desktop/` is an optional Qt 6 Widgets workbench. It launches `ptpn` as a child process and presents the DAG, PTPN, state-class, timeline and report stages as **text-first** views; graphs are secondary previews opened explicitly. The right panel keeps policy, core/priority coverage, timing provenance, exactness and truncation visible. It is outside the core build graph: enable it with `-DPTPN_BUILD_DESKTOP=ON` (the `windows-desktop` preset does) and install the reduced `qtbase` port from `desktop/vcpkg.json` into `D:/vcpkg/installed` first. See `desktop/README.md`.
+`desktop/` is an optional Qt 6 Widgets workbench. It launches `ptpn` as a child process and presents the DAG, PTPN, state-class, timeline and report stages as **text-first** views; graphs are secondary previews opened explicitly. The right panel keeps policy, core/priority coverage, timing provenance, exactness and truncation visible. It has a specification-first intake and a binary-first intake that consumes an external static analyzer's `<elf>.dag.json` sidecar; missing core/priority is surfaced as a conditional verdict rather than a fabricated PASS. It is outside the core build graph: enable it with `-DPTPN_BUILD_DESKTOP=ON` (the `windows-desktop` preset does) and install the reduced `qtbase` port from `desktop/vcpkg.json` into `D:/vcpkg/installed` first. See `desktop/README.md`.
 
 ## Architecture
 
