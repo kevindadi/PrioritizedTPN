@@ -13,7 +13,7 @@ class StateGraphView : public QWidget {
  public:
   explicit StateGraphView(QWidget* parent = nullptr);
 
-  void setGraph(const StateGraph& graph);
+  void setGraph(const StateGraph& graph, bool generic = false);
   void fitView();
   void zoomBy(double factor);
 
@@ -42,6 +42,7 @@ class StateGraphView : public QWidget {
 
   StateGraph graph_;
   bool hasGraph_ = false;
+  bool generic_ = false;
   QVector<QPointF> positions_;
   QVector<int> levels_;
   struct EdgeVisual {

@@ -6,7 +6,8 @@ A Qt 6 Widgets workbench for the PTPN analyzer. The workbench is **text-first**:
 the intermediate representations are dense, searchable, copyable text, and the
 graph views are secondary previews opened on demand.
 
-It runs the `ptpn` CLI as a child process and presents five stages:
+It runs the `ptpn` CLI as a child process. The specification-first workflow has
+five stages:
 
 - **DAG** — tasks, timing provenance, release/periodic bindings and TDG edges;
 - **PTPN** — places, transitions, arcs, task lanes and the initial marking;
@@ -14,7 +15,14 @@ It runs the `ptpn` CLI as a child process and presents five stages:
 - **TIMELINE** — textual WCRT/WCET response envelopes per core;
 - **REPORT** — a copyable analysis report with the assumptions and evidence.
 
-Every stage has `FIND`, `COPY`, and — for PTPN and STATE SPACE — `PREVIEW`.
+The binary-first workflow adds four parser-artifact stages:
+
+- **ELF** — file metadata plus parser-provided sections and symbols;
+- **CFG** — basic blocks, branches and calls;
+- **THREADS** — thread / async task entries and spawn/await edges;
+- **NET** — the unified generated net, with its text format.
+
+Every stage has `FIND`, `COPY`, and — where a graph exists — `PREVIEW`.
 `PREVIEW` opens the interactive graph only when requested. The right-hand panel
 always shows the assumptions behind the result: policy, cores, timing
 provenance, core/priority coverage, exactness, truncation and evidence counts.
@@ -47,28 +55,63 @@ text.
 
 ### Binary-first
 
-![Binary-first conditional verdict](preview-binary-conditional.png)
-
-The desktop app does **not** parse ELF in-process. It consumes the DAG produced
-by an external static analyzer, using the sidecar contract:
+The desktop app does **not** parse ELF in-process. ELF parsing, architecture
+support and language frontends live in the separate parser repository. That
+parser emits a bundle next to the ELF:
 
 ```text
 firmware.elf
-firmware.elf.dag.json      ← TDG JSON emitted by the static analyzer
+firmware.elf.bundle.json
 ```
 
-`IMPORT ELF` (or passing the `.elf` path on the command line) looks for
-`<elf>.dag.json` / `<elf>.tdg.json` and falls back to `<basename>.dag.json`.
-If the sidecar is missing, the app says so instead of fabricating a DAG.
+The bundle is intentionally a single artifact so ELF → CFG → threads → net stay
+traceable to one parse:
 
-Missing core/priority fields are kept as explicit assumptions. The analyzer may
-still run with parser defaults for inspection, but the verdict becomes
-**`CONDITIONAL` / `ASSUMPTIONS`**, the assumptions panel shows `core 0/N` and
-`priority 0/N`, and the report says the result is not certified. This is
-deliberately different from a green `SCHEDULABLE` with invented metadata.
+```json
+{
+  "schema": "ptpn.elf-bundle/1",
+  "elf": {
+    "architecture": "x86_64",
+    "language": "rust",
+    "frontend": "async",
+    "sections": [],
+    "symbols": []
+  },
+  "cfg": {
+    "nodes": [{"id": "bb0", "kind": "entry", "address": "0x401000"}],
+    "edges": [{"source": "bb0", "target": "bb1", "kind": "fallthrough"}]
+  },
+  "threads": {
+    "runtime": "tokio",
+    "frontend": "async",
+    "threads": [{"id": "main", "kind": "async-root", "entry": "0x401000"}],
+    "edges": [{"source": "main", "target": "sensor", "kind": "spawn"}]
+  },
+  "net": { "format": "ptpn.tdg/1", "tasks": [], "edges": [] }
+}
+```
 
-The static analyzer itself is not bundled yet; the desktop adapter and the
-sidecar contract are ready for it.
+- `frontend` is essential for Rust: `std::thread` and stackless `async`
+  coroutines produce different thread-control graphs.
+- `cfg.nodes` may be flat, or nested under `cfg.functions[].nodes` in the
+  common parser shape; both are accepted.
+- `threads` may use `threads[]` or `nodes[]` with `edges[]`.
+- `net` is the unified generated net. The desktop renders it as text and a
+  generic graph preview; the binary analysis backend is intentionally pending.
+- Legacy `<elf>.dag.json` / `<elf>.tdg.json` sidecars are still accepted as a
+  net-only fallback.
+
+![ELF artifact](preview-elf.png)
+
+![CFG text](preview-cfg.png)
+
+![CFG graph preview](preview-cfg-graph.png)
+
+`IMPORT ELF` (or passing the `.elf` path on the command line) always opens the
+ELF stage even when the parser bundle is missing; CFG/THREADS/NET then explain
+which artifact is absent instead of inventing one. The current binary workflow
+does **not** run the PTPN analysis backend; the run button shows `PENDING` and
+the assumptions panel says `ANALYSIS  backend pending`.
 
 
 ## Build
@@ -123,8 +166,8 @@ large models and precise reading.
 - With no file argument the app opens the workflow chooser. Pass a `.rtsl`,
   `.json`, `.ptpn` or `.elf` path on the command line to bypass it.
 - Drop `.rtsl`, `.json` or `.ptpn` files onto the window.
-- `Ctrl+1` … `Ctrl+5` switch stages; `Ctrl+P` opens the graph preview for the
-  current PTPN/STATE SPACE page.
+- `Ctrl+1` … `Ctrl+9` switch the currently visible stages; `Ctrl+P` opens the
+  graph preview for the current graph stage.
 - Pending RTSL measurements are reported exactly as the analyzer reports them
   (`E-VAL-213`); the workbench does not invent timing values.
 - The sidebar keeps artifact counts and a session run history; unresolved

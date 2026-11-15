@@ -259,6 +259,13 @@ void MainWindow::buildUi() {
   tabs_->addTab(buildStateTab(), QStringLiteral("STATE SPACE"));
   tabs_->addTab(buildTimelineTab(), QStringLiteral("TIMELINE"));
   tabs_->addTab(buildReportTab(), QStringLiteral("REPORT"));
+  tabs_->addTab(buildElfTab(), QStringLiteral("ELF"));
+  tabs_->addTab(buildCfgTab(), QStringLiteral("CFG"));
+  tabs_->addTab(buildThreadsTab(), QStringLiteral("THREADS"));
+  tabs_->addTab(buildNetTab(), QStringLiteral("NET"));
+  for (int index = 5; index < tabs_->count(); ++index) {
+    tabs_->setTabVisible(index, false);
+  }
   bodyLayout->addWidget(tabs_, 1);
   bodyLayout->addWidget(buildInspector());
   root->addWidget(body, 1);
@@ -270,16 +277,39 @@ void MainWindow::buildUi() {
   elapsedLabel_->setStyleSheet(QStringLiteral("color:#64748B; font-family:'Cascadia Mono';"));
   statusBar()->addPermanentWidget(elapsedLabel_);
 
-  // Keyboard-first navigation: the workbench is designed for dense text and
-  // large models, so tab switching and preview should not require the mouse.
-  for (int index = 0; index < 5; ++index) {
+  // Keyboard-first navigation: map Ctrl+1..9 to the currently visible stage
+  // list, because binary-first and specification-first expose different tabs.
+  for (int index = 0; index < 9; ++index) {
     auto* shortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+%1").arg(index + 1)), this);
-    connect(shortcut, &QShortcut::activated, this,
-            [this, index] { tabs_->setCurrentIndex(index); });
+    connect(shortcut, &QShortcut::activated, this, [this, index] {
+      QVector<int> visible;
+      for (int tab = 0; tab < tabs_->count(); ++tab) {
+        if (tabs_->isTabVisible(tab)) {
+          visible.push_back(tab);
+        }
+      }
+      if (index < visible.size()) {
+        tabs_->setCurrentIndex(visible.at(index));
+      }
+    });
   }
   auto* previewShortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+P")), this);
   connect(previewShortcut, &QShortcut::activated, this, [this] {
-    if (tabs_->currentIndex() == 1) {
+    if (binaryMode_) {
+      if (tabs_->currentIndex() == 6) {
+        openGraphPreview(QStringLiteral("CFG preview"), binaryDocs_.cfgGraph,
+                         binaryDocs_.cfgGraphValid,
+                         QStringLiteral("control-flow graph from the external ELF parser"));
+      } else if (tabs_->currentIndex() == 7) {
+        openGraphPreview(QStringLiteral("Thread-control preview"), binaryDocs_.threadGraph,
+                         binaryDocs_.threadGraphValid,
+                         QStringLiteral("thread/task control edges from the external parser"));
+      } else if (tabs_->currentIndex() == 8) {
+        openGraphPreview(QStringLiteral("Generated-net preview"), binaryDocs_.netGraph,
+                         binaryDocs_.netGraphValid,
+                         QStringLiteral("unified generated net from the external parser"));
+      }
+    } else if (tabs_->currentIndex() == 1) {
       openPetriPreview();
     } else if (tabs_->currentIndex() == 2) {
       openStatePreview();
@@ -649,17 +679,64 @@ QWidget* MainWindow::buildReportTab() {
       &reportView_, &reportSummary_, &unused, false);
 }
 
+QWidget* MainWindow::buildElfTab() {
+  QPushButton* unused = nullptr;
+  return buildStagePage(
+      QStringLiteral("ELF ARTIFACT"),
+      QStringLiteral("ELF metadata and parser-provided sections/symbols  ·  text first"),
+      &elfView_, &elfSummary_, &unused, false);
+}
+
+QWidget* MainWindow::buildCfgTab() {
+  return buildStagePage(
+      QStringLiteral("CONTROL-FLOW GRAPH"),
+      QStringLiteral("Basic blocks and branches extracted by the external ELF parser"),
+      &cfgView_, &cfgSummary_, &cfgPreview_, true);
+}
+
+QWidget* MainWindow::buildThreadsTab() {
+  return buildStagePage(
+      QStringLiteral("THREAD CONTROL"),
+      QStringLiteral("Thread / async task entry points and control edges"),
+      &threadsView_, &threadsSummary_, &threadsPreview_, true);
+}
+
+QWidget* MainWindow::buildNetTab() {
+  return buildStagePage(
+      QStringLiteral("GENERATED NET"),
+      QStringLiteral("Unified net emitted by the parser  ·  analysis backend is reserved"),
+      &netView_, &netSummary_, &netPreview_, true);
+}
+
 void MainWindow::wire() {
   connect(openButton_, &QPushButton::clicked, this, &MainWindow::openFileDialog);
   connect(runButton_, &QPushButton::clicked, this, &MainWindow::runAnalysis);
   connect(ptpnPreview_, &QPushButton::clicked, this, &MainWindow::openPetriPreview);
   connect(statePreview_, &QPushButton::clicked, this, &MainWindow::openStatePreview);
+  connect(cfgPreview_, &QPushButton::clicked, this, [this] {
+    openGraphPreview(QStringLiteral("CFG preview"), binaryDocs_.cfgGraph,
+                     binaryDocs_.cfgGraphValid,
+                     QStringLiteral("control-flow graph from the external ELF parser"));
+  });
+  connect(threadsPreview_, &QPushButton::clicked, this, [this] {
+    openGraphPreview(QStringLiteral("Thread-control preview"), binaryDocs_.threadGraph,
+                     binaryDocs_.threadGraphValid,
+                     QStringLiteral("thread/task control edges from the external parser"));
+  });
+  connect(netPreview_, &QPushButton::clicked, this, [this] {
+    openGraphPreview(QStringLiteral("Generated-net preview"), binaryDocs_.netGraph,
+                     binaryDocs_.netGraphValid,
+                     QStringLiteral("unified generated net from the external parser"));
+  });
   if (ptpnPreview_ != nullptr) {
     ptpnPreview_->setEnabled(false);
   }
   if (statePreview_ != nullptr) {
     statePreview_->setEnabled(false);
   }
+  cfgPreview_->setEnabled(false);
+  threadsPreview_->setEnabled(false);
+  netPreview_->setEnabled(false);
 
   connect(service_, &AnalysisService::started, this, [this](const QString&) {
     setBusy(true);
@@ -713,42 +790,127 @@ bool MainWindow::importBinaryPath(const QString& elfPath, bool interactive) {
     return false;
   }
 
-  const QString dag = findBinaryDag(elfInfo.absoluteFilePath());
-  if (dag.isEmpty()) {
-    const QString message =
-        QStringLiteral("No DAG sidecar found for %1.\n\nExpected:\n  %1.dag.json\n\n"
-                       "Binary-first expects an external static analyzer to emit the TDG JSON; "
-                       "the ELF → DAG analyzer is not bundled with the desktop app yet.")
-            .arg(QDir::toNativeSeparators(elfInfo.absoluteFilePath()));
-    if (interactive) {
-      QMessageBox::information(this, QStringLiteral("Binary-first import"), message);
-    } else {
-      statusBar()->showMessage(QStringLiteral("No DAG sidecar for this ELF"), 7000);
-    }
-    return false;
+  const QString previousElf = binary_.elfPath;
+  BinaryArtifacts artifacts = loadBinaryArtifacts(elfInfo.absoluteFilePath());
+  if (!artifacts.error.isEmpty() && interactive) {
+    QMessageBox::warning(this, QStringLiteral("Binary-first import"), artifacts.error);
   }
-
-  binaryElf_ = elfInfo.absoluteFilePath();
-  loadModel(dag, QStringLiteral("BINARY · ELF"));
+  if (artifacts.elfPath != previousElf) {
+    runHistory_.clear();
+  }
+  binary_ = artifacts;
+  binaryElf_ = artifacts.elfPath;
+  binaryBundlePath_ = artifacts.bundlePath;
+  binaryDocs_ = renderBinaryArtifacts(binary_);
+  applyBinaryDocs(binaryDocs_);
   return true;
 }
 
-QString MainWindow::findBinaryDag(const QString& elfPath) {
-  const QFileInfo info(elfPath);
-  const QStringList candidates = {
-      elfPath + QStringLiteral(".dag.json"),
-      elfPath + QStringLiteral(".tdg.json"),
-      info.absolutePath() + QLatin1Char('/') + info.completeBaseName() + QStringLiteral(".dag.json"),
-      info.absolutePath() + QLatin1Char('/') + info.completeBaseName() + QStringLiteral(".tdg.json"),
-      info.absolutePath() + QLatin1Char('/') + info.completeBaseName() + QStringLiteral(".json"),
-  };
-  for (const QString& candidate : candidates) {
-    const QFileInfo dag(candidate);
-    if (dag.exists() && dag.isFile()) {
-      return dag.absoluteFilePath();
-    }
+void MainWindow::showBinaryMode(bool binary) {
+  binaryMode_ = binary;
+  for (int index = 0; index < 5; ++index) {
+    tabs_->setTabVisible(index, !binary);
   }
-  return {};
+  for (int index = 5; index < tabs_->count(); ++index) {
+    tabs_->setTabVisible(index, binary);
+  }
+  tabs_->setCurrentIndex(binary ? 5 : 0);
+  runButton_->setEnabled(!binary && !currentFile_.isEmpty());
+}
+
+void MainWindow::applyBinaryDocs(const BinaryDocs& docs) {
+  elfView_->setStageText(docs.elfText);
+  cfgView_->setStageText(docs.cfgText);
+  threadsView_->setStageText(docs.threadsText);
+  netView_->setStageText(docs.netText);
+
+  elfSummary_->setText(docs.elfSummary);
+  cfgSummary_->setText(docs.cfgSummary);
+  threadsSummary_->setText(docs.threadsSummary);
+  netSummary_->setText(docs.netSummary);
+  assumptionsView_->setPlainText(docs.assumptions);
+
+  cfgPreview_->setEnabled(docs.cfgGraphValid);
+  threadsPreview_->setEnabled(docs.threadGraphValid);
+  netPreview_->setEnabled(docs.netGraphValid);
+  ptpnPreview_->setEnabled(false);
+  statePreview_->setEnabled(false);
+
+  workflowChip_->setText(QStringLiteral("BINARY · ELF"));
+  workflowSidebarValue_->setText(QStringLiteral("BINARY · ELF"));
+  workflowSidebarHint_->setText(QStringLiteral("ELF  →  CFG / THREADS  →  NET"));
+  const QString elfPath = binary_.elfPath;
+  pathChip_->setText(pathChip_->fontMetrics().elidedText(
+      QDir::toNativeSeparators(elfPath), Qt::ElideLeft, 272));
+  pathChip_->setToolTip(elfPath);
+  modelName_->setText(QFileInfo(elfPath).fileName() + QStringLiteral("\n") +
+                      (binary_.bundlePath.isEmpty()
+                           ? QStringLiteral("parser bundle missing")
+                           : QFileInfo(binary_.bundlePath).fileName()));
+  setWindowTitle(QStringLiteral("PTPN  //  ") + QFileInfo(elfPath).fileName());
+
+  setStatusPill(QStringLiteral("BINARY READY"), theme::c("#C4B5FD"));
+  verdictValue_->setText(QStringLiteral("BACKEND PENDING"));
+  verdictValue_->setStyleSheet(QStringLiteral("color:#C4B5FD;"));
+  verdictSub_->setText(QStringLiteral("parser artifacts loaded  ·  analysis adapter reserved"));
+  statesValue_->setText(QStringLiteral("—"));
+  hyperValue_->setText(QStringLiteral("—"));
+  wcrtValue_->setText(QStringLiteral("—"));
+  coresValue_->setText(QStringLiteral("—"));
+  detailTitle_->setText(QStringLiteral("BINARY ARTIFACTS"));
+  detailBody_->setText(
+      QStringLiteral("ELF      %1\nCFG      %2\nTHREADS  %3\nNET      %4\n\n"
+                     "The binary analysis backend is intentionally pending. Text and preview are "
+                     "traceable to the external parser bundle.")
+          .arg(QFileInfo(elfPath).fileName(), docs.cfgSummary, docs.threadsSummary,
+               docs.netSummary));
+
+  artifactsLabel_->setText(
+      QStringLiteral("ELF   %1\nCFG   %2\nTHR   %3\nNET   %4")
+          .arg(QFileInfo(elfPath).fileName(), docs.cfgSummary, docs.threadsSummary,
+               docs.netSummary));
+
+  QStringList log;
+  log << QStringLiteral("binary-first workflow");
+  log << QStringLiteral("ELF: ") + elfPath;
+  log << QStringLiteral("bundle: ") +
+             (binary_.bundlePath.isEmpty() ? QStringLiteral("[missing]") : binary_.bundlePath);
+  log << QStringLiteral("CFG: ") + docs.cfgSummary;
+  log << QStringLiteral("THREADS: ") + docs.threadsSummary;
+  log << QStringLiteral("NET: ") + docs.netSummary;
+  log << QStringLiteral("analysis backend: pending");
+  logView_->setPlainText(log.join(QLatin1Char('\n')));
+  elapsedLabel_->setText(QStringLiteral("—"));
+
+  currentFile_.clear();
+  runButton_->setEnabled(false);
+  runButton_->setText(QStringLiteral("PENDING"));
+  showBinaryMode(true);
+  tabs_->setCurrentIndex(5);
+  statusBar()->showMessage(QStringLiteral("BINARY READY  ·  parser artifacts loaded  ·  analysis backend pending"),
+                           8000);
+
+  RunRecord record;
+  record.time = QTime::currentTime().toString(QStringLiteral("HH:mm"));
+  record.verdict = QStringLiteral("BINARY");
+  record.detail = QStringLiteral("CFG %1 · THR %2")
+                      .arg(docs.cfgSummary, docs.threadsSummary);
+  runHistory_.prepend(record);
+  while (runHistory_.size() > 5) {
+    runHistory_.removeLast();
+  }
+  updateRunHistory();
+}
+
+void MainWindow::openGraphPreview(const QString& title, const StateGraph& graph, bool valid,
+                                  const QString& footer) {
+  if (!valid) {
+    return;
+  }
+  PreviewDialog dialog(PreviewDialog::Kind::State, this);
+  dialog.setContext(title, footer);
+  dialog.setGenericGraph(graph);
+  dialog.exec();
 }
 
 void MainWindow::openFileDialog() {
@@ -767,9 +929,15 @@ void MainWindow::loadModel(const QString& path, const QString& workflowLabel) {
     return;
   }
   workflowOverride_ = workflowLabel;
+  binaryElf_.clear();
+  binaryBundlePath_.clear();
+  binary_ = BinaryArtifacts();
+  binaryDocs_ = BinaryDocs();
   if (workflowLabel.isEmpty()) {
-    binaryElf_.clear();
+    binaryMode_ = false;
   }
+  showBinaryMode(false);
+  runButton_->setText(QStringLiteral("RUN ANALYSIS"));
   if (info.absoluteFilePath() != currentFile_) {
     runHistory_.clear();
     if (runHistoryLabel_ != nullptr) {

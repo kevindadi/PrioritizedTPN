@@ -43,14 +43,15 @@ PreviewDialog::PreviewDialog(Kind kind, QWidget* parent) : QDialog(parent), kind
 
   auto* header = new QHBoxLayout;
   header->setSpacing(9);
-  header->addWidget(eyebrow(kind == Kind::Petri ? QStringLiteral("Graph preview")
-                                                : QStringLiteral("State preview")));
-  auto* hint = new QLabel(kind == Kind::Petri
-                              ? QStringLiteral("secondary view  ·  text is the primary model")
-                              : QStringLiteral("secondary view  ·  select a state for details"));
-  hint->setObjectName(QStringLiteral("faint"));
-  hint->setFont(theme::mono(7.2));
-  header->addWidget(hint);
+  eyebrow_ = eyebrow(kind == Kind::Petri ? QStringLiteral("Graph preview")
+                                         : QStringLiteral("State preview"));
+  header->addWidget(eyebrow_);
+  hint_ = new QLabel(kind == Kind::Petri
+                         ? QStringLiteral("secondary view  ·  text is the primary model")
+                         : QStringLiteral("secondary view  ·  select a state for details"));
+  hint_->setObjectName(QStringLiteral("faint"));
+  hint_->setFont(theme::mono(7.2));
+  header->addWidget(hint_);
   header->addStretch();
 
   if (kind == Kind::Petri) {
@@ -152,8 +153,28 @@ void PreviewDialog::setPetriNet(const PetriNet& net) {
 
 void PreviewDialog::setStateGraph(const StateGraph& graph) {
   if (state_ != nullptr) {
-    state_->setGraph(graph);
+    state_->setGraph(graph, false);
     QTimer::singleShot(0, state_, &StateGraphView::fitView);
+  }
+}
+
+void PreviewDialog::setGenericGraph(const StateGraph& graph) {
+  if (state_ != nullptr) {
+    state_->setGraph(graph, true);
+    QTimer::singleShot(0, state_, &StateGraphView::fitView);
+  }
+}
+
+void PreviewDialog::setContext(const QString& title, const QString& footer) {
+  setWindowTitle(title);
+  if (eyebrow_ != nullptr) {
+    eyebrow_->setText(title.toUpper());
+  }
+  if (hint_ != nullptr) {
+    hint_->setText(QStringLiteral("secondary graph preview  ·  derived from the external parser"));
+  }
+  if (footer_ != nullptr) {
+    footer_->setText(footer);
   }
 }
 

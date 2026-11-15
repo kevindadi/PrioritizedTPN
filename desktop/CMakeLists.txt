@@ -8,6 +8,8 @@ set(PTPN_DESKTOP_SOURCES
     src/main_window.h
     src/analysis_service.cpp
     src/analysis_service.h
+    src/binary_artifacts.cpp
+    src/binary_artifacts.h
     src/dot_parser.cpp
     src/dot_parser.h
     src/petri_view.cpp

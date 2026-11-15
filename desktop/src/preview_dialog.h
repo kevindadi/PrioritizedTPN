@@ -20,6 +20,8 @@ class PreviewDialog final : public QDialog {
 
   void setPetriNet(const PetriNet& net);
   void setStateGraph(const StateGraph& graph);
+  void setGenericGraph(const StateGraph& graph);
+  void setContext(const QString& title, const QString& footer);
 
  signals:
   void placeSelected(int index);
@@ -33,4 +35,6 @@ class PreviewDialog final : public QDialog {
   PetriView* petri_ = nullptr;
   StateGraphView* state_ = nullptr;
   QLabel* footer_ = nullptr;
+  QLabel* eyebrow_ = nullptr;
+  QLabel* hint_ = nullptr;
 };

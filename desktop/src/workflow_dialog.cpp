@@ -51,8 +51,9 @@ WorkflowDialog::WorkflowDialog(QWidget* parent) : QDialog(parent) {
       QStringLiteral("OPEN SPECIFICATION"), QStringLiteral("#22D3EE"), Choice::Specification));
   cards->addWidget(makeCard(
       QStringLiteral("02  /  CODE FIRST"), QStringLiteral("BINARY-FIRST"),
-      QStringLiteral("Import an ELF plus the DAG JSON emitted by the external static analyzer. "
-                     "Core and priority are treated as assumptions until resolved."),
+      QStringLiteral("Import an ELF plus the parser bundle with ELF metadata, control-flow, "
+                     "thread-control and the unified generated net. Analysis stays pending until "
+                     "the binary backend is wired."),
       QStringLiteral("IMPORT ELF"), QStringLiteral("#C4B5FD"), Choice::Binary));
   root->addLayout(cards, 1);
 

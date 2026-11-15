@@ -4,6 +4,7 @@
 #include <QMainWindow>
 
 #include "app_model.h"
+#include "binary_artifacts.h"
 #include "workbench_text.h"
 
 class QLabel;
@@ -41,11 +42,19 @@ class MainWindow : public QMainWindow {
   QWidget* buildStateTab();
   QWidget* buildTimelineTab();
   QWidget* buildReportTab();
+  QWidget* buildElfTab();
+  QWidget* buildCfgTab();
+  QWidget* buildThreadsTab();
+  QWidget* buildNetTab();
   void wire();
   void showWorkflowHub();
   void openFileDialog();
   void importBinary();
   bool importBinaryPath(const QString& elfPath, bool interactive);
+  void showBinaryMode(bool binary);
+  void applyBinaryDocs(const BinaryDocs& docs);
+  void openGraphPreview(const QString& title, const StateGraph& graph, bool valid,
+                        const QString& footer);
   void loadModel(const QString& path, const QString& workflowLabel = QString());
   void runAnalysis();
   void setBusy(bool busy);
@@ -62,7 +71,6 @@ class MainWindow : public QMainWindow {
   QString resolveCliPath() const;
   static QString sourcePath(const QString& relative);
   static QString workflowShortName(const QString& path);
-  static QString findBinaryDag(const QString& elfPath);
 
   struct RunRecord {
     QString time;
@@ -80,15 +88,26 @@ class MainWindow : public QMainWindow {
   TextView* stateView_ = nullptr;
   TextView* timelineView_ = nullptr;
   TextView* reportView_ = nullptr;
+  TextView* elfView_ = nullptr;
+  TextView* cfgView_ = nullptr;
+  TextView* threadsView_ = nullptr;
+  TextView* netView_ = nullptr;
 
   QLabel* dagSummary_ = nullptr;
   QLabel* ptpnSummary_ = nullptr;
   QLabel* stateSummary_ = nullptr;
   QLabel* timelineSummary_ = nullptr;
   QLabel* reportSummary_ = nullptr;
+  QLabel* elfSummary_ = nullptr;
+  QLabel* cfgSummary_ = nullptr;
+  QLabel* threadsSummary_ = nullptr;
+  QLabel* netSummary_ = nullptr;
 
   QPushButton* ptpnPreview_ = nullptr;
   QPushButton* statePreview_ = nullptr;
+  QPushButton* cfgPreview_ = nullptr;
+  QPushButton* threadsPreview_ = nullptr;
+  QPushButton* netPreview_ = nullptr;
 
   QLabel* workflowChip_ = nullptr;
   QLabel* workflowSidebarValue_ = nullptr;
@@ -115,7 +134,11 @@ class MainWindow : public QMainWindow {
   QString currentFile_;
   QString workflowOverride_;
   QString binaryElf_;
+  QString binaryBundlePath_;
+  BinaryArtifacts binary_;
+  BinaryDocs binaryDocs_;
   QVector<RunRecord> runHistory_;
+  bool binaryMode_ = false;
   bool busy_ = false;
   bool darkTitleApplied_ = false;
 };

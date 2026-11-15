@@ -30,8 +30,9 @@ StateGraphView::StateGraphView(QWidget* parent) : QWidget(parent) {
   setAttribute(Qt::WA_OpaquePaintEvent, true);
 }
 
-void StateGraphView::setGraph(const StateGraph& graph) {
+void StateGraphView::setGraph(const StateGraph& graph, bool generic) {
   graph_ = graph;
+  generic_ = generic;
   hasGraph_ = graph.valid;
   positions_.clear();
   levels_.clear();
@@ -47,10 +48,14 @@ void StateGraphView::setGraph(const StateGraph& graph) {
     fitView();
   }
   update();
-  emit statusMessage(hasGraph_ ? QStringLiteral("%1 state classes · %2 edges")
-                                     .arg(graph_.nodes.size())
-                                     .arg(graph_.edges.size())
-                               : QStringLiteral("No state-class graph exported"));
+  emit statusMessage(hasGraph_
+                         ? (generic ? QStringLiteral("%1 nodes · %2 edges")
+                                          .arg(graph_.nodes.size())
+                                          .arg(graph_.edges.size())
+                                    : QStringLiteral("%1 state classes · %2 edges")
+                                          .arg(graph_.nodes.size())
+                                          .arg(graph_.edges.size()))
+                         : QStringLiteral("No graph exported"));
 }
 
 void StateGraphView::layoutGraph() {
@@ -258,11 +263,12 @@ void StateGraphView::paintEvent(QPaintEvent*) {
     painter.setFont(theme::display(17, QFont::Bold));
     painter.setPen(theme::c("#D9F5FF"));
     painter.drawText(rect().adjusted(0, -20, 0, -20), Qt::AlignCenter,
-                     QStringLiteral("STATE SPACE"));
+                     generic_ ? QStringLiteral("PARSER GRAPH") : QStringLiteral("STATE SPACE"));
     painter.setFont(theme::ui(9));
     painter.setPen(theme::c("#5F7790"));
     painter.drawText(rect().adjusted(0, 24, 0, 24), Qt::AlignCenter,
-                     QStringLiteral("Run an analysis to inspect the state-class graph"));
+                     generic_ ? QStringLiteral("No parser graph artifact")
+                              : QStringLiteral("Run an analysis to inspect the state-class graph"));
     return;
   }
 
@@ -323,11 +329,14 @@ void StateGraphView::paintEvent(QPaintEvent*) {
   painter.setFont(theme::mono(7, QFont::Medium));
   painter.setPen(theme::alpha(theme::c("#52627A"), 220));
   painter.drawText(QRect(18, height() - 26, width() - 36, 16), Qt::AlignLeft,
-                   QStringLiteral("STATE CLASSES  ·  %1 states  /  %2 transitions")
-                       .arg(graph_.nodes.size())
-                       .arg(graph_.edges.size()));
+                   generic_ ? QStringLiteral("PARSER GRAPH  ·  %1 nodes  /  %2 edges")
+                                  .arg(graph_.nodes.size())
+                                  .arg(graph_.edges.size())
+                            : QStringLiteral("STATE CLASSES  ·  %1 states  /  %2 transitions")
+                                  .arg(graph_.nodes.size())
+                                  .arg(graph_.edges.size()));
   painter.drawText(QRect(18, height() - 26, width() - 36, 16), Qt::AlignRight,
-                   QStringLiteral("DBM ZONES"));
+                   generic_ ? QStringLiteral("CFG / THREADS / NET") : QStringLiteral("DBM ZONES"));
 }
 
 void StateGraphView::paintNode(QPainter& painter, int index) {
@@ -366,19 +375,25 @@ void StateGraphView::paintNode(QPainter& painter, int index) {
 
   painter.setFont(theme::display(11, QFont::Bold));
   painter.setPen(theme::c("#E6F7FF"));
-  painter.drawText(QRectF(-kNodeWidth / 2.0 + 12, -kNodeHeight / 2.0 + 9, 54, 20),
-                   Qt::AlignLeft | Qt::AlignVCenter,
-                   QStringLiteral("S%1").arg(node.index));
+  const QString nodeTitle =
+      generic_ ? painter.fontMetrics().elidedText(node.id, Qt::ElideRight, 72)
+               : QStringLiteral("S%1").arg(node.index);
+  painter.drawText(QRectF(-kNodeWidth / 2.0 + 12, -kNodeHeight / 2.0 + 9, 104, 20),
+                   Qt::AlignLeft | Qt::AlignVCenter, nodeTitle);
 
-  painter.setFont(theme::mono(6.5, QFont::Medium));
-  painter.setPen(theme::alpha(accent, 230));
-  const QString elapsed = node.elapsed.isEmpty() ? QStringLiteral("—") : node.elapsed;
-  painter.drawText(QRectF(kNodeWidth / 2.0 - 64, -kNodeHeight / 2.0 + 9, 52, 18),
-                   Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("t=%1").arg(elapsed));
+  if (!generic_) {
+    painter.setFont(theme::mono(6.5, QFont::Medium));
+    painter.setPen(theme::alpha(accent, 230));
+    const QString elapsed = node.elapsed.isEmpty() ? QStringLiteral("—") : node.elapsed;
+    painter.drawText(QRectF(kNodeWidth / 2.0 - 64, -kNodeHeight / 2.0 + 9, 52, 18),
+                     Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("t=%1").arg(elapsed));
+  }
 
   painter.setFont(theme::ui(8));
   painter.setPen(theme::c("#A8C5D8"));
-  const QString marking = node.marking.isEmpty() ? QStringLiteral("M = []") : node.marking;
+  const QString marking = node.marking.isEmpty() ? (generic_ ? QStringLiteral("—")
+                                                             : QStringLiteral("M = []"))
+                                                 : node.marking;
   const QString markingLine =
       painter.fontMetrics().elidedText(marking, Qt::ElideRight, static_cast<int>(kNodeWidth - 24));
   painter.drawText(QRectF(-kNodeWidth / 2.0 + 12, -6, kNodeWidth - 24, 16),
@@ -386,17 +401,20 @@ void StateGraphView::paintNode(QPainter& painter, int index) {
 
   painter.setFont(theme::mono(6.5));
   painter.setPen(theme::c("#64748B"));
-  const QString active = node.active.isEmpty() ? QStringLiteral("idle") : node.active;
+  const QString active = node.active.isEmpty() ? QStringLiteral("—") : node.active;
   const QString activeLine =
       painter.fontMetrics().elidedText(active, Qt::ElideRight, static_cast<int>(kNodeWidth - 24));
   painter.drawText(QRectF(-kNodeWidth / 2.0 + 12, 14, kNodeWidth - 24, 14),
                    Qt::AlignLeft | Qt::AlignVCenter, activeLine);
 
   if (!node.suspended.isEmpty() && node.suspended != QStringLiteral("(none)")) {
-    painter.setPen(theme::c("#F59E0B"));
+    painter.setPen(generic_ ? theme::c("#93A8C5") : theme::c("#F59E0B"));
     painter.setFont(theme::mono(6));
+    const QString extra = painter.fontMetrics().elidedText(
+        generic_ ? node.suspended : QStringLiteral("SUSPENDED"), Qt::ElideRight,
+        static_cast<int>(kNodeWidth - 24));
     painter.drawText(QRectF(-kNodeWidth / 2.0 + 12, 28, kNodeWidth - 24, 12),
-                     Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("SUSPENDED"));
+                     Qt::AlignLeft | Qt::AlignVCenter, extra);
   }
 
   painter.restore();
@@ -430,15 +448,21 @@ void StateGraphView::mouseMoveEvent(QMouseEvent* event) {
     hoverNode_ = node;
     if (node >= 0) {
       const StateNode& state = graph_.nodes.at(node);
-      QString text = QStringLiteral("State %1").arg(state.index);
+      QString text = generic_ ? QStringLiteral("Node %1").arg(state.id)
+                              : QStringLiteral("State %1").arg(state.index);
       if (!state.marking.isEmpty()) {
-        text += QStringLiteral("\n%1").arg(state.marking);
+        text += QStringLiteral("\n") + (generic_ ? QStringLiteral("Kind: ") : QString()) +
+                state.marking;
       }
       if (!state.active.isEmpty()) {
-        text += QStringLiteral("\nActive: %1").arg(state.active);
+        text += QStringLiteral("\n") + (generic_ ? QStringLiteral("Detail: ")
+                                                 : QStringLiteral("Active: ")) +
+                state.active;
       }
       if (!state.suspended.isEmpty()) {
-        text += QStringLiteral("\nSuspended: %1").arg(state.suspended);
+        text += QStringLiteral("\n") + (generic_ ? QStringLiteral("Extra: ")
+                                                 : QStringLiteral("Suspended: ")) +
+                state.suspended;
       }
       QToolTip::showText(event->globalPosition().toPoint(), text, this);
     } else {
