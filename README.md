@@ -80,25 +80,6 @@ PTPN source (.ptpn) ──► parse ──────────────�
 RTSL time values are normalized to milliseconds (one engine tick = 1 ms for
 RTSL input); TDG JSON integers remain unit-agnostic engine ticks.
 
-## Desktop workbench
-
-The native desktop front-end lives in the [`rt-pn/`](rt-pn/) git submodule and
-is built with **Tauri 2 + React + TypeScript**. It drives the same `ptpn` CLI
-and presents the DAG, PTPN, state-class, timeline and report stages as
-text-first views; PTPN/SCG graphs are explicit previews. A binary-first intake
-loads an ELF parser bundle for ELF/CFG/THREADS/NET inspection (binary analysis
-is intentionally pending). The C++ analyzer and CLI remain unchanged.
-
-```bash
-git submodule update --init rt-pn
-cd rt-pn
-npm install
-npm run tauri dev
-```
-
-See [`rt-pn/README.md`](rt-pn/README.md) for the CLI resolution rules, artifact
-locations and bundle contract.
-
 ## Documentation
 
 | Document | Contents |
