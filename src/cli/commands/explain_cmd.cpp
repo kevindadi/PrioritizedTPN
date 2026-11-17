@@ -43,7 +43,7 @@ std::string detail(const ptpn::DiagnosticCodeInfo& info) {
   out << "  trigger: " << info.trigger << "\n";
   out << "  subject: " << info.subject << "\n";
   out << "  fix:     " << info.fix << "\n";
-  out << "  docs:    docs/diagnostics.md (" << info.group << ")\n";
+  out << "  docs:    RT-PN docs/ptpn/diagnostics.md (" << info.group << ")\n";
   return out.str();
 }
 
@@ -56,7 +56,7 @@ class ExplainCommand final : public Command {
                      "One or more diagnostic codes, e.g. E-VAL-226 or R-ANA-002");
     add_diagnostics_options(app_, diagnostics_);
     app_->footer(
-        "The catalog is generated from docs/diagnostics.md, so `explain` and the\n"
+        "The catalog is generated from RT-PN docs/ptpn/diagnostics.md, so `explain` and the\n"
         "documentation cannot drift apart. Exit codes: 0 when every code is known,\n"
         "2 with E-SYN-003 for an unknown code.\n"
         "\n"
@@ -115,7 +115,7 @@ class ExplainCommand final : public Command {
         diagnostics->set_result(nlohmann::json{{"codes", std::move(codes)}});
         return diagnostics->exit_code();
       }
-      std::cout << "diagnostic codes (docs/diagnostics.md); 'ptpn explain CODE' for details\n"
+      std::cout << "diagnostic codes (RT-PN docs/ptpn/diagnostics.md); 'ptpn explain CODE' for details\n"
                 << text;
       return 0;
     }

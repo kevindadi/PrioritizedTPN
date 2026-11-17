@@ -25,11 +25,11 @@ std::set<std::string> lexer_keywords() {
   return keywords;
 }
 
-// The `keyword` production of docs/rtsl.ebnf: every quoted terminal from that
+// The `keyword` production of test/reference/rtsl.ebnf: every quoted terminal from that
 // production onwards (the production is the last one in the file).
 std::set<std::string> grammar_keywords() {
-  std::ifstream input("docs/rtsl.ebnf");
-  EXPECT_TRUE(input) << "cannot open docs/rtsl.ebnf";
+  std::ifstream input("test/reference/rtsl.ebnf");
+  EXPECT_TRUE(input) << "cannot open test/reference/rtsl.ebnf";
   const std::regex terminal(R"re("([a-z_]+)")re");
   std::set<std::string> keywords;
   bool in_keyword_production = false;
@@ -61,17 +61,17 @@ TEST(RtslGrammarTest, ReservedWordsMatchTheLexer) {
 
   for (const std::string& keyword : lexer) {
     EXPECT_TRUE(grammar.count(keyword) != 0)
-        << "keyword '" << keyword << "' is missing from docs/rtsl.ebnf";
+        << "keyword '" << keyword << "' is missing from test/reference/rtsl.ebnf";
   }
   for (const std::string& keyword : grammar) {
     EXPECT_TRUE(lexer.count(keyword) != 0)
-        << "'" << keyword << "' is reserved in docs/rtsl.ebnf but not in the lexer";
+        << "'" << keyword << "' is reserved in test/reference/rtsl.ebnf but not in the lexer";
   }
 }
 
 TEST(RtslGrammarTest, GrammarMentionsEveryProduction) {
-  std::ifstream input("docs/rtsl.ebnf");
-  ASSERT_TRUE(input) << "cannot open docs/rtsl.ebnf";
+  std::ifstream input("test/reference/rtsl.ebnf");
+  ASSERT_TRUE(input) << "cannot open test/reference/rtsl.ebnf";
   std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
   for (const char* production : {"program", "system_item", "task_decl", "task_attr", "time_attr",
                                  "intervals", "provenance", "measure_item", "edge_stmt",

@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <fstream>
 #include <set>
 #include <sstream>
 #include <string>
@@ -15,35 +14,13 @@ namespace {
 
 using namespace ptpn_test;
 
-// Extracts the code cells of the documentation tables: a row whose first cell
-// is a backticked code, e.g. "| `E-VAL-226` | error | ...".
-std::set<std::string> documented_codes(const std::string& path) {
-  std::ifstream input(path);
-  EXPECT_TRUE(input) << "cannot open " << path;
-  std::set<std::string> codes;
-  std::string line;
-  while (std::getline(input, line)) {
-    if (line.rfind("| `", 0) != 0) {
-      continue;
-    }
-    const std::size_t end = line.find('`', 3);
-    if (end == std::string::npos) {
-      continue;
-    }
-    const std::string code = line.substr(3, end - 3);
-    const bool looks_like_code = code.size() > 4 && code[1] == '-' &&
-                                 code.find('-') != std::string::npos &&
-                                 code.find_first_of("0123456789") != std::string::npos;
-    if (looks_like_code) {
-      codes.insert(code);
-    }
-  }
-  return codes;
-}
-
 }  // namespace
 
-TEST(ExplainTest, CatalogMatchesDocumentation) {
+// The catalog doc now lives in the RT-PN workbench (docs/ptpn/diagnostics.md),
+// so this repository only checks the generated catalog itself. Refresh it with
+// `tools/gen_diagnostic_codes.py --doc PATH`; the doc-vs-catalog drift check
+// belongs to the workbench tooling.
+TEST(ExplainTest, CatalogEntriesAreComplete) {
   std::set<std::string> catalog;
   for (const ptpn::DiagnosticCodeInfo& info : ptpn::diagnostic_code_catalog()) {
     EXPECT_TRUE(catalog.insert(info.code).second) << "duplicate catalog entry " << info.code;
@@ -51,20 +28,7 @@ TEST(ExplainTest, CatalogMatchesDocumentation) {
     EXPECT_FALSE(info.severity.empty()) << info.code;
     EXPECT_FALSE(info.trigger.empty()) << info.code;
   }
-
-  const std::set<std::string> documented = documented_codes("docs/diagnostics.md");
-  ASSERT_FALSE(documented.empty());
-
-  // Regenerate with tools/gen_diagnostic_codes.py when this fails.
-  for (const std::string& code : documented) {
-    EXPECT_TRUE(catalog.count(code) != 0)
-        << code << " is documented but missing from the catalog (run "
-                  "tools/gen_diagnostic_codes.py)";
-  }
-  for (const std::string& code : catalog) {
-    EXPECT_TRUE(documented.count(code) != 0)
-        << code << " is in the catalog but not documented in docs/diagnostics.md";
-  }
+  EXPECT_FALSE(catalog.empty());
 }
 
 TEST(ExplainTest, CommandPrintsDetailsAndListsTheCatalog) {

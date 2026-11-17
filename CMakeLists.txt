@@ -90,10 +90,13 @@ project(PTPN LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# docs/diagnostics.md is embedded as generated C++ string literals and contains
-# UTF-8 glyphs (→, ≥, —). Without /utf-8, MSVC decodes the sources using the
-# ANSI code page, so the catalog ends up with bytes that are not valid UTF-8 and
-# nlohmann/json's dump() throws when the `explain` envelope is serialized.
+# The generated diagnostic catalog is embedded as C++ string literals and
+# contains UTF-8 glyphs (→, ≥, —). Without /utf-8, MSVC decodes the sources
+# using the ANSI code page, so the catalog ends up with bytes that are not
+# valid UTF-8 and nlohmann/json's dump() throws when the `explain` envelope is
+# serialized. The catalog doc lives in the RT-PN workbench
+# (docs/ptpn/diagnostics.md); regenerate with
+# `tools/gen_diagnostic_codes.py --doc PATH` or PTPN_DIAGNOSTICS_MD.
 if(MSVC)
     add_compile_options(/utf-8)
 endif()

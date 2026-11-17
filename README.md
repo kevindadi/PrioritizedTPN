@@ -13,84 +13,60 @@ engine then explores the timed state space. Tasks declared `measured by llm`
 remain pending until their `time` attribute is filled in directly in the RTSL
 source.
 
-## Features
+This repository is the **CLI-only engine**. The desktop workbench and all
+user-facing documentation live in
+[RT-PN](https://github.com/kevindadi/RT-PN):
 
-- **RTSL v1 front-end** (`.rtsl`): unit-aware, declarative source with
-  panic-mode diagnostics and in-process lowering to TDG; validation-only and
-  full-pipeline modes
-- **Pending timing workflow**: `ptpn check` lists tasks declared
-  `measured by llm` in `result.pending_measurements`; `ptpn fill` writes the
-  measured intervals back into the `.rtsl` source (validating the patched
-  model before it is written)
-- Parse and validate **TDG JSON** (tasks, fork/join, locks, dependencies,
-  periodic release)
-- Lower TDGs into **PTPNs** (multi-core fixed/dynamic-priority scheduling,
-  preemption, mutex/spin locks)
-- **Scheduling policies**: fixed/restart/resume, RM/DM, PIP/PCP/SRP, EDF, FIFO,
-  and event-driven LLF; EDF/FIFO/LLF support statically partitioned multi-core
-  with explicit supported-class guards
-- Parse the **PTPN domain language** (`.ptpn`) directly, skipping TDG conversion
-- **State-class reachability analysis** with canonicalization (`equality`,
-  `max-lower`, `intersection`)
-- **Sound upper-bound zone merging**: one-sided zone-inclusion merging for
-  smaller graphs; WCRT stays a certified upper bound, `wcrt_lb` is reported as
-  unavailable
-- Optional **per-task cone decomposition**: analyze each task on its
-  dependency/contention cone; per-task timing and local-deadlock metrics match
-  the full graph, but whole-net deadlock detection is unavailable and connected
-  DAGs may not shrink
-- Optional **WCRT time-horizon reduction** that bounds SCG expansion and
-  reports truncation/approximation explicitly
-- Conservative **symmetry reduction** for verified isomorphic tasks on distinct
-  cores
-- **Core-allocation search** over per-task `allowed_cores`, evaluating
-  candidates with the exact state-class analysis and reporting feasible/Pareto
-  assignments with an optimality status
-- **Timing provenance**: estimated values (`estimated by "llm"`) are explicit
-  in the model and are explicitly not certified WCET bounds
-- Task `deadline` and WCET provenance (`wcet_kind`, `wcet_method`,
-  `wcet_artifact`) in TDG JSON
-- **Opt-in exports**: TDG / PTPN / state-class Graphviz DOT, WCET JSON, and
-  metrics JSON
-- **Resource budgets**: `--timeout` and `--max-memory` stop a runaway
-  exploration with partial results and a performance diagnostic (exit 5)
-- **Model semantics in plain text**: `ptpn describe` restates the effective
-  policy, computed priorities, core mapping, lock nesting, release phases and
-  edge forms, so a human or an LLM can check its understanding before trusting
-  a verdict
-- **Self-describing diagnostics**: `ptpn explain [CODE]` serves the catalog
-  generated from `docs/diagnostics.md`
-- **MCP server**: `ptpn mcp` exposes check/analyze/describe/fill/explain as
-  tools over stdio JSON-RPC for LLM clients
+- docs: <https://github.com/kevindadi/RT-PN/tree/main/docs/ptpn> (install,
+  usage, RTSL reference, diagnostics catalog, architecture, TDG JSON format)
+- workbench: <https://github.com/kevindadi/RT-PN>
 
-## Pipeline
+## Build
 
-```text
-RTSL source (.rtsl) ──► lex / parse / validate ──► TDG (in memory) ─┐
-TDG JSON            ──► parse ───────────────────► TDG ─────────────┴──► tdg2pn ──► PTPN ──┐
-PTPN source (.ptpn) ──► parse ─────────────────────────────────────► PTPN ────────────────┤
-                                                                                          ▼
-                                        state-class reachability analysis (DBM clock zones,
-                                        priorities, preemption, scheduling policies)
-                                                                                          │
-                                                                                          ▼
-                                               WCRT / schedulability / metrics JSON
+Requirements: C++17, CMake >= 3.27, Ninja, Boost (`graph`, `filesystem`,
+`thread`, `date_time`). nlohmann/json, CLI11, spdlog/fmt and GoogleTest are
+fetched at configure time.
+
+```bash
+./example/build.py                 # bootstrap vcpkg if missing, configure + build
+./example/build.py --test          # build + ctest
+ctest --test-dir build --output-on-failure
 ```
 
-RTSL time values are normalized to milliseconds (one engine tick = 1 ms for
-RTSL input); TDG JSON integers remain unit-agnostic engine ticks.
+CI-style Linux build with system Boost:
 
-## Documentation
+```bash
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
 
-| Document | Contents |
-|----------|----------|
-| [docs/install.md](docs/install.md) | Dependencies, native build, vcpkg, tests, and the Docker image |
-| [docs/usage.md](docs/usage.md) | Subcommands, options, reductions, core allocation, RTSL workflow, examples |
-| [docs/rtsl.md](docs/rtsl.md) | RTSL v1 reference: lexical rules, system/task syntax, units, cores, locks, provenance, bindings, supported classes |
-| [docs/rtsl.ebnf](docs/rtsl.ebnf) | Complete RTSL v1 grammar (EBNF, keywords checked against the lexer) |
-| [docs/diagnostics.md](docs/diagnostics.md) | Authoritative diagnostic code table, severity/exit codes, JSON envelope, command behavior, result interpretation |
-| [docs/architecture.md](docs/architecture.md) | Pipeline layers, source/CMake layout, application-layer responsibilities, known structural notes |
-| [docs/json_format.md](docs/json_format.md) | TDG JSON input format |
+Windows: open the repository in CLion (the `CMakePresets.json` presets use
+MinGW + vcpkg), or pass the vcpkg toolchain explicitly, for example
+`-DCMAKE_TOOLCHAIN_FILE=D:/vcpkg/scripts/buildsystems/vcpkg.cmake
+-DVCPKG_TARGET_TRIPLET=x64-mingw-static`.
+
+Docker (build context = repository root): `docker build -f Dockerfile -t ptpn .`.
+
+## Usage
+
+```bash
+./build/ptpn check -f model.rtsl --diagnostics json    # parse + validate only
+./build/ptpn rtsl  -f model.rtsl --export-tdg tdg.json
+./build/ptpn tdg   -f tdg.json --export-ptpn net.dot --export-wcet wcet.json
+```
+
+`ptpn explain CODE` serves the diagnostic catalog; `ptpn describe -f ...`
+restates the effective scheduling semantics.
+
+## Layout
+
+- `src/` — parsers, model, lowering, state-class analysis, metrics, exports, CLI
+- `test/` — GoogleTest suites (run from the repository root)
+- `test/reference/rtsl.ebnf` — grammar fixture kept in sync with the docs
+- `example/` — models plus the `build.py` / `run.py` helpers
+- `tools/gen_diagnostic_codes.py` — regenerates the diagnostic catalog include
+  from `RT-PN docs/ptpn/diagnostics.md` (`--doc PATH` or
+  `PTPN_DIAGNOSTICS_MD`)
 
 ## License
 

@@ -83,20 +83,20 @@ EDF/FIFO/LLF have an explicit **supported class**: static core partition, `cores
 
 ### Models and CLI
 
-- `src/model/tdg.h` — TDG (tasks, fork/join, locks, dependencies, periodic release, `allowed_cores`, WCET provenance); format in `docs/json_format.md`
+- `src/model/tdg.h` — TDG (tasks, fork/join, locks, dependencies, periodic release, `allowed_cores`, WCET provenance); format documented in the RT-PN workbench (`docs/ptpn/json_format.md`)
 - `src/model/petri.h` — PTPN: `Transition` carries `TimeInterval`, `priority`, `core` (−1 = control), `suspendable`; `Marking` is `vector<int>`
 - `src/parse/` — TDG JSON parser and `.ptpn` source parser (input only)
 - `src/export/` — output writers: TDG/PTPN/SCG DOT, the TDG JSON writer, and the WCET JSON writer; metrics JSON lives with the metrics library in `src/analysis/metrics/metrics_json.{h,cpp}`
-- `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is `docs/rtsl.md`, the workflow is in `docs/usage.md`, and `example/introduction/demo.rtsl` is the introductory model
+- `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is `RT-PN docs/ptpn/rtsl.md`, the workflow is in `RT-PN docs/ptpn/usage.md`, and `example/introduction/demo.rtsl` is the introductory model
 - `src/cli/` — CLI11 layer (namespace `cli`): `main.cpp` (envelope scaffolding + dispatch), `command.h`, `option_groups.{h,cpp}`, and one file per subcommand under `commands/` (`tdg`, `rtsl`, `check`, `ptpn`, `allocate`)
 - `src/app/` — application layer (namespace `app`, no CLI11): `common` (options, legacy rendering, memory, timing helpers), `logging` (spdlog-backed timing/log helpers), `input` (RTSL + TDG loading), `check_cmd` (parse+validate only), `lowering` (TDG→PTPN adapter), `analysis` (orchestration, result diagnostics), `pipelines` (the `run_*_pipeline` entry points, public `pipelines.h`), and `allocation_cmd`.
 
-User-facing docs live in `docs/` (`install.md`, `usage.md`, `rtsl.md`, `diagnostics.md`, `architecture.md`, `json_format.md`). The diagnostics code table is authoritative in `docs/diagnostics.md`; keep new codes and behavior changes in sync with it.
+User-facing documentation moved to the RT-PN workbench (`RT-PN docs/ptpn/`); this repository is CLI-only. The diagnostics catalog is authoritative in `RT-PN docs/ptpn/diagnostics.md`; keep new codes and behavior changes in sync with it and regenerate the include with `tools/gen_diagnostic_codes.py --doc ../RT-PN/docs/ptpn/diagnostics.md`.
 
 ## Conventions and gotchas
 
 - **`example/run.py` regex-parses `[STATS]` log lines** emitted by the analyzer (SCG build stats, lowering ms, etc.). Changing the text of those log lines breaks `run.py` silently — update `RE_*` patterns in `example/run.py` together with any format change.
-- **Diagnostics are opt-in:** `--diagnostics json` / `--diagnostics-file PATH` switch `tdg`/`rtsl`/`check`/`ptpn`/`allocate` to the versioned envelope with exit codes `2/3/4/5/6` and move logs (including `[STATS]`) to stderr. Without them the legacy streams and `0`/`1` exit codes apply. The RTSL repair loop depends on the engaged form. The authoritative code table, envelope schema, and `check`/`rtsl`/`allocate` behavior matrix are in `docs/diagnostics.md`; `ptpn check` stops before lowering by design.
+- **Diagnostics are opt-in:** `--diagnostics json` / `--diagnostics-file PATH` switch `tdg`/`rtsl`/`check`/`ptpn`/`allocate` to the versioned envelope with exit codes `2/3/4/5/6` and move logs (including `[STATS]`) to stderr. Without them the legacy streams and `0`/`1` exit codes apply. The RTSL repair loop depends on the engaged form. The authoritative code table, envelope schema, and `check`/`rtsl`/`allocate` behavior matrix are in `RT-PN docs/ptpn/diagnostics.md`; `ptpn check` stops before lowering by design.
 - **Supported-class rejection is typed:** throw `ptpn::UnsupportedClassError` (`src/common/unsupported_class.h`, optional structured subject); the app maps only that type to `E-UNS-001`. Do not classify all `std::invalid_argument` as unsupported — metadata/index/clock-layout invariants stay internal (`E-INT-003` in lowering, `E-INT-001` from the CLI top-level handler). `E-UNS-001` can come from lowering or the verified analysis guards (job-clock overlap, job-clock + extrapolation/symmetry).
 - **Output writers must check open, write, flush and close**, and only log success after the check. Failures are `E-INT-002` with subject `output:<path>`; parent directories are never created automatically.
 - **RTSL time is milliseconds:** RTSL inputs are normalized so one engine tick = 1 ms (bare integers follow `time_unit`; `us` is rejected). TDG JSON integers remain unit-agnostic engine ticks.
@@ -106,4 +106,4 @@ User-facing docs live in `docs/` (`install.md`, `usage.md`, `rtsl.md`, `diagnost
 - `.gitignore` excludes `*.json`/`*.dot`/`*.ppn`/`*.ptpn` broadly; `test/golden/**` is explicitly re-included — keep golden fixtures committed.
 - Namespaces are lowercase (`state_class`, `petri`, `app`, `cli`, `dsl`, `converter`); analysis code lives in `namespace state_class`.
 - There is no `.clang-format` config and no CI format gate (both were removed deliberately). Match the surrounding code style when editing.
-- `example/` holds `build.py`/`run.py` plus all example models; `docs/Dockerfile` builds with apt-installed system Boost (no vcpkg).
+- `example/` holds `build.py`/`run.py` plus all example models; the repository-root `Dockerfile` builds with apt-installed system Boost (no vcpkg).
