@@ -337,7 +337,7 @@ TEST(RtslPipelineCli, UnsupportedClassStillWritesRequestedTdgExport) {
 TEST(RtslPipelineCli, AllocateAcceptsTdgJsonInput) {
   const std::string report_path = test_artifact_name(".allocation.json");
   const CliResult result =
-      run_cli({"allocate", "-f", "example/p-bench/initial.json", "-o", report_path,
+      run_cli({"allocate", "-f", "test/fixtures/p-bench/initial.json", "-o", report_path,
                "--max-candidates", "1", "--candidate-max-states", "10000", "--diagnostics",
                "json"});
   ASSERT_EQ(result.exit_code, 0) << result.stderr_text;

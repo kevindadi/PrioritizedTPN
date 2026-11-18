@@ -6,7 +6,7 @@
 namespace app {
 namespace detail {
 
-// The `[STATS]` text is parsed by example/run.py; keep the format stable.
+// The `[STATS]` text is parsed by test/fixtures/run.py; keep the format stable.
 void log_step_timing(const std::string& step, long long ms, const std::string& detail = {});
 
 // Temporarily raises the global log level (used to keep per-candidate lowering

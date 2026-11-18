@@ -11,17 +11,17 @@ PTPN is a **Priority Timed Petri Net** analyzer for real-time scheduling. It low
 ### Build
 
 ```bash
-./example/build.py                 # bootstrap vcpkg under ~/vcpkg if missing, configure + build, write .ptpn-build-dir
-./example/build.py --test          # build + ctest
-./example/build.py --build-dir build-asan --build-type Debug --fresh --clean
-./example/build.py --skip-vcpkg    # use system Boost (this is what CI does on Linux)
+./test/fixtures/build.py                 # bootstrap vcpkg under ~/vcpkg if missing, configure + build, write .ptpn-build-dir
+./test/fixtures/build.py --test          # build + ctest
+./test/fixtures/build.py --build-dir build-asan --build-type Debug --fresh --clean
+./test/fixtures/build.py --skip-vcpkg    # use system Boost (this is what CI does on Linux)
 ```
 
 Manual CMake (CI path, system Boost): `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`. vcpkg auto-detection is off on Linux/macOS by default (`-DPTPN_USE_VCPKG=ON` re-enables); on Apple Silicon pass `-DVCPKG_TARGET_TRIPLET=arm64-osx`.
 
 Windows (CLion/MinGW): `cmake --preset windows-debug && cmake --build --preset windows-debug`; the presets in `CMakePresets.json` use MinGW-w64 (`x64-mingw-dynamic`), vcpkg at `D:/vcpkg`, and CLion's default `cmake-build-debug-mingw` / `cmake-build-release-mingw` directories. Put the MinGW `bin` directory on `PATH` for command-line builds; CLion's MinGW toolchain does it automatically.
 
-`example/run.py` drives the example benchmarks (p/s/t-bench + l-bench) and resolves the `ptpn` binary via `--ptpn PATH` → `$PTPN_BUILD_DIR` → `.ptpn-build-dir` marker → `build/ptpn` (the marker and default `build/` live at the repo root, not under `example/`). `compile_commands.json` at the repo root is a symlink to the configured build directory's file (a plain copy on Windows hosts where symlink creation is not permitted).
+`test/fixtures/run.py` drives the example benchmarks (p/s/t-bench + l-bench) and resolves the `ptpn` binary via `--ptpn PATH` → `$PTPN_BUILD_DIR` → `.ptpn-build-dir` marker → `build/ptpn` (the marker and default `build/` live at the repo root, not under `test/fixtures/`). `compile_commands.json` at the repo root is a symlink to the configured build directory's file (a plain copy on Windows hosts where symlink creation is not permitted).
 
 Binaries: `build/ptpn` (analyzer CLI), `build/test/ptpn_test` (unit tests); the Windows presets place them under `cmake-build-debug-mingw/` and `cmake-build-release-mingw/`.
 
@@ -40,7 +40,7 @@ ctest --test-dir build --output-on-failure
 ./build/test/ptpn_test --gtest_filter='Symmetry*'        # single test/suite — run from repo root
 ```
 
-Tests are discovered with `gtest_discover_tests` and `WORKING_DIRECTORY` = repo root, so tests reference `example/...` and `test/golden/...` relative to root (and the binary must be run from the repo root).
+Tests are discovered with `gtest_discover_tests` and `WORKING_DIRECTORY` = repo root, so tests reference `test/fixtures/...` and `test/golden/...` relative to root (and the binary must be run from the repo root).
 
 Golden tests (`test/test_pipeline_golden.cpp`) diff export output against `test/golden/*`; the header comment documents the exact commands that regenerate each golden file. Golden comparison is skipped when not compiled with libstdc++ or when building on Windows (`_WIN32`, CRLF) — regenerate goldens only on POSIX libstdc++ builds.
 
@@ -87,7 +87,7 @@ EDF/FIFO/LLF have an explicit **supported class**: static core partition, `cores
 - `src/model/petri.h` — PTPN: `Transition` carries `TimeInterval`, `priority`, `core` (−1 = control), `suspendable`; `Marking` is `vector<int>`
 - `src/parse/` — TDG JSON parser and `.ptpn` source parser (input only)
 - `src/export/` — output writers: TDG/PTPN/SCG DOT, the TDG JSON writer, and the WCET JSON writer; metrics JSON lives with the metrics library in `src/analysis/metrics/metrics_json.{h,cpp}`
-- `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is `RT-PN docs/ptpn/rtsl.md`, the workflow is in `RT-PN docs/ptpn/usage.md`, and `example/introduction/demo.rtsl` is the introductory model
+- `src/dsl/` — RTSL lexer/parser/validator/lowering and `SourceMap`; the syntax reference is `RT-PN docs/ptpn/rtsl.md`, the workflow is in `RT-PN docs/ptpn/usage.md`, and `test/fixtures/introduction/demo.rtsl` is the introductory model
 - `src/cli/` — CLI11 layer (namespace `cli`): `main.cpp` (envelope scaffolding + dispatch), `command.h`, `option_groups.{h,cpp}`, and one file per subcommand under `commands/` (`tdg`, `rtsl`, `check`, `ptpn`, `allocate`)
 - `src/app/` — application layer (namespace `app`, no CLI11): `common` (options, legacy rendering, memory, timing helpers), `logging` (spdlog-backed timing/log helpers), `input` (RTSL + TDG loading), `check_cmd` (parse+validate only), `lowering` (TDG→PTPN adapter), `analysis` (orchestration, result diagnostics), `pipelines` (the `run_*_pipeline` entry points, public `pipelines.h`), and `allocation_cmd`.
 
@@ -95,7 +95,7 @@ User-facing documentation moved to the RT-PN workbench (`RT-PN docs/ptpn/`); thi
 
 ## Conventions and gotchas
 
-- **`example/run.py` regex-parses `[STATS]` log lines** emitted by the analyzer (SCG build stats, lowering ms, etc.). Changing the text of those log lines breaks `run.py` silently — update `RE_*` patterns in `example/run.py` together with any format change.
+- **`test/fixtures/run.py` regex-parses `[STATS]` log lines** emitted by the analyzer (SCG build stats, lowering ms, etc.). Changing the text of those log lines breaks `run.py` silently — update `RE_*` patterns in `test/fixtures/run.py` together with any format change.
 - **Diagnostics are opt-in:** `--diagnostics json` / `--diagnostics-file PATH` switch `tdg`/`rtsl`/`check`/`ptpn`/`allocate` to the versioned envelope with exit codes `2/3/4/5/6` and move logs (including `[STATS]`) to stderr. Without them the legacy streams and `0`/`1` exit codes apply. The RTSL repair loop depends on the engaged form. The authoritative code table, envelope schema, and `check`/`rtsl`/`allocate` behavior matrix are in `RT-PN docs/ptpn/diagnostics.md`; `ptpn check` stops before lowering by design.
 - **Supported-class rejection is typed:** throw `ptpn::UnsupportedClassError` (`src/common/unsupported_class.h`, optional structured subject); the app maps only that type to `E-UNS-001`. Do not classify all `std::invalid_argument` as unsupported — metadata/index/clock-layout invariants stay internal (`E-INT-003` in lowering, `E-INT-001` from the CLI top-level handler). `E-UNS-001` can come from lowering or the verified analysis guards (job-clock overlap, job-clock + extrapolation/symmetry).
 - **Output writers must check open, write, flush and close**, and only log success after the check. Failures are `E-INT-002` with subject `output:<path>`; parent directories are never created automatically.
@@ -106,4 +106,4 @@ User-facing documentation moved to the RT-PN workbench (`RT-PN docs/ptpn/`); thi
 - `.gitignore` excludes `*.json`/`*.dot`/`*.ppn`/`*.ptpn` broadly; `test/golden/**` is explicitly re-included — keep golden fixtures committed.
 - Namespaces are lowercase (`state_class`, `petri`, `app`, `cli`, `dsl`, `converter`); analysis code lives in `namespace state_class`.
 - There is no `.clang-format` config and no CI format gate (both were removed deliberately). Match the surrounding code style when editing.
-- `example/` holds `build.py`/`run.py` plus all example models; the repository-root `Dockerfile` builds with apt-installed system Boost (no vcpkg).
+- `test/fixtures/` holds `build.py`/`run.py` plus all example models; the repository-root `Dockerfile` builds with apt-installed system Boost (no vcpkg).

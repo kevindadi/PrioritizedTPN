@@ -9,7 +9,7 @@
 # Force x86_64 Linux:
 #   docker build -f Dockerfile --platform linux/amd64 -t ptpn .
 #
-# Run (TDG example; example/ is mounted at /data, the default WORKDIR):
+# Run (TDG example; test/fixtures/ is mounted at /data, the default WORKDIR):
 #   docker run --rm -v "$PWD/example:/data" ptpn tdg \
 #     -f /data/l-bench/pipeline-40t-8c-5l.json
 

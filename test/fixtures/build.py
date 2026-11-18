@@ -5,10 +5,10 @@ If vcpkg is missing, clones and bootstraps it under ~/vcpkg by default,
 then runs CMake (Ninja) with a host-matching vcpkg triplet.
 
 Examples:
-  ./example/build.py
-  ./example/build.py --test
-  ./example/build.py --clean --triplet arm64-osx
-  ./example/build.py --vcpkg-root /opt/vcpkg --build-dir build-asan
+  ./test/fixtures/build.py
+  ./test/fixtures/build.py --test
+  ./test/fixtures/build.py --clean --triplet arm64-osx
+  ./test/fixtures/build.py --vcpkg-root /opt/vcpkg --build-dir build-asan
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_BUILD_DIR = ROOT / "build"
 BUILD_DIR_MARKER = ROOT / ".ptpn-build-dir"
 

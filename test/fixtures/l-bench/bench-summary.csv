@@ -1,0 +1,12 @@
+case,file,tasks,cpus,locks,lanes,periodic_tasks,fork_nodes,join_nodes,reviewer_case,max_states,canonicalization,extrapolation,ok,tdg_nodes,tdg_edges,places,transitions,scg_states,scg_edges,scg_truncated,memory_kb,ms_tdg2pn,ms_scg_build,ms_total,validate_tdg_only,error
+pipeline-10t-2c,pipeline-10t-2c.json,10,2,1,1,1,1,2,False,5000000,equality,True,True,13,13,38,36,40,43,False,0,0,0,1,False,
+pipeline-20t-4c,pipeline-20t-4c.json,20,4,1,2,1,2,3,False,5000000,equality,True,True,25,26,68,64,273,385,False,0,0,1,6,False,
+pipeline-30t-6c,pipeline-30t-6c.json,30,6,1,3,2,3,4,False,5000000,equality,True,True,37,39,99,93,1488,2563,False,0,1,10,45,False,
+pipeline-40t-8c,pipeline-40t-8c.json,40,8,2,4,2,4,5,False,5000000,equality,True,True,49,52,136,127,2718,5975,False,3,4,27,130,False,
+pipeline-50t-10c,pipeline-50t-10c.json,50,10,2,5,2,5,6,False,5000000,equality,True,True,61,65,166,155,4688,10910,False,10,7,67,286,False,
+pipeline-60t-12c,pipeline-60t-12c.json,60,12,3,6,2,6,7,False,5000000,equality,True,True,73,78,203,189,9828,29178,False,30,12,209,752,False,
+pipeline-70t-14c,pipeline-70t-14c.json,70,14,3,7,3,7,8,False,5000000,equality,True,True,85,91,234,218,25990,92648,False,99,18,840,2660,False,
+pipeline-80t-16c,pipeline-80t-16c.json,80,16,4,8,3,8,9,False,5000000,equality,True,True,97,104,271,252,120050,560832,False,548,28,6446,16199,False,
+pipeline-90t-18c,pipeline-90t-18c.json,90,18,4,9,3,9,10,False,5000000,equality,True,True,109,117,301,280,150036,694138,False,755,37,9486,22840,False,
+pipeline-100t-20c,pipeline-100t-20c.json,100,20,5,10,3,10,11,False,5000000,equality,True,True,121,130,338,314,545708,3045368,False,3067,52,46082,79959,False,
+pipeline-40t-8c-5l,pipeline-40t-8c-5l.json,40,8,5,4,2,4,5,True,5000000,equality,True,True,49,52,157,145,998,1877,False,0,6,10,44,False,

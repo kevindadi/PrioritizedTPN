@@ -24,7 +24,7 @@ bool mentions_success_log(const std::string& stderr_text, const std::string& kin
 TEST(OutputFailures, TdgDotMissingParentDiagnosticsMode) {
   const std::string path = missing_parent_path(".dot");
   const ptpn_test::CliResult result =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-tdg", path, "--diagnostics", "json"});
 
   ASSERT_EQ(result.exit_code, 1) << result.stderr_text;
@@ -41,7 +41,7 @@ TEST(OutputFailures, TdgDotMissingParentDiagnosticsMode) {
 TEST(OutputFailures, TdgDotMissingParentLegacyMode) {
   const std::string path = missing_parent_path(".dot");
   const ptpn_test::CliResult result =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-tdg", path});
 
   EXPECT_EQ(result.exit_code, 1);
@@ -52,7 +52,7 @@ TEST(OutputFailures, TdgDotMissingParentLegacyMode) {
 TEST(OutputFailures, WcetMissingParentDiagnosticsMode) {
   const std::string path = missing_parent_path(".json");
   const ptpn_test::CliResult result =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-wcet", path, "--diagnostics", "json"});
 
   ASSERT_EQ(result.exit_code, 1) << result.stderr_text;
@@ -68,7 +68,7 @@ TEST(OutputFailures, WcetMissingParentDiagnosticsMode) {
 TEST(OutputFailures, WcetMissingParentLegacyMode) {
   const std::string path = missing_parent_path(".json");
   const ptpn_test::CliResult result =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-wcet", path});
 
   EXPECT_EQ(result.exit_code, 1);
@@ -79,7 +79,7 @@ TEST(OutputFailures, WcetMissingParentLegacyMode) {
 TEST(OutputFailures, PtpnDotMissingParentDiagnosticsMode) {
   const std::string path = missing_parent_path(".dot");
   const ptpn_test::CliResult result =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-ptpn", path, "--diagnostics", "json"});
 
   ASSERT_EQ(result.exit_code, 1) << result.stderr_text;
@@ -95,7 +95,7 @@ TEST(OutputFailures, PtpnDotMissingParentDiagnosticsMode) {
 TEST(OutputFailures, PtpnDotMissingParentLegacyMode) {
   const std::string path = missing_parent_path(".dot");
   const ptpn_test::CliResult result =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-ptpn", path});
 
   EXPECT_EQ(result.exit_code, 1);
@@ -106,7 +106,7 @@ TEST(OutputFailures, PtpnDotMissingParentLegacyMode) {
 TEST(OutputFailures, SuccessfulExportsKeepTheirContent) {
   const std::string dot_path = ptpn_test::test_artifact_name("out_ok_", ".dot");
   const ptpn_test::CliResult dot =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-tdg", dot_path});
   ASSERT_EQ(dot.exit_code, 0) << dot.stderr_text;
   const std::string dot_text = ptpn_test::read_file(dot_path);
@@ -116,7 +116,7 @@ TEST(OutputFailures, SuccessfulExportsKeepTheirContent) {
 
   const std::string wcet_path = ptpn_test::test_artifact_name("out_ok_", ".json");
   const ptpn_test::CliResult wcet =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-wcet", wcet_path});
   ASSERT_EQ(wcet.exit_code, 0) << wcet.stderr_text;
   const nlohmann::json wcet_json =
@@ -136,7 +136,7 @@ TEST(OutputFailures, DevFullReportsDelayedWriteFailures) {
   }
 
   const ptpn_test::CliResult dot =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-tdg", "/dev/full", "--diagnostics", "json"});
   ASSERT_EQ(dot.exit_code, 1) << dot.stderr_text;
   const nlohmann::json dot_envelope = ptpn_test::parse_envelope(dot.stdout_text);
@@ -147,7 +147,7 @@ TEST(OutputFailures, DevFullReportsDelayedWriteFailures) {
   EXPECT_FALSE(mentions_success_log(dot.stderr_text, "TDG DOT"));
 
   const ptpn_test::CliResult wcet =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-wcet", "/dev/full", "--diagnostics", "json"});
   ASSERT_EQ(wcet.exit_code, 1) << wcet.stderr_text;
   const nlohmann::json wcet_envelope = ptpn_test::parse_envelope(wcet.stdout_text);
@@ -158,7 +158,7 @@ TEST(OutputFailures, DevFullReportsDelayedWriteFailures) {
   EXPECT_FALSE(mentions_success_log(wcet.stderr_text, "WCET JSON"));
 
   const ptpn_test::CliResult tdg_json = ptpn_test::run_cli(
-      {"rtsl", "-f", "example/introduction/locked.rtsl", "--export-tdg", "/dev/full",
+      {"rtsl", "-f", "test/fixtures/introduction/locked.rtsl", "--export-tdg", "/dev/full",
        "--no-analysis", "--diagnostics", "json"});
   ASSERT_EQ(tdg_json.exit_code, 1) << tdg_json.stderr_text;
   const nlohmann::json tdg_json_envelope = ptpn_test::parse_envelope(tdg_json.stdout_text);
@@ -169,7 +169,7 @@ TEST(OutputFailures, DevFullReportsDelayedWriteFailures) {
   EXPECT_FALSE(mentions_success_log(tdg_json.stderr_text, "TDG JSON"));
 
   const ptpn_test::CliResult metrics =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--max-states", "1000",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--max-states", "1000",
                           "--export-metrics", "/dev/full", "--diagnostics", "json"});
   ASSERT_EQ(metrics.exit_code, 1) << metrics.stderr_text;
   const nlohmann::json metrics_envelope = ptpn_test::parse_envelope(metrics.stdout_text);
@@ -180,7 +180,7 @@ TEST(OutputFailures, DevFullReportsDelayedWriteFailures) {
   EXPECT_FALSE(mentions_success_log(metrics.stderr_text, "Metrics"));
 
   const ptpn_test::CliResult ptpn_dot =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--no-analysis",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--no-analysis",
                           "--export-ptpn", "/dev/full", "--diagnostics", "json"});
   ASSERT_EQ(ptpn_dot.exit_code, 1) << ptpn_dot.stderr_text;
   const nlohmann::json ptpn_dot_envelope = ptpn_test::parse_envelope(ptpn_dot.stdout_text);
@@ -191,7 +191,7 @@ TEST(OutputFailures, DevFullReportsDelayedWriteFailures) {
   EXPECT_FALSE(mentions_success_log(ptpn_dot.stderr_text, "PTPN DOT"));
 
   const ptpn_test::CliResult scg_dot =
-      ptpn_test::run_cli({"tdg", "-f", "example/p-bench/initial.json", "--max-states", "1000",
+      ptpn_test::run_cli({"tdg", "-f", "test/fixtures/p-bench/initial.json", "--max-states", "1000",
                           "--export-scg", "/dev/full", "--diagnostics", "json"});
   ASSERT_EQ(scg_dot.exit_code, 1) << scg_dot.stderr_text;
   const nlohmann::json scg_dot_envelope = ptpn_test::parse_envelope(scg_dot.stdout_text);
@@ -212,7 +212,7 @@ TEST(OutputFailures, DiagnosticsFileDevFullIsReportedInStdoutEnvelope) {
   }
 
   const ptpn_test::CliResult result =
-      ptpn_test::run_cli({"check", "-f", "example/introduction/locked.rtsl", "--diagnostics",
+      ptpn_test::run_cli({"check", "-f", "test/fixtures/introduction/locked.rtsl", "--diagnostics",
                           "json", "--diagnostics-file", "/dev/full"});
 
   ASSERT_EQ(result.exit_code, 1) << result.stderr_text;

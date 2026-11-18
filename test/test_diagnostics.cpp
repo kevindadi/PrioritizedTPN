@@ -365,7 +365,7 @@ TEST(DiagnosticsCliTest, DiagnosticsFileReceivesEnvelope) {
 
 TEST(DiagnosticsCliTest, TruncationWithoutCounterexampleIsPerformance) {
   const CliResult result = run_cli(
-      {"tdg", "-f", "example/motivating-examples/hw.json", "--diagnostics", "json", "-m", "10"});
+      {"tdg", "-f", "test/fixtures/motivating-examples/hw.json", "--diagnostics", "json", "-m", "10"});
   EXPECT_EQ(5, result.exit_code);
 
   const nlohmann::json envelope = parse_envelope(result.stdout_text);
@@ -408,7 +408,7 @@ TEST(DiagnosticsCliTest, UnreleasedTaskIsHinted) {
 TEST(DiagnosticsCliTest, ResourceBudgetsReportPartialResults) {
   // A wall-clock budget that is already exhausted stops the exploration with a
   // performance diagnostic and exit 5 instead of running to completion.
-  const CliResult timeout = run_cli({"tdg", "-f", "example/s-bench/a.json", "--diagnostics",
+  const CliResult timeout = run_cli({"tdg", "-f", "test/fixtures/s-bench/a.json", "--diagnostics",
                                      "json", "--timeout", "0.000001"});
   EXPECT_EQ(5, timeout.exit_code);
   {
@@ -424,7 +424,7 @@ TEST(DiagnosticsCliTest, ResourceBudgetsReportPartialResults) {
   }
 
   // A memory ceiling below the process baseline stops it as well.
-  const CliResult memory = run_cli({"tdg", "-f", "example/s-bench/a.json", "--diagnostics", "json",
+  const CliResult memory = run_cli({"tdg", "-f", "test/fixtures/s-bench/a.json", "--diagnostics", "json",
                                     "--max-memory", "1"});
   EXPECT_EQ(5, memory.exit_code);
   {
@@ -436,7 +436,7 @@ TEST(DiagnosticsCliTest, ResourceBudgetsReportPartialResults) {
   }
 
   // Generous budgets leave the run untouched.
-  const CliResult normal = run_cli({"tdg", "-f", "example/s-bench/a.json", "--diagnostics", "json",
+  const CliResult normal = run_cli({"tdg", "-f", "test/fixtures/s-bench/a.json", "--diagnostics", "json",
                                     "--timeout", "60", "--max-memory", "4000"});
   EXPECT_EQ(0, normal.exit_code);
   EXPECT_EQ("schedulable",
@@ -447,7 +447,7 @@ TEST(DiagnosticsCliTest, CounterexampleDominatesTruncation) {
   // A proven deadline miss (R-ANA-002) inside the explored prefix still wins
   // over the truncation warning (E-PERF-001): exit 6, not 5. A max-states cut
   // no longer manufactures deadlock counterexamples from dropped successors.
-  const CliResult result = run_cli({"rtsl", "-f", "example/diagnostics/deadline-miss.rtsl",
+  const CliResult result = run_cli({"rtsl", "-f", "test/fixtures/diagnostics/deadline-miss.rtsl",
                                     "--diagnostics", "json", "-m", "10"});
   EXPECT_EQ(6, result.exit_code);
 

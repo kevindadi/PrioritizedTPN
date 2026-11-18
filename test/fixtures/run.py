@@ -30,7 +30,7 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_BUILD_DIR = ROOT / "build"
 BUILD_DIR_MARKER = ROOT / ".ptpn-build-dir"
 PTPN_EXE = "ptpn.exe" if os.name == "nt" else "ptpn"

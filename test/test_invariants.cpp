@@ -19,9 +19,9 @@ using state_class::StateClassReachabilityGraph;
 using state_class::TransitionSet;
 
 const char* kExamples[] = {
-    "example/motivating-examples/hw.json", "example/s-bench/a.json",
-    "example/p-bench/initial.json",        "example/p-bench/same-core.json",
-    "example/p-bench/no-period.json",
+    "test/fixtures/motivating-examples/hw.json", "test/fixtures/s-bench/a.json",
+    "test/fixtures/p-bench/initial.json",        "test/fixtures/p-bench/same-core.json",
+    "test/fixtures/p-bench/no-period.json",
 };
 
 petri::PTPN lower_example(const std::string& path) {

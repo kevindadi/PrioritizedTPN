@@ -223,8 +223,8 @@ TEST(ConeProjection, DependencyChainIncludesAllPredecessors) {
 }
 
 TEST(ConeProjection, PerTaskMetricsMatchFullGraph) {
-  for (const char* path : {"example/s-bench/a.json", "example/s-bench/b.json",
-                           "example/p-bench/initial.json", "example/p-bench/no-period.json"}) {
+  for (const char* path : {"test/fixtures/s-bench/a.json", "test/fixtures/s-bench/b.json",
+                           "test/fixtures/p-bench/initial.json", "test/fixtures/p-bench/no-period.json"}) {
     SCOPED_TRACE(path);
     expect_cone_metrics_match_full_graph(path);
   }

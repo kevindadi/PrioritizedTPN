@@ -118,7 +118,7 @@ TEST(McpTest, AnalyzeMapsBudgetsAndDetectsTheFrontEnd) {
   response_of(mcp::handle_message(
       request("tools/call",
               {{"name", "ptpn_analyze"},
-               {"arguments", {{"file", "example/s-bench/a.json"},
+               {"arguments", {{"file", "test/fixtures/s-bench/a.json"},
                               {"timeout", 5},
                               {"max_memory", 512},
                               {"max_states", 1000},

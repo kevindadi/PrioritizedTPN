@@ -29,12 +29,12 @@ using ptpn_test::load_tdg;
 // structural exports run without metrics so the state-class DOT has no
 // observation clocks; the metrics exports enable the completion observation
 // exactly like `--export-metrics` does:
-//   ./build/ptpn tdg -f example/motivating-examples/hw.json \
+//   ./build/ptpn tdg -f test/fixtures/motivating-examples/hw.json \
 //     --export-ptpn test/golden/hw.ptpn.dot --export-scg test/golden/hw.scg.dot
-//   ./build/ptpn tdg -f example/motivating-examples/hw.json \
+//   ./build/ptpn tdg -f test/fixtures/motivating-examples/hw.json \
 //     --export-metrics test/golden/hw.metrics.json
-//   ./build/ptpn tdg -f example/s-bench/a.json --export-ptpn test/golden/a.ptpn.dot
-//   ./build/ptpn tdg -f example/s-bench/a.json --export-metrics test/golden/a.metrics.json
+//   ./build/ptpn tdg -f test/fixtures/s-bench/a.json --export-ptpn test/golden/a.ptpn.dot
+//   ./build/ptpn tdg -f test/fixtures/s-bench/a.json --export-metrics test/golden/a.metrics.json
 
 petri::PTPN lower_to_ptpn(const std::string& path) {
   tdg::TDG tdg = load_tdg(path);
@@ -71,12 +71,12 @@ struct PipelineCase {
 };
 
 const PipelineCase kPipelineCases[] = {
-    {"example/s-bench/a.json", 20, 21, 115, 149, 35},
-    {"example/s-bench/b.json", 20, 21, 84, 113, 30},
-    {"example/motivating-examples/hw.json", 10, 10, 17, 17, 1},
-    {"example/p-bench/initial.json", 20, 21, 80, 106, 27},
-    {"example/p-bench/same-priority.json", 20, 21, 94, 123, 30},
-    {"example/p-bench/no-period.json", 18, 19, 44, 60, 17},
+    {"test/fixtures/s-bench/a.json", 20, 21, 115, 149, 35},
+    {"test/fixtures/s-bench/b.json", 20, 21, 84, 113, 30},
+    {"test/fixtures/motivating-examples/hw.json", 10, 10, 17, 17, 1},
+    {"test/fixtures/p-bench/initial.json", 20, 21, 80, 106, 27},
+    {"test/fixtures/p-bench/same-priority.json", 20, 21, 94, 123, 30},
+    {"test/fixtures/p-bench/no-period.json", 18, 19, 44, 60, 17},
 };
 
 }  // namespace
@@ -103,7 +103,7 @@ TEST(PipelineGolden, TieHeavyModelTruncatesAtCap) {
   // Duplicate priorities on one core are expensive even with the default FIFO
   // tie rule: this model exceeds a 5,000-class budget. The truncated flag must
   // be reported so metrics are not labelled exact.
-  const petri::PTPN ptpn = lower_to_ptpn("example/p-bench/same-core.json");
+  const petri::PTPN ptpn = lower_to_ptpn("test/fixtures/p-bench/same-core.json");
   state_class::StateClassReachabilityGraph graph(ptpn);
   const size_t states = graph.build(5000);
   const auto& stats = graph.get_statistics();
@@ -113,8 +113,8 @@ TEST(PipelineGolden, TieHeavyModelTruncatesAtCap) {
 
 TEST(PipelineGolden, PtpnDotMatchesGolden) {
   for (const auto& test_case :
-       {std::make_pair("example/motivating-examples/hw.json", "test/golden/hw.ptpn.dot"),
-        std::make_pair("example/s-bench/a.json", "test/golden/a.ptpn.dot")}) {
+       {std::make_pair("test/fixtures/motivating-examples/hw.json", "test/golden/hw.ptpn.dot"),
+        std::make_pair("test/fixtures/s-bench/a.json", "test/golden/a.ptpn.dot")}) {
     SCOPED_TRACE(test_case.first);
     const petri::PTPN ptpn = lower_to_ptpn(test_case.first);
     const auto model = petri::exporting::build_export_model(ptpn);
@@ -125,7 +125,7 @@ TEST(PipelineGolden, PtpnDotMatchesGolden) {
 }
 
 TEST(PipelineGolden, ScgDotMatchesGolden) {
-  const petri::PTPN ptpn = lower_to_ptpn("example/motivating-examples/hw.json");
+  const petri::PTPN ptpn = lower_to_ptpn("test/fixtures/motivating-examples/hw.json");
   state_class::StateClassReachabilityGraph graph(ptpn);
   graph.build(5000);
   const std::string out = testing::TempDir() + "ptpn_test_scg.dot";
@@ -136,8 +136,8 @@ TEST(PipelineGolden, ScgDotMatchesGolden) {
 
 TEST(PipelineGolden, MetricsJsonMatchesGolden) {
   for (const auto& test_case :
-       {std::make_pair("example/motivating-examples/hw.json", "test/golden/hw.metrics.json"),
-        std::make_pair("example/s-bench/a.json", "test/golden/a.metrics.json")}) {
+       {std::make_pair("test/fixtures/motivating-examples/hw.json", "test/golden/hw.metrics.json"),
+        std::make_pair("test/fixtures/s-bench/a.json", "test/golden/a.metrics.json")}) {
     SCOPED_TRACE(test_case.first);
     const petri::PTPN ptpn = lower_to_ptpn(test_case.first);
     state_class::StateClassReachabilityGraph graph(ptpn);

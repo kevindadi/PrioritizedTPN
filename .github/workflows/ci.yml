@@ -31,7 +31,7 @@ jobs:
 
       - name: CLI smoke test
         run: |
-          ./build/ptpn tdg -f example/motivating-examples/hw.json --no-analysis \
+          ./build/ptpn tdg -f test/fixtures/motivating-examples/hw.json --no-analysis \
             --export-ptpn /tmp/hw.ptpn.dot --export-wcet /tmp/hw.wcet.json
           ./build/ptpn check -f test/golden/rtsl/appendix.rtsl
           ./build/ptpn rtsl -f test/golden/rtsl/appendix.rtsl --no-analysis \

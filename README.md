@@ -28,8 +28,8 @@ Requirements: C++17, CMake >= 3.27, Ninja, Boost (`graph`, `filesystem`,
 fetched at configure time.
 
 ```bash
-./example/build.py                 # bootstrap vcpkg if missing, configure + build
-./example/build.py --test          # build + ctest
+./test/fixtures/build.py                 # bootstrap vcpkg if missing, configure + build
+./test/fixtures/build.py --test          # build + ctest
 ctest --test-dir build --output-on-failure
 ```
 
@@ -63,7 +63,7 @@ restates the effective scheduling semantics.
 - `src/` — parsers, model, lowering, state-class analysis, metrics, exports, CLI
 - `test/` — GoogleTest suites (run from the repository root)
 - `test/reference/rtsl.ebnf` — grammar fixture kept in sync with the docs
-- `example/` — models plus the `build.py` / `run.py` helpers
+- `test/fixtures/` — models plus the `build.py` / `run.py` helpers
 - `tools/gen_diagnostic_codes.py` — regenerates the diagnostic catalog include
   from `RT-PN docs/ptpn/diagnostics.md` (`--doc PATH` or
   `PTPN_DIAGNOSTICS_MD`)

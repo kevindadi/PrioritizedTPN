@@ -28,3 +28,8 @@ paper/
 
 # Golden fixtures are committed despite the generated-artifact patterns above.
 !test/golden/**
+
+# Fixture data moved out of example/ is committed despite the generated-artifact patterns above.
+!test/fixtures/**
+# The old example/ checkout may linger on machines with an inherited delete-deny ACE.
+/example/
