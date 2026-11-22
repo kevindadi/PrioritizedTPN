@@ -288,10 +288,11 @@ std::vector<StateClass> StateClassReachabilityGraph::fire_all(const StateClass& 
   // zone is the unsplit successor zone (surviving clocks carried over, fresh
   // clocks zero except fresh laxity clocks at chi = wcet - deadline);
   // EDF/FIFO/LLF test each candidate ordering against it and emit the selected
-  // difference constraints.
+  // difference constraints. Completion observation alone does not need a
+  // probe: its release clocks are read only after scheduling.
   StateClass prepared;
   prepared.marking = marking;
-  if (job_clock_layout()) {
+  if (firing_rule_->uses_job_clocks()) {
     recompute_sets(prepared, struct_enabled);
     build_layout(prepared);
     build_successor_zone(prepared, fired, elapsed, t);

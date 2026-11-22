@@ -539,6 +539,28 @@ TEST(PtpnAnalysisTest, SuspensionClockProjectionPreservesMetrics) {
   }
 }
 
+TEST(PtpnAnalysisTest, FixedPriorityObservationClosesOnlyTheSelectedZone) {
+  const petri::PTPN ptpn = make_preemption_metrics_net();
+  StateClassReachabilityGraph graph(ptpn);
+  graph.set_completion_observation(true);
+  ASSERT_TRUE(graph.observation_active());
+
+  state_class::reset_dbm_instrumentation();
+  const StateClass initial = graph.compute_initial_class();
+  EXPECT_EQ(state_class::get_dbm_instrumentation().minimize_calls, 1u);
+  ASSERT_GT(initial.release_index(0), 0);  // high-priority task H
+  ASSERT_GT(initial.release_index(1), 0);  // low-priority task L
+
+  const StateClass elapsed = graph.time_elapse(initial);
+  state_class::reset_dbm_instrumentation();
+  StateClass successor;
+  ASSERT_TRUE(graph.fire(elapsed, 1, successor));  // H finishes, L resumes
+  EXPECT_EQ(state_class::get_dbm_instrumentation().minimize_calls, 1u);
+  EXPECT_LT(successor.release_index(0), 0);
+  ASSERT_GT(successor.release_index(1), 0);
+  EXPECT_EQ(successor.zone.get_constraint(static_cast<size_t>(successor.release_index(1)), 0), 3);
+}
+
 TEST(PtpnAnalysisTest, NewlyEnabledTransitionsResetToZero) {
   const petri::PTPN ptpn = make_newly_enabled_siblings_net();
   StateClassReachabilityGraph graph(ptpn);

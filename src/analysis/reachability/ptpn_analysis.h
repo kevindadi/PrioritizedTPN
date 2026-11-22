@@ -308,9 +308,8 @@ class StateClassReachabilityGraph {
   // True when the clock layout includes release clocks: the rule uses them for
   // scheduling (EDF/FIFO) or the completion observation requested them.
   [[nodiscard]] bool include_release_clocks() const;
-  // True when any per-job clock (release or laxity) is part of the layout.
-  // Replaces FiringRule::uses_job_clocks() in the engine: observation clocks
-  // need the same prepared-state and layout handling.
+  // True when any per-job clock is part of the layout, including clocks used
+  // only for completion observation. Used by reduction compatibility checks.
   [[nodiscard]] bool job_clock_layout() const;
   // Observation cap for `task` (deadline + 1, or the global structural cap), or
   // INF_TIME when the task must not be capped.

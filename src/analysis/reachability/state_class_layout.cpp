@@ -275,15 +275,16 @@ std::vector<StateClass> StateClassReachabilityGraph::compute_initial_classes() {
   // Rules that use job clocks need a prepared layout/zone to derive the
   // job ordering. The job-clock prefix depends only on the marking, so a probe
   // built with the full structural set has the same clock indices as every
-  // final branch.
+  // final branch. Completion observation alone needs only the final zone.
+  const bool policy_uses_job_clocks = firing_rule_->uses_job_clocks();
   StateClass prepared = base;
   prepared.struct_enabled = struct_enabled;
   prepared.priority_enabled = struct_enabled;
-  if (job_clock_layout()) {
+  if (policy_uses_job_clocks) {
     build_layout(prepared);
     prepared.zone = initial_zone(prepared, net_);
   }
-  const PolicyContext context{net_, job_clock_layout() ? &prepared : &base};
+  const PolicyContext context{net_, policy_uses_job_clocks ? &prepared : &base};
   const std::vector<PolicyBranch> branches = firing_rule_->branches(struct_enabled, net_, context);
 
   std::vector<StateClass> out;
