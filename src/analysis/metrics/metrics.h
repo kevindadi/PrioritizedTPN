@@ -1,6 +1,7 @@
 #ifndef ANALYSIS_METRICS_METRICS_H
 #define ANALYSIS_METRICS_METRICS_H
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -106,6 +107,19 @@ struct TaskMetrics {
   // the system keeps making periodic progress (see the paper's SCC criterion).
   bool local_deadlock = false;
   size_t local_deadlock_scc_size = 0;
+  struct PeriodicStep {
+    size_t transition_id;
+    std::string transition;
+    int delay;
+    std::vector<size_t> active_after;
+  };
+  struct PeriodicCertificate {
+    std::vector<size_t> initial_active;
+    std::vector<PeriodicStep> prefix;
+    std::vector<PeriodicStep> cycle;
+    long long cycle_duration = 0;
+  };
+  std::optional<PeriodicCertificate> periodic_certificate;
 };
 
 // Per-lock contention metrics.
@@ -138,8 +152,11 @@ struct HorizonInfo {
 };
 
 struct MetricsReport {
-  // Present for a task-response query on a priority projection.
+  bool periodic_certification = false;
+  // Present for a task-scoped response query.
   std::string response_task;
+  std::string response_kind;
+  size_t response_dominated = 0;
   bool exact = true;  // built under EQUALITY canonicalization
   // False when the graph was built with a state-merging reduction (for
   // example ReductionMode::UPPER_BOUND). In that case `wcrt` remains a sound
@@ -214,6 +231,10 @@ class MetricsAnalyzer {
   // misses stay valid because they are witnessed by the explored prefix.
   void set_graph_truncated(bool truncated);
 
+  // Use the symbolic SCCs only to find candidates, then require a concrete
+  // positive-time replay to certify periodic noncompletion.
+  void set_periodic_certification(bool enabled);
+
   // Declares task groups that the reachability graph proved interchangeable
   // (StateClassReachabilityGraph::symmetry_task_groups()). Timing values are
   // pooled within each group: the members are symmetric, so they share the
@@ -260,6 +281,7 @@ class MetricsAnalyzer {
   bool observation_ = false;
   bool saturate_observation_ = true;
   bool graph_truncated_ = false;
+  bool periodic_certification_ = false;
   std::vector<std::vector<std::string>> symmetry_task_groups_;
 
   // True when the explored graph is complete (no max-states or horizon cut):

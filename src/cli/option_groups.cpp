@@ -5,12 +5,18 @@
 namespace cli {
 
 void add_priority_wcrt_option(CLI::App* cmd, app::PipelineOptions& opts) {
-  cmd->add_option("--priority-wcrt", opts.priority_wcrt_task,
-                  "Analyze one startup job, hiding independent lower-priority work. "
-                  "PTPN and SCG exports describe the projected net.")
-      ->check(CLI::Validator([](std::string& task) {
-        return task.empty() ? std::string("Expected a task name") : std::string{};
-      }, "TASK"));
+  const CLI::Validator task_name([](std::string& task) {
+    return task.empty() ? std::string("Expected a task name") : std::string{};
+  }, "TASK");
+  auto* projection = cmd->add_option("--priority-wcrt", opts.priority_wcrt_task,
+                                    "Analyze one startup job, hiding independent lower-priority work. "
+                                    "PTPN and SCG exports describe the projected net.")
+                         ->check(task_name);
+  cmd->add_option("--response-dominance", opts.response_dominance_task,
+                  "Analyze one job on an acyclic, conflict-free net using age dominance. "
+                  "SCG exports omit dominated histories.")
+      ->check(task_name)
+      ->excludes(projection);
 }
 
 void add_diagnostics_options(CLI::App* cmd, app::DiagnosticsOptions& diagnostics) {
@@ -52,6 +58,9 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts,
   cmd->add_option("-m,--max-states", opts.max_states,
                   "Maximum number of states in reachability graph (default: 10000)");
   cmd->add_flag("--no-analysis", opts.skip_analysis, "Skip state-class reachability analysis");
+  cmd->add_flag("--certify-periodic", opts.certify_periodic,
+                "Search for a concrete positive-time periodic noncompletion witness "
+                "(fixed-priority resume with closed intervals; export via diagnostics or metrics)");
   cmd->add_flag("--debug", opts.debug_mode, "Enable debug logging");
   cmd->add_option("--canonicalization", opts.canonicalization_mode,
                   "Canonicalization mode: equality, max-lower, or intersection "

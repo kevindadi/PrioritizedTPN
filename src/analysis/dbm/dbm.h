@@ -73,6 +73,9 @@ class DBM {
   // bound). Both DBMs must already be canonical (minimized) for this to be a
   // sound geometric inclusion test.
   [[nodiscard]] bool included_in(const DBM& other) const;
+  // For canonical zones, test inclusion after allowing only `clock` in `other`
+  // to decrease. Every other clock must match at the same valuation.
+  [[nodiscard]] bool included_in_downward_closure(const DBM& other, size_t clock) const;
   [[nodiscard]] std::string to_string() const;
 
   [[nodiscard]] const std::vector<int>& raw_matrix() const {
@@ -95,6 +98,7 @@ class DBM {
   [[nodiscard]] size_t offset(size_t i, size_t j) const;
   void check_index(size_t i, size_t j) const;
   void initialize_clock(size_t clock_idx);
+  [[nodiscard]] bool included_in(const DBM& other, size_t relaxed_column) const;
 };
 
 }  // namespace state_class

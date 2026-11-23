@@ -43,6 +43,7 @@ struct PipelineOptions {
   std::string canonicalization_mode = "equality";
   std::string reduction_mode = "none";
   std::string priority_wcrt_task;
+  std::string response_dominance_task;
   bool extrapolation = false;
   // Keep the suspension clocks w_t in the state-class DBM. Off by default: the
   // exact projection preserves reachability and every metric while using a
@@ -66,6 +67,7 @@ struct PipelineOptions {
   // dwell-DP WCRT bounds. Faster on models with many tasks, but the values are
   // bounds and deadline verdicts become conservative.
   bool no_exact_wcrt = false;
+  bool certify_periodic = false;
   // Resource budget for the state-class exploration: a wall-clock limit in
   // seconds and an absolute process-memory ceiling in MB. Exceeding either
   // stops the build with partial results and an E-PERF-003/004 diagnostic.

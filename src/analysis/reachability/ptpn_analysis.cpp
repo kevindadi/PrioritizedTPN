@@ -16,6 +16,67 @@ namespace {
 void hash_combine(size_t& seed, size_t value) {
   seed ^= value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
 }
+
+void validate_response_net(const petri::PTPN& net) {
+  const auto unsupported = [](const char* reason) {
+    return ptpn::UnsupportedClassError(reason, "option:response-dominance");
+  };
+  const auto policy = net.schedule_policy();
+  if ((policy != SchedulePolicy::FIXED && policy != SchedulePolicy::FIXED_PRIOR_WITH_RESUME) ||
+      net.tie_mode() != TieMode::FIFO || !net.lock_places().empty()) {
+    throw unsupported("--response-dominance requires fixed-priority resume, FIFO ties and no locks");
+  }
+
+  // Acyclic and conflict-free, with each place filled at most once. Thus
+  // every transition, including each target release, can fire at most once.
+  const size_t places = net.num_places();
+  const size_t nodes = places + net.num_transitions();
+  std::vector<std::vector<size_t>> outgoing(nodes);
+  std::vector<size_t> incoming(nodes, 0);
+  const auto& initial = net.get_marking();
+  if (std::any_of(initial.begin(), initial.end(), [](int tokens) { return tokens > 1; })) {
+    throw unsupported("--response-dominance requires at most one initial token per place");
+  }
+  long long duration_bound = 0;
+  for (size_t t = 0; t < net.num_transitions(); ++t) {
+    const auto& interval = net.get_transition(petri::TransitionId{t}).time_interval;
+    duration_bound += interval.latest;
+    if (interval.left_open || interval.right_open || duration_bound >= INF_TIME ||
+        net.pre_arcs()[t].empty()) {
+      throw unsupported("--response-dominance requires closed times and a finite execution budget");
+    }
+    for (const auto& [p, weight] : net.pre_arcs()[t]) {
+      if (weight != 1 || !outgoing[p].empty()) {
+        throw unsupported("--response-dominance requires conflict-free unit input arcs");
+      }
+      outgoing[p].push_back(places + t);
+      ++incoming[places + t];
+    }
+    for (const auto& [p, weight] : net.post_arcs()[t]) {
+      if (weight != 1 || initial[p] != 0 || incoming[p] != 0) {
+        throw unsupported("--response-dominance requires at most one token source per place");
+      }
+      outgoing[places + t].push_back(p);
+      ++incoming[p];
+    }
+  }
+  std::vector<size_t> order;
+  for (size_t node = 0; node < nodes; ++node) {
+    if (incoming[node] == 0) {
+      order.push_back(node);
+    }
+  }
+  for (size_t i = 0; i < order.size(); ++i) {
+    for (size_t successor : outgoing[order[i]]) {
+      if (--incoming[successor] == 0) {
+        order.push_back(successor);
+      }
+    }
+  }
+  if (order.size() != nodes) {
+    throw unsupported("--response-dominance requires an acyclic net");
+  }
+}
 }  // namespace
 
 StateClassReachabilityGraph::StateClassReachabilityGraph(const petri::PTPN& net) : net_(net) {
@@ -46,6 +107,19 @@ void StateClassReachabilityGraph::set_suspension_clock_projection(bool enabled) 
 void StateClassReachabilityGraph::set_completion_observation(bool enabled, bool saturate) {
   completion_observation_ = enabled;
   saturate_observation_ = saturate;
+}
+
+void StateClassReachabilityGraph::set_response_dominance(const std::string& task) {
+  validate_response_net(net_);
+  const auto& chains = task_chains();
+  const auto it = std::find_if(chains.begin(), chains.end(), [&](const TaskChain& chain) {
+    return chain.name == task;
+  });
+  if (it == chains.end()) {
+    throw ptpn::UnsupportedClassError("unknown response-dominance task: " + task, "task:" + task);
+  }
+  response_dominance_task_ = static_cast<size_t>(it - chains.begin());
+  set_completion_observation(true, /*saturate=*/false);
 }
 
 bool StateClassReachabilityGraph::observation_active() const {
@@ -83,6 +157,9 @@ int StateClassReachabilityGraph::observe_completion(const StateClass& elapsed, s
                                                     const petri::Marking& target_marking) const {
   const std::vector<TaskChain>& tasks = task_chains();
   for (size_t ordinal = 0; ordinal < tasks.size(); ++ordinal) {
+    if (response_dominance_task_ != NO_TASK && ordinal != response_dominance_task_) {
+      continue;
+    }
     const TaskChain& task = tasks[ordinal];
     if (task.exit_place >= target_marking.size() ||
         task.exit_place >= elapsed.marking.size()) {
@@ -266,12 +343,32 @@ SCVertex StateClassReachabilityGraph::add_state(StateClass state) {
     const size_t hash = hash_state_class(state);
     SCVertex v = boost::add_vertex(std::move(state), graph_);
     vertices_by_hash_[hash].push_back(v);
+    if (response_dominance_task_ != NO_TASK) {
+      const auto& inserted = boost::get(boost::vertex_name, graph_, v);
+      if (inserted.release_index(response_dominance_task_) > 0) {
+        vertices_by_marking_and_active_[{inserted.marking, inserted.priority_enabled}].push_back(v);
+      }
+    }
     return v;
   }
   const std::vector<int> marking = state.marking;
   SCVertex v = boost::add_vertex(std::move(state), graph_);
   vertices_by_marking_[marking].push_back(v);
   return v;
+}
+
+bool StateClassReachabilityGraph::response_dominated(const StateClass& state) const {
+  if (response_dominance_task_ == NO_TASK || state.release_index(response_dominance_task_) <= 0) {
+    return false;
+  }
+  const auto bucket = vertices_by_marking_and_active_.find({state.marking, state.priority_enabled});
+  if (bucket == vertices_by_marking_and_active_.end()) {
+    return false;
+  }
+  return std::any_of(bucket->second.begin(), bucket->second.end(), [&](SCVertex vertex) {
+    return check_response_dominance(state, boost::get(boost::vertex_name, graph_, vertex),
+                                    response_dominance_task_);
+  });
 }
 
 std::vector<StateClassReachabilityGraph::ExpansionRecord>
@@ -372,6 +469,11 @@ StateClassReachabilityGraph::expand_vertex(SCVertex u, size_t max_states) {
         continue;
       }
 
+      if (response_dominated(successor)) {
+        ++stats_.response_dominated;
+        continue;  // An older reachable history already covers every continuation.
+      }
+
       if (stats_.total_states >= max_states) {
         stats_.truncated = true;
         continue;
@@ -389,6 +491,14 @@ StateClassReachabilityGraph::expand_vertex(SCVertex u, size_t max_states) {
 }
 
 size_t StateClassReachabilityGraph::build(size_t max_states) {
+  if (response_dominance_task_ != NO_TASK &&
+      (!observation_active() || saturate_observation_ || firing_rule_->uses_job_clocks() ||
+       mode_ != CanonicalizationMode::EQUALITY || reduction_mode_ != ReductionMode::NONE ||
+       horizon_enabled_ || extrapolation_enabled_ || symmetry_enabled_)) {
+    throw ptpn::UnsupportedClassError(
+        "--response-dominance requires unsaturated observation and exact scheduling zones",
+        "option:response-dominance");
+  }
   // Job-clock states carry per-job deadlines/laxities in the DBM. Neither
   // k-extrapolation (which would relax those bounds) nor the task-symmetry
   // quotient (which would have to permute release/laxity clocks and tasks) is

@@ -1,6 +1,8 @@
 #ifndef ANALYSIS_REACHABILITY_CANONICALIZATION_H
 #define ANALYSIS_REACHABILITY_CANONICALIZATION_H
 
+#include <cstddef>
+
 namespace state_class {
 
 // How freshly computed state classes are matched against already discovered
@@ -25,6 +27,9 @@ bool check_equality(const StateClass& a, const StateClass& b);
 
 // Inclusion: same marking and layout, and a's zone is a subset of b's zone.
 bool check_inclusion(const StateClass& a, const StateClass& b);
+
+bool check_response_dominance(const StateClass& candidate, const StateClass& existing,
+                              size_t task);
 
 // True when `candidate` may be merged into the already-discovered `existing`
 // under `mode` (exact match for EQUALITY, zone inclusion otherwise).

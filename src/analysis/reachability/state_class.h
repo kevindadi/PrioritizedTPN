@@ -282,7 +282,7 @@ const char* clock_kind_label(ClockKind kind);
 // agree bit for bit.
 void build_clock_layout(StateClass& state, const petri::PTPN& net,
                         bool keep_suspension_clocks = false, bool include_release_clocks = false,
-                        bool include_laxity_clocks = false);
+                        bool include_laxity_clocks = false, size_t release_focus = NO_TASK);
 
 // Hashes the marking alone so candidates that might merge land in one bucket.
 struct MarkingHash {

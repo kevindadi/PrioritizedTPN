@@ -1,4 +1,5 @@
 #include <fstream>
+#include <sstream>
 #include <string>
 
 #include "analysis/metrics/metrics_json.h"
@@ -59,6 +60,57 @@ std::string json_escape(const std::string& value) {
 
 }  // namespace
 
+std::string periodic_noncompletion_json(const MetricsReport& report) {
+  std::ostringstream out;
+  const auto ids = [&](const std::vector<size_t>& active) {
+    out << '[';
+    for (size_t i = 0; i < active.size(); ++i) {
+      if (i != 0) {
+        out << ',';
+      }
+      out << active[i];
+    }
+    out << ']';
+  };
+  const auto steps = [&](const std::vector<TaskMetrics::PeriodicStep>& trace) {
+    out << '[';
+    for (size_t i = 0; i < trace.size(); ++i) {
+      if (i != 0) {
+        out << ',';
+      }
+      const auto& step = trace[i];
+      out << "{\"transition_id\":" << step.transition_id << ",\"transition\":\""
+          << json_escape(step.transition) << "\",\"delay\":" << step.delay
+          << ",\"active_after\":";
+      ids(step.active_after);
+      out << '}';
+    }
+    out << ']';
+  };
+  out << '{';
+  for (size_t i = 0; i < report.tasks.size(); ++i) {
+    if (i != 0) {
+      out << ',';
+    }
+    const TaskMetrics& task = report.tasks[i];
+    out << '"' << json_escape(task.name) << "\":{\"status\":\"";
+    if (const auto& certificate = task.periodic_certificate) {
+      out << "certified\",\"cycle_duration\":" << certificate->cycle_duration
+          << ",\"initial_active\":";
+      ids(certificate->initial_active);
+      out << ",\"prefix\":";
+      steps(certificate->prefix);
+      out << ",\"cycle\":";
+      steps(certificate->cycle);
+    } else {
+      out << "unknown\"";
+    }
+    out << '}';
+  }
+  out << '}';
+  return out.str();
+}
+
 bool save_metrics_json(const MetricsReport& report, const std::string& file_path) {
   std::ofstream out(file_path);
   if (!out.is_open()) {
@@ -67,8 +119,12 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
 
   if (!report.response_task.empty()) {
     const TaskMetrics& task = report.tasks.front();
-    out << "{\n  \"scope\": {\"kind\": \"priority-wcrt\", \"task\": \""
+    out << "{\n  \"scope\": {\"kind\": \"" << json_escape(report.response_kind)
+        << "\", \"task\": \""
         << json_escape(report.response_task) << "\"},\n";
+    if (report.response_kind == "response-dominance") {
+      out << "  \"response_dominated\": " << report.response_dominated << ",\n";
+    }
     out << "  \"states\": " << report.states << ",\n";
     out << "  \"transitions\": " << report.transitions << ",\n";
     out << "  \"truncated\": " << (report.truncated ? "true" : "false") << ",\n";
@@ -86,6 +142,9 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
   }
 
   out << "{\n";
+  if (report.periodic_certification) {
+    out << "  \"periodic_noncompletion\": " << periodic_noncompletion_json(report) << ",\n";
+  }
   out << "  \"exact\": " << (report.exact ? "true" : "false") << ",\n";
   out << "  \"wcrt_lb_valid\": " << (report.wcrt_lb_valid ? "true" : "false") << ",\n";
   out << "  \"wcrt_exact\": " << (report.wcrt_exact ? "true" : "false") << ",\n";
@@ -97,7 +156,8 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
   // neither proven nor refuted; null makes that explicit instead of emitting a
   // misleading boolean.
   out << "  \"schedulable\": ";
-  if (!report.deadlock_analysis_certified) {
+  if (!report.deadlock_analysis_certified ||
+      (report.periodic_certification && report.schedulability == Schedulability::Unknown)) {
     out << "null";
   } else {
     out << (report.schedulable ? "true" : "false");
@@ -155,7 +215,11 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
     out << "      \"max_in_flight\": " << t.max_in_flight << ",\n";
     out << "      \"slack\": " << (t.has_deadline ? time_json(t.slack) : std::string("null"))
         << ",\n";
-    out << "      \"deadline_missed\": " << (t.deadline_missed ? "true" : "false") << ",\n";
+    out << "      \"deadline_missed\": "
+        << (report.periodic_certification && t.has_deadline &&
+                    t.verdict == DeadlineVerdict::Unknown
+                ? "null" : (t.deadline_missed ? "true" : "false"))
+        << ",\n";
     if (t.has_deadline) {
       out << "      \"verdict\": \"" << deadline_verdict_to_string(t.verdict) << "\",\n";
     }
@@ -169,7 +233,8 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
       }
       out << "],\n";
     }
-    out << "      \"local_deadlock\": " << (t.local_deadlock ? "true" : "false") << ",\n";
+    out << "      \"local_deadlock\": " << (t.local_deadlock ? "true" :
+        (report.periodic_certification ? "null" : "false")) << ",\n";
     out << "      \"local_deadlock_scc_size\": " << t.local_deadlock_scc_size << ",\n";
     out << "      \"jobs_per_hyperperiod\": " << t.jobs_per_hyperperiod << "\n";
     out << "    }" << (i + 1 < report.tasks.size() ? "," : "") << "\n";

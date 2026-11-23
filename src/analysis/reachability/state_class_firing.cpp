@@ -5,6 +5,7 @@
 #include "analysis/dbm/clock_state.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "analysis/reachability/scheduling.h"
+#include "common/unsupported_class.h"
 
 namespace state_class {
 
@@ -91,6 +92,23 @@ StateClass StateClassReachabilityGraph::time_elapse(const StateClass& state) con
       running[i] = var.task >= executing_task.size() || !executing_task[var.task];
     } else if (var.kind == ClockKind::Execution && contains(out.priority_enabled, var.transition)) {
       running[i] = true;  // active execution clocks advance
+    }
+  }
+
+  // DBMs are closed under this delay when all stationary clocks are points.
+  // A variable frozen clock could retain a three-clock correlation that the
+  // DBM would relax. Decline a response proof for such a state.
+  if (response_dominance_task_ != NO_TASK) {
+    for (size_t i = 1; i < n; ++i) {
+      if (running[i]) {
+        continue;
+      }
+      const int upper = out.zone.get_constraint(i, 0);
+      if (upper == INF_TIME || out.zone.get_constraint(0, i) != -upper) {
+        throw ptpn::UnsupportedClassError(
+            "--response-dominance encountered a non-point frozen clock",
+            "option:response-dominance");
+      }
     }
   }
 

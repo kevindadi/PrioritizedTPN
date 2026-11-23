@@ -32,6 +32,13 @@ bool check_inclusion(const StateClass& a, const StateClass& b) {
   return a.zone.included_in(b.zone);
 }
 
+bool check_response_dominance(const StateClass& candidate, const StateClass& existing,
+                              size_t task) {
+  const int age = candidate.release_index(task);
+  return age > 0 && same_layout(candidate, existing) &&
+         candidate.zone.included_in_downward_closure(existing.zone, static_cast<size_t>(age));
+}
+
 bool can_merge_into(const StateClass& candidate, const StateClass& existing,
                     CanonicalizationMode mode) {
   if (mode == CanonicalizationMode::EQUALITY) {

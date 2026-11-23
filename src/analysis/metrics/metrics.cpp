@@ -60,6 +60,10 @@ void MetricsAnalyzer::set_graph_truncated(bool truncated) {
   graph_truncated_ = truncated;
 }
 
+void MetricsAnalyzer::set_periodic_certification(bool enabled) {
+  periodic_certification_ = enabled;
+}
+
 void MetricsAnalyzer::flatten_graph() {
   num_vertices_ = boost::num_vertices(graph_);
   out_edges_.assign(num_vertices_, {});
@@ -318,6 +322,7 @@ void MetricsAnalyzer::apply_symmetry_groups(MetricsReport& report) {
 
 MetricsReport MetricsAnalyzer::analyze() {
   MetricsReport report;
+  report.periodic_certification = periodic_certification_;
   report.exact = exact_;
   report.wcrt_lb_valid = wcrt_lb_valid_;
   report.horizon = horizon_;
@@ -352,6 +357,22 @@ MetricsReport MetricsAnalyzer::analyze() {
   // conservative (Unknown unless proven), so a proven miss still yields
   // Unschedulable.
   apply_symmetry_groups(report);
+  if (periodic_certification_) {
+    for (auto& task : report.tasks) {
+      if (!task.has_deadline || !task.observed) {
+        continue;
+      }
+      const bool finite_miss = report.wcrt_lb_valid && !task.wcrt_lb.infinite &&
+                               task.wcrt_lb.value > task.deadline;
+      if (task.periodic_certificate) {
+        task.verdict = DeadlineVerdict::Misses;
+      } else if (task.wcrt.infinite && !finite_miss) {
+        // Symbolic noncompletion alone is not a verified timed cycle.
+        task.verdict = DeadlineVerdict::Unknown;
+      }
+      task.deadline_missed = task.verdict == DeadlineVerdict::Misses;
+    }
+  }
   compute_schedulability(report);
   // Report-level exactness of the WCRT values: true when every observed task
   // has an exact WCRT.

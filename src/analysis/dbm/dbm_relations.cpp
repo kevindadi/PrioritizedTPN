@@ -89,6 +89,14 @@ bool DBM::contains(const DBM& other) const {
 }
 
 bool DBM::included_in(const DBM& other) const {
+  return included_in(other, clock_count_);
+}
+
+bool DBM::included_in_downward_closure(const DBM& other, size_t clock) const {
+  return clock > 0 && clock < clock_count_ && included_in(other, clock);
+}
+
+bool DBM::included_in(const DBM& other, size_t relaxed_column) const {
   if (clock_count_ != other.clock_count_) {
     return false;
   }
@@ -98,7 +106,9 @@ bool DBM::included_in(const DBM& other) const {
       const int this_bound = matrix_[offset(i, j)];
       const int other_bound = other.matrix_[other.offset(i, j)];
 
-      if (other_bound == INF_TIME) {
+      if (j == relaxed_column || other_bound == INF_TIME) {
+        // Lower bounds x_i - age <= c are dropped. Canonicity already
+        // incorporates all of their implications for the other variables.
         continue;  // other imposes no bound here; anything is contained
       }
       if (this_bound == INF_TIME || this_bound > other_bound) {

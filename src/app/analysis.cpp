@@ -227,7 +227,7 @@ bool analyze_task_cones(const petri::PTPN& ptpn, const PipelineOptions& opts,
 }  // namespace
 
 bool should_run_analysis(const PipelineOptions& opts) {
-  if (!opts.exports.scg_dot.empty() || !opts.exports.metrics_json.empty()) {
+  if (!opts.exports.scg_dot.empty() || !opts.exports.metrics_json.empty() || opts.certify_periodic) {
     return true;
   }
   return !opts.skip_analysis;
@@ -238,6 +238,13 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
                          std::chrono::high_resolution_clock::time_point pipeline_start,
                          size_t initial_memory, ptpn::Diagnostics* diagnostics,
                          const dsl::SourceMap* source_map) try {
+  if (opts.certify_periodic && (opts.skip_analysis || opts.reduction_mode != "none" ||
+                               opts.canonicalization_mode != "equality" || opts.extrapolation ||
+                               opts.time_horizon.has_value() || !opts.priority_wcrt_task.empty() ||
+                               !opts.response_dominance_task.empty())) {
+    throw ::ptpn::UnsupportedClassError("--certify-periodic requires unreduced whole-model exploration",
+                                       "option:certify-periodic");
+  }
   if (opts.debug_mode) {
     std::cout << ptpn.to_string();
   }
@@ -379,9 +386,12 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
     // canonicalization), the symmetry quotient, or the worst-case tie-break
     // mode (whose tie enumeration multiplies the observation-clock states)
     // disables it and the values stay bounds.
-    const bool focused_response = !opts.priority_wcrt_task.empty();
+    const bool response_dominance = !opts.response_dominance_task.empty();
+    const std::string& response_task = response_dominance ? opts.response_dominance_task
+                                                          : opts.priority_wcrt_task;
+    const bool focused_response = !response_task.empty();
     const bool need_metrics = !opts.exports.metrics_json.empty() || diagnostics != nullptr ||
-                              focused_response;
+                              focused_response || opts.certify_periodic;
     const bool observation_exact_graph =
         canonicalization == state_class::CanonicalizationMode::EQUALITY &&
         !opts.extrapolation && !upper_bound_merging && opts.reduction_mode != "symmetry" &&
@@ -396,6 +406,9 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
       spdlog::info(
           "[SCG] Completion observation disabled: --no-exact-wcrt keeps the "
           "dwell-DP bounds (WCRT values are bounds, verdicts conservative)");
+    }
+    if (response_dominance) {
+      reachability_graph.set_response_dominance(response_task);
     }
     const auto scg_start = detail::PipelineClock::now();
     // Resource budget: both limits are optional and produce partial results
@@ -499,6 +512,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
       analyzer.set_completion_observation(reachability_graph.observation_active(),
                                           /*saturate=*/!focused_response);
       analyzer.set_graph_truncated(reachability_stats.truncated);
+      analyzer.set_periodic_certification(opts.certify_periodic);
       state_class::HorizonInfo horizon_info;
       if (opts.time_horizon.has_value()) {
         horizon_info.enabled = true;
@@ -509,15 +523,26 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
       analyzer.set_horizon_info(horizon_info);
       analyzer.set_symmetry_task_groups(reachability_graph.symmetry_task_groups());
       state_class::MetricsReport report = analyzer.analyze();
+      if (opts.certify_periodic) {
+        if (report.tasks.empty()) {
+          spdlog::info("[NONCOMPLETION] unknown: no task-chain metadata");
+        }
+        for (const auto& task : report.tasks) {
+          spdlog::info("[NONCOMPLETION] {}: {}", task.name,
+                       task.periodic_certificate ? "certified" : "unknown");
+        }
+      }
       if (focused_response) {
         const auto target = std::find_if(report.tasks.begin(), report.tasks.end(),
-            [&](const auto& task) { return task.name == opts.priority_wcrt_task; });
+            [&](const auto& task) { return task.name == response_task; });
         if (target == report.tasks.end()) {
-          throw std::logic_error("priority response target missing from analysis results");
+          throw std::logic_error("response target missing from analysis results");
         }
         auto response = *target;
         report.tasks = {std::move(response)};
-        report.response_task = opts.priority_wcrt_task;
+        report.response_task = response_task;
+        report.response_kind = response_dominance ? "response-dominance" : "priority-wcrt";
+        report.response_dominated = reachability_stats.response_dominated;
         report.exact = false;
         report.wcrt_exact = report.tasks.front().wcrt_exact;
         report.deadlock_analysis_certified = false;
@@ -526,7 +551,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
         if (diagnostics == nullptr && !export_metrics) {
           const auto& timing = report.tasks.front();
           spdlog::info("[WCRT] task={}, wcrt={}, exact={}, deadline_verdict={}", timing.name,
-                       timing.wcrt.to_string(), timing.wcrt_exact,
+                       timing.observed ? timing.wcrt.to_string() : "unavailable", timing.wcrt_exact,
                        state_class::deadline_verdict_to_string(timing.verdict));
         }
       }
@@ -599,18 +624,22 @@ int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts,
                      size_t initial_memory, ptpn::Diagnostics* diagnostics,
                      const dsl::SourceMap* source_map) {
   std::optional<tdg::TDG> projection;
-  if (!opts.priority_wcrt_task.empty()) {
+  if (!opts.priority_wcrt_task.empty() || !opts.response_dominance_task.empty()) {
     try {
+      const std::string option = opts.response_dominance_task.empty() ? "priority-wcrt"
+                                                                     : "response-dominance";
       if (opts.skip_analysis || opts.reduction_mode != "none" || opts.extrapolation ||
           opts.time_horizon.has_value() || opts.no_exact_wcrt || opts.tie_mode != "fifo" ||
           opts.canonicalization_mode != "equality") {
         throw ptpn::UnsupportedClassError(
-            "--priority-wcrt requires exact equality exploration with FIFO ties",
-            "option:priority-wcrt");
+            "--" + option + " requires exact equality exploration with FIFO ties",
+            "option:" + option);
       }
-      projection = project_priority_wcrt(tdg, opts.priority_wcrt_task);
-      spdlog::info("[WCRT] Target '{}': retained {} of {} tasks", opts.priority_wcrt_task,
-                   projection->nodes_type.size(), tdg.nodes_type.size());
+      if (!opts.priority_wcrt_task.empty()) {
+        projection = project_priority_wcrt(tdg, opts.priority_wcrt_task);
+        spdlog::info("[WCRT] Target '{}': retained {} of {} tasks", opts.priority_wcrt_task,
+                     projection->nodes_type.size(), tdg.nodes_type.size());
+      }
     } catch (const ptpn::UnsupportedClassError& error) {
       spdlog::error("[WCRT] {}", error.what());
       if (diagnostics != nullptr) {
@@ -669,7 +698,10 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
   for (const auto& task : report.tasks) {
     if (report.deadlock_analysis_certified && task.local_deadlock) {
       local_deadlocks.push_back(task.name);
-      diagnostics->add("R-ANA-003", "task '" + task.name + "' is in a periodic local deadlock",
+      const std::string finding = report.periodic_certification
+                                      ? " has a concrete periodic noncompletion witness"
+                                      : " is in a periodic local deadlock";
+      diagnostics->add("R-ANA-003", "task '" + task.name + "'" + finding,
                        "task:" + task.name, std::nullopt,
                        "change the task's period, priority, or core assignment so it can complete");
     }
@@ -677,6 +709,11 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
     // Compact per-task result so consumers do not have to parse the metrics
     // JSON for the verdict and the WCRT.
     if (!task.observed) {
+      if (!report.response_task.empty()) {
+        task_results.push_back({{"task", task.name}, {"observed", false}, {"wcrt", nullptr},
+                                {"wcrt_exact", false}});
+        continue;
+      }
       // A task that never executes in any reachable state is usually a missing
       // `start` binding or dependency edge. The hint is only meaningful when
       // the graph is complete: a truncated prefix can simply not have reached
@@ -737,11 +774,11 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
       }
       deadline_misses.push_back(std::move(miss));
 
-      const std::string evidence =
-          task.wcrt_lb.infinite
-              ? "the job provably never completes"
-              : "a certified worst-case response of at least " +
-                    std::to_string(task.wcrt_lb.value);
+      const std::string evidence = task.periodic_certificate
+          ? "a concrete periodic noncompletion witness"
+          : (task.wcrt_lb.infinite ? "the job provably never completes"
+                                  : "a certified worst-case response of at least " +
+                                        std::to_string(task.wcrt_lb.value));
       diagnostics->add("R-ANA-002",
                        "task '" + task.name + "' misses its deadline " +
                            std::to_string(task.deadline) + ": " + evidence,
@@ -799,8 +836,15 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
   }
 
   nlohmann::json analysis = nlohmann::json::object();
+  if (report.periodic_certification) {
+    analysis["periodic_noncompletion"] =
+        nlohmann::json::parse(state_class::periodic_noncompletion_json(report));
+  }
   if (!report.response_task.empty()) {
-    analysis["scope"] = {{"kind", "priority-wcrt"}, {"task", report.response_task}};
+    analysis["scope"] = {{"kind", report.response_kind}, {"task", report.response_task}};
+    if (report.response_kind == "response-dominance") {
+      analysis["response_dominated"] = report.response_dominated;
+    }
   }
   analysis["exact"] = report.exact;
   analysis["wcrt_exact"] = report.wcrt_exact;
@@ -814,8 +858,12 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
   analysis["deadlock_states"] = report.response_task.empty()
                                     ? nlohmann::json(report.deadlock_states.size())
                                     : nlohmann::json(nullptr);
-  analysis["schedulable"] = report.deadlock_analysis_certified ? nlohmann::json(report.schedulable)
-                                                               : nlohmann::json(nullptr);
+  const bool schedulability_known =
+      report.deadlock_analysis_certified &&
+      (!report.periodic_certification ||
+       report.schedulability != state_class::Schedulability::Unknown);
+  analysis["schedulable"] = schedulability_known ? nlohmann::json(report.schedulable)
+                                                : nlohmann::json(nullptr);
   analysis["schedulability"] = state_class::schedulability_to_string(report.schedulability);
   analysis["local_deadlocks"] = report.response_task.empty() ? nlohmann::json(local_deadlocks)
                                                               : nlohmann::json(nullptr);

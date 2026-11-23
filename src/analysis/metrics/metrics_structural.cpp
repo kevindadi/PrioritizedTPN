@@ -53,7 +53,9 @@ void MetricsAnalyzer::compute_schedulability(MetricsReport& report) {
   // analysis; unschedulable requires a proven counterexample (a certified
   // miss, starvation, or a reachable deadlock). Everything else is unknown.
   bool unschedulable = !report.deadlock_states.empty();
-  bool unknown = !report.deadlock_analysis_certified;
+  // The periodic witness search is incomplete. Its empty result cannot
+  // establish that every job eventually completes.
+  bool unknown = !report.deadlock_analysis_certified || report.periodic_certification;
   for (const auto& task : report.tasks) {
     if (task.local_deadlock) {
       unschedulable = true;
