@@ -379,7 +379,10 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
     // canonicalization), the symmetry quotient, or the worst-case tie-break
     // mode (whose tie enumeration multiplies the observation-clock states)
     // disables it and the values stay bounds.
-    const bool focused_response = !opts.priority_wcrt_task.empty();
+    const bool response_dominance = !opts.response_dominance_task.empty();
+    const std::string& response_task = response_dominance ? opts.response_dominance_task
+                                                          : opts.priority_wcrt_task;
+    const bool focused_response = !response_task.empty();
     const bool need_metrics = !opts.exports.metrics_json.empty() || diagnostics != nullptr ||
                               focused_response;
     const bool observation_exact_graph =
@@ -396,6 +399,9 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
       spdlog::info(
           "[SCG] Completion observation disabled: --no-exact-wcrt keeps the "
           "dwell-DP bounds (WCRT values are bounds, verdicts conservative)");
+    }
+    if (response_dominance) {
+      reachability_graph.set_response_dominance(response_task);
     }
     const auto scg_start = detail::PipelineClock::now();
     // Resource budget: both limits are optional and produce partial results
@@ -511,13 +517,15 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
       state_class::MetricsReport report = analyzer.analyze();
       if (focused_response) {
         const auto target = std::find_if(report.tasks.begin(), report.tasks.end(),
-            [&](const auto& task) { return task.name == opts.priority_wcrt_task; });
+            [&](const auto& task) { return task.name == response_task; });
         if (target == report.tasks.end()) {
-          throw std::logic_error("priority response target missing from analysis results");
+          throw std::logic_error("response target missing from analysis results");
         }
         auto response = *target;
         report.tasks = {std::move(response)};
-        report.response_task = opts.priority_wcrt_task;
+        report.response_task = response_task;
+        report.response_kind = response_dominance ? "response-dominance" : "priority-wcrt";
+        report.response_dominated = reachability_stats.response_dominated;
         report.exact = false;
         report.wcrt_exact = report.tasks.front().wcrt_exact;
         report.deadlock_analysis_certified = false;
@@ -526,7 +534,7 @@ int run_ptpn_postprocess(const petri::PTPN& ptpn, const std::string& input_label
         if (diagnostics == nullptr && !export_metrics) {
           const auto& timing = report.tasks.front();
           spdlog::info("[WCRT] task={}, wcrt={}, exact={}, deadline_verdict={}", timing.name,
-                       timing.wcrt.to_string(), timing.wcrt_exact,
+                       timing.observed ? timing.wcrt.to_string() : "unavailable", timing.wcrt_exact,
                        state_class::deadline_verdict_to_string(timing.verdict));
         }
       }
@@ -599,18 +607,22 @@ int run_tdg_analysis(const tdg::TDG& tdg, const PipelineOptions& opts,
                      size_t initial_memory, ptpn::Diagnostics* diagnostics,
                      const dsl::SourceMap* source_map) {
   std::optional<tdg::TDG> projection;
-  if (!opts.priority_wcrt_task.empty()) {
+  if (!opts.priority_wcrt_task.empty() || !opts.response_dominance_task.empty()) {
     try {
+      const std::string option = opts.response_dominance_task.empty() ? "priority-wcrt"
+                                                                     : "response-dominance";
       if (opts.skip_analysis || opts.reduction_mode != "none" || opts.extrapolation ||
           opts.time_horizon.has_value() || opts.no_exact_wcrt || opts.tie_mode != "fifo" ||
           opts.canonicalization_mode != "equality") {
         throw ptpn::UnsupportedClassError(
-            "--priority-wcrt requires exact equality exploration with FIFO ties",
-            "option:priority-wcrt");
+            "--" + option + " requires exact equality exploration with FIFO ties",
+            "option:" + option);
       }
-      projection = project_priority_wcrt(tdg, opts.priority_wcrt_task);
-      spdlog::info("[WCRT] Target '{}': retained {} of {} tasks", opts.priority_wcrt_task,
-                   projection->nodes_type.size(), tdg.nodes_type.size());
+      if (!opts.priority_wcrt_task.empty()) {
+        projection = project_priority_wcrt(tdg, opts.priority_wcrt_task);
+        spdlog::info("[WCRT] Target '{}': retained {} of {} tasks", opts.priority_wcrt_task,
+                     projection->nodes_type.size(), tdg.nodes_type.size());
+      }
     } catch (const ptpn::UnsupportedClassError& error) {
       spdlog::error("[WCRT] {}", error.what());
       if (diagnostics != nullptr) {
@@ -677,6 +689,11 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
     // Compact per-task result so consumers do not have to parse the metrics
     // JSON for the verdict and the WCRT.
     if (!task.observed) {
+      if (!report.response_task.empty()) {
+        task_results.push_back({{"task", task.name}, {"observed", false}, {"wcrt", nullptr},
+                                {"wcrt_exact", false}});
+        continue;
+      }
       // A task that never executes in any reachable state is usually a missing
       // `start` binding or dependency edge. The hint is only meaningful when
       // the graph is complete: a truncated prefix can simply not have reached
@@ -800,7 +817,10 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
 
   nlohmann::json analysis = nlohmann::json::object();
   if (!report.response_task.empty()) {
-    analysis["scope"] = {{"kind", "priority-wcrt"}, {"task", report.response_task}};
+    analysis["scope"] = {{"kind", report.response_kind}, {"task", report.response_task}};
+    if (report.response_kind == "response-dominance") {
+      analysis["response_dominated"] = report.response_dominated;
+    }
   }
   analysis["exact"] = report.exact;
   analysis["wcrt_exact"] = report.wcrt_exact;

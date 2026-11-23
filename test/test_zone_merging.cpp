@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <set>
@@ -8,6 +9,7 @@
 #include "analysis/metrics/metrics.h"
 #include "analysis/metrics/metrics_json.h"
 #include "analysis/reachability/ptpn_analysis.h"
+#include "cli_test_helpers.h"
 #include "model/petri.h"
 
 namespace {
@@ -16,6 +18,93 @@ using state_class::MetricsAnalyzer;
 using state_class::MetricsReport;
 using state_class::ReductionMode;
 using state_class::StateClassReachabilityGraph;
+
+TEST(ResponseDominance, MatchesEachExecutionClockValuation) {
+  // Clock 1 is job age; clock 2 is execution progress. The older history has
+  // age = progress + 3, and the younger one has age = progress + 2.
+  auto history = [](int offset, int progress_max) {
+    state_class::DBM zone(3);
+    zone.set_constraint(2, 0, progress_max);
+    zone.set_constraint(1, 2, offset);
+    zone.set_constraint(2, 1, -offset);
+    zone.minimize();
+    return zone;
+  };
+  const auto younger = history(2, 4);
+  const auto older = history(3, 4);
+  EXPECT_FALSE(younger.included_in(older));
+  EXPECT_TRUE(younger.included_in_downward_closure(older, 1));
+  EXPECT_FALSE(older.included_in_downward_closure(younger, 1));
+  // A large marginal age alone cannot dominate absent progress valuations.
+  EXPECT_FALSE(younger.included_in_downward_closure(history(10, 3), 1));
+}
+
+TEST(ResponseDominance, PreservesTargetResponseAcrossDifferentCompletionOrders) {
+  const auto input = ptpn_test::write_temp_file("dominance", ".json", R"({
+    "graph":{"name":"Dominance"},
+    "configuration":{"num_cpus":3,"cores_per_cpu":1,"policy":"fixed",
+                     "start":[{"task":"H"},{"task":"B"},{"task":"C"},
+                              {"task":"D"},{"task":"A"}]},
+    "nodes":[
+      {"id":"H","type":"task","core":2,"priority":1,"time":[[1,7]],"locks":[]},
+      {"id":"B","type":"task","core":0,"priority":3,"time":[[4,9]],"locks":[]},
+      {"id":"C","type":"task","core":0,"priority":2,"time":[[1,7]],"locks":[]},
+      {"id":"D","type":"task","core":2,"priority":1,"time":[[5,10]],"locks":[]},
+      {"id":"A","type":"task","core":1,"priority":2,"time":[[2,6]],
+       "deadline":20,"locks":[]}], "edges":[]
+  })");
+  const auto full = ptpn_test::run_cli({"tdg", "-f", input, "--diagnostics", "json"});
+  const auto focused = ptpn_test::run_cli({"tdg", "-f", input, "--diagnostics", "json",
+                                          "--response-dominance", "A"});
+  ASSERT_EQ(full.exit_code, 0) << full.stdout_text << full.stderr_text;
+  ASSERT_EQ(focused.exit_code, 0) << focused.stdout_text << focused.stderr_text;
+  const auto baseline = nlohmann::json::parse(full.stdout_text).at("result").at("analysis");
+  const auto reduced = nlohmann::json::parse(focused.stdout_text).at("result").at("analysis");
+  const auto& tasks = reduced.at("tasks");
+  ASSERT_EQ(tasks.size(), 1u);
+  ASSERT_EQ(tasks[0].at("task"), "A");
+  EXPECT_EQ(tasks[0].at("wcrt"), 6);
+  EXPECT_TRUE(tasks[0].at("wcrt_exact").get<bool>());
+  EXPECT_EQ(tasks[0].at("verdict"), "meets");
+  const auto& full_tasks = baseline.at("tasks");
+  const auto original = std::find_if(full_tasks.begin(), full_tasks.end(), [](const auto& task) {
+    return task.at("task") == "A";
+  });
+  ASSERT_NE(original, full_tasks.end());
+  EXPECT_EQ(*original, tasks[0]);
+  EXPECT_GT(reduced.at("response_dominated").get<size_t>(), 0u);
+  EXPECT_LT(reduced.at("states").get<size_t>(), baseline.at("states").get<size_t>());
+  EXPECT_TRUE(reduced.at("deadlock").is_null());
+}
+
+TEST(ResponseDominance, DistinguishesPointFromVariableFrozenProgress) {
+  std::string model = R"({
+    "graph":{"name":"VariablePreemption"},
+    "configuration":{"num_cpus":2,"cores_per_cpu":1,"policy":"fixed",
+                     "start":[{"task":"C"},{"task":"A"}]},
+    "nodes":[
+      {"id":"A","type":"task","core":0,"priority":1,"time":[[10,10]],"locks":[]},
+      {"id":"H","type":"task","core":0,"priority":2,"time":[[1,1]],"locks":[]},
+      {"id":"C","type":"task","core":1,"priority":1,"time":[[2,3]],"locks":[]}],
+    "edges":[{"source":"C","target":"H","label":"0"}]
+  })";
+  const auto input = ptpn_test::write_temp_file("dominance", ".json", model);
+  const auto run = ptpn_test::run_cli({"tdg", "-f", input, "--diagnostics", "json",
+                                      "--response-dominance", "A"});
+  ASSERT_EQ(run.exit_code, 4) << run.stdout_text << run.stderr_text;
+  EXPECT_NE(run.stdout_text.find("non-point frozen clock"), std::string::npos);
+
+  const auto duration = model.find("[[2,3]]");
+  ASSERT_NE(duration, std::string::npos);
+  model[duration + 4] = '2';
+  const auto point_input = ptpn_test::write_temp_file("dominance", ".json", model);
+  const auto point_run = ptpn_test::run_cli({"tdg", "-f", point_input, "--diagnostics", "json",
+                                            "--response-dominance", "A"});
+  ASSERT_EQ(point_run.exit_code, 0) << point_run.stdout_text << point_run.stderr_text;
+  const auto report = nlohmann::json::parse(point_run.stdout_text).at("result").at("analysis");
+  EXPECT_EQ(report.at("tasks").at(0).at("wcrt"), 11);
+  EXPECT_TRUE(report.at("tasks").at(0).at("wcrt_exact").get<bool>());
+}
 
 std::set<std::vector<int>> reachable_markings(const state_class::SCGraph& graph) {
   std::set<std::vector<int>> markings;

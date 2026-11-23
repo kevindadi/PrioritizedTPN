@@ -203,7 +203,8 @@ void StateClassReachabilityGraph::recompute_sets(StateClass& state,
 }
 
 void build_clock_layout(StateClass& state, const petri::PTPN& net, bool keep_suspension_clocks,
-                        bool include_release_clocks, bool include_laxity_clocks) {
+                        bool include_release_clocks, bool include_laxity_clocks,
+                        size_t release_focus) {
   if (include_release_clocks && include_laxity_clocks) {
     throw std::invalid_argument(
         "a state class cannot track release and laxity clocks simultaneously");
@@ -225,6 +226,9 @@ void build_clock_layout(StateClass& state, const petri::PTPN& net, bool keep_sus
         include_laxity_clocks ? state.laxity_clock_of_task : state.release_clock_of_task;
     clock_of_task.assign(tasks.size(), -1);
     for (size_t ordinal = 0; ordinal < tasks.size(); ++ordinal) {
+      if (kind == ClockKind::Release && release_focus != NO_TASK && ordinal != release_focus) {
+        continue;
+      }
       if (!task_in_flight(tasks[ordinal], state.marking)) {
         continue;
       }
@@ -252,7 +256,7 @@ void build_clock_layout(StateClass& state, const petri::PTPN& net, bool keep_sus
 
 void StateClassReachabilityGraph::build_layout(StateClass& state) const {
   build_clock_layout(state, net_, !suspension_clock_projection_, include_release_clocks(),
-                     firing_rule_->uses_laxity_clocks());
+                     firing_rule_->uses_laxity_clocks(), response_dominance_task_);
 }
 
 StateClass StateClassReachabilityGraph::compute_initial_class() {

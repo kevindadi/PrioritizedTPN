@@ -43,6 +43,7 @@ struct PipelineOptions {
   std::string canonicalization_mode = "equality";
   std::string reduction_mode = "none";
   std::string priority_wcrt_task;
+  std::string response_dominance_task;
   bool extrapolation = false;
   // Keep the suspension clocks w_t in the state-class DBM. Off by default: the
   // exact projection preserves reachability and every metric while using a

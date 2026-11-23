@@ -165,6 +165,10 @@ class StateClassReachabilityGraph {
   // capped. The observation never changes scheduling decisions.
   // A caller may disable saturation after proving that job ages are bounded.
   void set_completion_observation(bool enabled, bool saturate = true);
+  // Explore only the maximum response of a job in a net with TDG-lowered
+  // task chains and the built-in fixed-priority rule. The graph omits
+  // dominated prefixes and is intended for this response query.
+  void set_response_dominance(const std::string& task);
 
   [[nodiscard]] bool completion_observation() const {
     return completion_observation_;
@@ -229,6 +233,7 @@ class StateClassReachabilityGraph {
     // Number of distinct existing classes that absorbed at least one candidate.
     // zone_merges >= merged_states when a class absorbs several candidates.
     size_t merged_states = 0;
+    size_t response_dominated = 0;
     // Stopped at the max_states cap.
     bool truncated = false;
     // The exploration also stopped because the resource budget was exhausted;
@@ -261,6 +266,7 @@ class StateClassReachabilityGraph {
   bool suspension_clock_projection_ = true;
   bool completion_observation_ = false;
   bool saturate_observation_ = true;
+  size_t response_dominance_task_ = NO_TASK;
   ResourceBudget resource_budget_;
   std::chrono::steady_clock::time_point build_start_{};
   size_t budget_check_counter_ = 0;
@@ -301,6 +307,7 @@ class StateClassReachabilityGraph {
   std::unordered_set<SCVertex> merge_targets_;
 
   [[nodiscard]] int effective_earliest(size_t transition) const;
+  [[nodiscard]] bool response_dominated(const StateClass& state) const;
   [[nodiscard]] int effective_latest(size_t transition) const;
 
   // True when the configured resource budget is exhausted; sets

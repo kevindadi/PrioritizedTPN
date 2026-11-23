@@ -67,8 +67,12 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
 
   if (!report.response_task.empty()) {
     const TaskMetrics& task = report.tasks.front();
-    out << "{\n  \"scope\": {\"kind\": \"priority-wcrt\", \"task\": \""
+    out << "{\n  \"scope\": {\"kind\": \"" << json_escape(report.response_kind)
+        << "\", \"task\": \""
         << json_escape(report.response_task) << "\"},\n";
+    if (report.response_kind == "response-dominance") {
+      out << "  \"response_dominated\": " << report.response_dominated << ",\n";
+    }
     out << "  \"states\": " << report.states << ",\n";
     out << "  \"transitions\": " << report.transitions << ",\n";
     out << "  \"truncated\": " << (report.truncated ? "true" : "false") << ",\n";

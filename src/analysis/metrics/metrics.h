@@ -138,8 +138,10 @@ struct HorizonInfo {
 };
 
 struct MetricsReport {
-  // Present for a task-response query on a priority projection.
+  // Present for a task-scoped response query.
   std::string response_task;
+  std::string response_kind;
+  size_t response_dominated = 0;
   bool exact = true;  // built under EQUALITY canonicalization
   // False when the graph was built with a state-merging reduction (for
   // example ReductionMode::UPPER_BOUND). In that case `wcrt` remains a sound
