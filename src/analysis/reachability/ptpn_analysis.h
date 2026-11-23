@@ -163,7 +163,8 @@ class StateClassReachabilityGraph {
   // state space infinite. A response below the cap is exact; a response that
   // reaches the cap is only a lower bound and the metrics layer reports it as
   // capped. The observation never changes scheduling decisions.
-  void set_completion_observation(bool enabled);
+  // A caller may disable saturation after proving that job ages are bounded.
+  void set_completion_observation(bool enabled, bool saturate = true);
 
   [[nodiscard]] bool completion_observation() const {
     return completion_observation_;
@@ -259,6 +260,7 @@ class StateClassReachabilityGraph {
   bool extrapolation_enabled_ = false;
   bool suspension_clock_projection_ = true;
   bool completion_observation_ = false;
+  bool saturate_observation_ = true;
   ResourceBudget resource_budget_;
   std::chrono::steady_clock::time_point build_start_{};
   size_t budget_check_counter_ = 0;

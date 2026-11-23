@@ -1,6 +1,8 @@
 #include "app/lowering.h"
 
+#include <algorithm>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -70,6 +72,95 @@ std::optional<std::string> unsupported_subject(const std::string& message,
 }
 
 }  // namespace
+
+tdg::TDG project_priority_wcrt(const tdg::TDG& tdg, const std::string& target) {
+  const auto unsupported = [](const std::string& reason) {
+    return ptpn::UnsupportedClassError("--priority-wcrt " + reason, "option:priority-wcrt");
+  };
+  if ((tdg.policy != SchedulePolicy::FIXED &&
+       tdg.policy != SchedulePolicy::FIXED_PRIOR_WITH_RESUME) ||
+      tdg.cores_per_cpu != 1 || tdg.task_place_capacity != 1) {
+    throw unsupported("requires fixed-priority resume, one slot per core, and unit task capacity");
+  }
+  if (!tdg.lock_set.empty() ||
+      std::any_of(tdg.tdg_edges.begin(), tdg.tdg_edges.end(),
+                  [](const TdgEdge& edge) { return !edge.is_self_loop(); })) {
+    throw unsupported("requires independent tasks without locks or dependency edges");
+  }
+
+  const auto found = tdg.nodes_type.find(target);
+  const TaskNode* focus = found == tdg.nodes_type.end() ? nullptr : as_task_node(found->second);
+  if (focus == nullptr) {
+    throw ptpn::UnsupportedClassError("--priority-wcrt target is not a task: " + target,
+                                     "task:" + target);
+  }
+
+  // The visible jobs are initially ready and cannot be preempted by new jobs
+  // at run time. Hidden jobs have private timers and entirely suspendable CPU
+  // service. They can run in otherwise idle time and cannot delay a visible
+  // job on the target core. Private releases and dispatches can occur at the
+  // same timestamp as a visible event without changing its clock valuation.
+  std::set<std::string> hidden;
+  for (const auto& [name, node] : tdg.nodes_type) {
+    const TaskNode* task = as_task_node(node);
+    if (task == nullptr || task->core < 0 || task->core >= tdg.num_cpus ||
+        task->time.size() != 1 || !task->lock.empty() || task->time.front().first <= 0 ||
+        task->time.front().first > task->time.front().second ||
+        task->time.front().second >= petri::INF) {
+      throw unsupported("requires real-core tasks with one finite, positive execution segment");
+    }
+    if (task->core != focus->core || task->priority < focus->priority) {
+      hidden.insert(name);
+    }
+  }
+
+  std::set<std::string> started;
+  long long visible_budget = 0;
+  for (const auto& binding : tdg.start_tasks) {
+    if (binding.tokens > 1 || (binding.tokens == 1 && !started.insert(binding.task).second)) {
+      throw unsupported("requires at most one startup job per task");
+    }
+    if (binding.tokens == 1 && hidden.count(binding.task) == 0) {
+      visible_budget += as_task_node(tdg.nodes_type.at(binding.task))->time.front().second;
+      if (visible_budget >= petri::INF) {
+        throw unsupported("startup execution budget exceeds the clock bound representation");
+      }
+    }
+  }
+  if (started.count(target) == 0) {
+    throw unsupported("requires one startup job for the target task");
+  }
+  std::set<std::string> periodic;
+  for (const auto& binding : tdg.periodic_tasks) {
+    if (hidden.count(binding.task) == 0 || binding.period <= 0 || binding.period >= petri::INF ||
+        !periodic.insert(binding.task).second) {
+      throw unsupported("allows periodic releases only for hidden tasks with private positive timers");
+    }
+  }
+
+  tdg::TDG projected = tdg;
+  const auto hidden_name = [&](const std::string& name) { return hidden.count(name) != 0; };
+  const auto erase_hidden = [&](auto& values, auto name_of) {
+    values.erase(std::remove_if(values.begin(), values.end(), [&](const auto& value) {
+                   return hidden_name(name_of(value));
+                 }), values.end());
+  };
+  erase_hidden(projected.all_task, [](const NodeType& node) {
+    return visit_node(node, [](const auto& entry) { return entry.name; });
+  });
+  erase_hidden(projected.start_tasks, [](const StartBinding& binding) { return binding.task; });
+  erase_hidden(projected.end_tasks, [](const std::string& name) { return name; });
+  erase_hidden(projected.tdg_edges, [](const TdgEdge& edge) { return edge.source; });
+  projected.periodic_tasks.clear();
+  for (const auto& name : hidden) {
+    projected.nodes_type.erase(name);
+    projected.tasks_priority.erase(name);
+    projected.task_locks_map.erase(name);
+    projected.task_allowed_cores.erase(name);
+    projected.task_wcet_provenance.erase(name);
+  }
+  return projected;
+}
 
 // Resolves a lowering-subject key to the RTSL SourceMap entry that anchors it.
 // Implicit nodes are bound under `fork:<name>` / `join:<name>` and the policy

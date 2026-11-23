@@ -7,6 +7,7 @@
 #include "analysis/metrics/metrics.h"
 #include "analysis/reachability/ptpn_analysis.h"
 #include "analysis/reductions/cone_projection.h"
+#include "cli_test_helpers.h"
 #include "lower/tdg2pn/tdg2pn.h"
 #include "model/petri.h"
 #include "model/tdg.h"
@@ -233,4 +234,87 @@ TEST(ConeProjection, PerTaskMetricsMatchFullGraph) {
 TEST(ConeProjection, UnknownTaskThrows) {
   const petri::PTPN net = lower(kIndependentCores);
   EXPECT_THROW(petri::project_cone(net, "missing"), std::invalid_argument);
+}
+
+TEST(PriorityWcrt, DropsLowerPriorityPeriodicInterleavingsAndPreservesResponse) {
+  const auto input = ptpn_test::write_temp_file("ptpn", ".json", R"({
+    "graph": {"name": "PriorityProjection"},
+    "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed",
+      "start": [{"task": "H"}, {"task": "A"}],
+      "periodic": [{"task": "L", "period": 3}]},
+    "nodes": [
+      {"id": "H", "type": "task", "priority": 3, "time": [[3, 4]], "locks": []},
+      {"id": "A", "type": "task", "priority": 2, "deadline": 9,
+       "time": [[2, 3]], "locks": []},
+      {"id": "L", "type": "task", "priority": 1, "time": [[1, 2]], "locks": []}],
+    "edges": []
+  })");
+  const auto full = ptpn_test::run_cli({"tdg", "-f", input, "--diagnostics", "json"});
+  const auto reduced = ptpn_test::run_cli(
+      {"tdg", "-f", input, "--priority-wcrt", "A", "--diagnostics", "json"});
+  // L misses its own deadline in the full system. The target meets its deadline.
+  ASSERT_EQ(full.exit_code, 6) << full.stdout_text << full.stderr_text;
+  ASSERT_EQ(reduced.exit_code, 0) << reduced.stdout_text << reduced.stderr_text;
+  const auto baseline = nlohmann::json::parse(full.stdout_text).at("result").at("analysis");
+  const auto focused = nlohmann::json::parse(reduced.stdout_text).at("result").at("analysis");
+  ASSERT_EQ(focused.at("tasks").size(), 1u);
+  const auto& task = focused.at("tasks").at(0);
+  ASSERT_EQ(task.at("task"), "A");
+  EXPECT_EQ(task.at("wcrt"), 7);
+  EXPECT_EQ(task.at("verdict"), "meets");
+  EXPECT_TRUE(task.at("wcrt_exact").get<bool>());
+  EXPECT_EQ(focused.at("scope").at("task"), "A");
+  EXPECT_TRUE(focused.at("schedulable").is_null());
+  EXPECT_TRUE(focused.at("deadlock").is_null());
+  EXPECT_TRUE(focused.at("local_deadlocks").is_null());
+  EXPECT_LT(focused.at("states").get<size_t>(), baseline.at("states").get<size_t>());
+  bool matched = false;
+  for (const auto& row : baseline.at("tasks")) {
+    if (row.at("task") == "A") {
+      matched = true;
+      EXPECT_EQ(row.at("wcrt"), task.at("wcrt"));
+      EXPECT_EQ(row.at("verdict"), task.at("verdict"));
+    }
+  }
+  EXPECT_TRUE(matched);
+}
+
+TEST(PriorityWcrt, RejectsSharedLocksAndDependencies) {
+  for (const char* model : {kSharedLock, kDependencyChain}) {
+    const auto input = ptpn_test::write_temp_file("ptpn", ".json", model);
+    const auto run = ptpn_test::run_cli(
+        {"tdg", "-f", input, "--priority-wcrt", "A", "--diagnostics", "json"});
+    ASSERT_EQ(run.exit_code, 4) << run.stdout_text << run.stderr_text;
+    EXPECT_NE(run.stdout_text.find("E-UNS-001"), std::string::npos);
+  }
+}
+
+TEST(PriorityWcrt, KeepsTiedForegroundJobsAndReportsExactDeadlineMiss) {
+  const auto input = ptpn_test::write_temp_file("ptpn", ".json", R"({
+    "graph": {"name": "PriorityProjectionTies"},
+    "configuration": {"num_cpus": 2, "cores_per_cpu": 1, "policy": "fixed",
+      "start": [{"task": "H"}, {"task": "A"}, {"task": "B"}],
+      "periodic": [{"task": "L", "period": 3}, {"task": "R", "period": 2}]},
+    "nodes": [
+      {"id": "H", "type": "task", "priority": 3, "time": [[4, 4]], "locks": []},
+      {"id": "A", "type": "task", "priority": 2, "deadline": 7,
+       "time": [[2, 2]], "locks": []},
+      {"id": "B", "type": "task", "priority": 2, "time": [[5, 5]], "locks": []},
+      {"id": "L", "type": "task", "priority": 1, "time": [[1, 1]], "locks": []},
+      {"id": "R", "type": "task", "core": 1, "priority": 9,
+       "time": [[1, 1]], "locks": []}],
+    "edges": []
+  })");
+  const auto metrics = ptpn_test::test_artifact_name("priority", ".json");
+  const auto run = ptpn_test::run_cli({"tdg", "-f", input, "--priority-wcrt", "A",
+                                      "--diagnostics", "json", "--export-metrics", metrics});
+  ASSERT_EQ(run.exit_code, 6) << run.stdout_text << run.stderr_text;
+  const auto report = nlohmann::json::parse(ptpn_test::read_file(metrics));
+  EXPECT_EQ(report.at("scope").at("task"), "A");
+  ASSERT_EQ(report.at("tasks").size(), 1u);
+  const auto& task = report.at("tasks").at(0);
+  EXPECT_EQ(task.at("wcrt"), 11);
+  EXPECT_EQ(task.at("verdict"), "misses");
+  EXPECT_TRUE(task.at("wcrt_exact").get<bool>());
+  EXPECT_FALSE(task.at("wcrt_capped").get<bool>());
 }

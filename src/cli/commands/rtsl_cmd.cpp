@@ -15,6 +15,7 @@ class RtslCommand final : public Command {
     app_ = root.add_subcommand("rtsl", "Analyze an RTSL model end to end");
     app_->add_option("-f,--file", input_file_, "Input RTSL file")->required(true);
     add_common_pipeline_options(app_, options_, /*tdg_export_is_json=*/true);
+    add_priority_wcrt_option(app_, options_);
     app_->add_option("--policy", policy_,
                      "Override the RTSL scheduling policy for lowering and native analysis")
         ->transform([this](const std::string& value) {

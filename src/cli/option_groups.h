@@ -9,6 +9,8 @@
 
 namespace cli {
 
+void add_priority_wcrt_option(CLI::App* cmd, app::PipelineOptions& opts);
+
 // `--diagnostics json` and `--diagnostics-file PATH`: selects the versioned
 // diagnostics envelope transport.
 void add_diagnostics_options(CLI::App* cmd, app::DiagnosticsOptions& diagnostics);

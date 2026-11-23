@@ -65,6 +65,26 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
     return false;
   }
 
+  if (!report.response_task.empty()) {
+    const TaskMetrics& task = report.tasks.front();
+    out << "{\n  \"scope\": {\"kind\": \"priority-wcrt\", \"task\": \""
+        << json_escape(report.response_task) << "\"},\n";
+    out << "  \"states\": " << report.states << ",\n";
+    out << "  \"transitions\": " << report.transitions << ",\n";
+    out << "  \"truncated\": " << (report.truncated ? "true" : "false") << ",\n";
+    out << "  \"schedulable\": null,\n  \"deadlock\": null,\n";
+    out << "  \"tasks\": [{\n    \"name\": \"" << json_escape(task.name) << "\",\n";
+    out << "    \"wcrt\": " << (task.observed ? time_json(task.wcrt) : "null") << ",\n";
+    out << "    \"wcrt_lb\": "
+        << (task.observed && report.wcrt_lb_valid ? time_json(task.wcrt_lb) : "null") << ",\n";
+    out << "    \"wcrt_exact\": " << (task.wcrt_exact ? "true" : "false") << ",\n";
+    out << "    \"wcrt_capped\": " << (task.wcrt_capped ? "true" : "false") << ",\n";
+    out << "    \"deadline\": " << (task.has_deadline ? std::to_string(task.deadline) : "null")
+        << ",\n    \"verdict\": \"" << deadline_verdict_to_string(task.verdict) << "\"\n";
+    out << "  }]\n}\n";
+    return ptpn::finish_output(out);
+  }
+
   out << "{\n";
   out << "  \"exact\": " << (report.exact ? "true" : "false") << ",\n";
   out << "  \"wcrt_lb_valid\": " << (report.wcrt_lb_valid ? "true" : "false") << ",\n";
