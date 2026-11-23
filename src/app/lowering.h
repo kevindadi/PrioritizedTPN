@@ -30,6 +30,10 @@ int build_ptpn_from_tdg(const tdg::TDG& tdg, petri::PTPN& ptpn,
                         ptpn::Diagnostics* diagnostics = nullptr,
                         const dsl::SourceMap* source_map = nullptr);
 
+// Project onto the priority prefix containing the target on its assigned core.
+// Throws UnsupportedClassError outside the startup-job response model class.
+tdg::TDG project_priority_wcrt(const tdg::TDG& tdg, const std::string& target);
+
 // Resolves a lowering/analysis subject to its RTSL SourceMap span. Implicit
 // nodes are bound under `fork:<name>` / `join:<name>` and the policy under
 // `policy`, while lowering reports `node:<name>` / `policy:<name>`. Returns

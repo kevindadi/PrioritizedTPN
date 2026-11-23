@@ -163,7 +163,8 @@ class StateClassReachabilityGraph {
   // state space infinite. A response below the cap is exact; a response that
   // reaches the cap is only a lower bound and the metrics layer reports it as
   // capped. The observation never changes scheduling decisions.
-  void set_completion_observation(bool enabled);
+  // A caller may disable saturation after proving that job ages are bounded.
+  void set_completion_observation(bool enabled, bool saturate = true);
 
   [[nodiscard]] bool completion_observation() const {
     return completion_observation_;
@@ -259,6 +260,7 @@ class StateClassReachabilityGraph {
   bool extrapolation_enabled_ = false;
   bool suspension_clock_projection_ = true;
   bool completion_observation_ = false;
+  bool saturate_observation_ = true;
   ResourceBudget resource_budget_;
   std::chrono::steady_clock::time_point build_start_{};
   size_t budget_check_counter_ = 0;
@@ -308,9 +310,8 @@ class StateClassReachabilityGraph {
   // True when the clock layout includes release clocks: the rule uses them for
   // scheduling (EDF/FIFO) or the completion observation requested them.
   [[nodiscard]] bool include_release_clocks() const;
-  // True when any per-job clock (release or laxity) is part of the layout.
-  // Replaces FiringRule::uses_job_clocks() in the engine: observation clocks
-  // need the same prepared-state and layout handling.
+  // True when any per-job clock is part of the layout, including clocks used
+  // only for completion observation. Used by reduction compatibility checks.
   [[nodiscard]] bool job_clock_layout() const;
   // Observation cap for `task` (deadline + 1, or the global structural cap), or
   // INF_TIME when the task must not be capped.

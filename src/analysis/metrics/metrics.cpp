@@ -51,8 +51,9 @@ void MetricsAnalyzer::set_horizon_info(HorizonInfo info) {
   horizon_ = info;
 }
 
-void MetricsAnalyzer::set_completion_observation(bool enabled) {
+void MetricsAnalyzer::set_completion_observation(bool enabled, bool saturate) {
   observation_ = enabled;
+  saturate_observation_ = saturate;
 }
 
 void MetricsAnalyzer::set_graph_truncated(bool truncated) {

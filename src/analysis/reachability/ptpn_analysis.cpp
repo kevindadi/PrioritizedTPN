@@ -43,8 +43,9 @@ void StateClassReachabilityGraph::set_suspension_clock_projection(bool enabled) 
   suspension_clock_projection_ = enabled;
 }
 
-void StateClassReachabilityGraph::set_completion_observation(bool enabled) {
+void StateClassReachabilityGraph::set_completion_observation(bool enabled, bool saturate) {
   completion_observation_ = enabled;
+  saturate_observation_ = saturate;
 }
 
 bool StateClassReachabilityGraph::observation_active() const {
@@ -62,6 +63,9 @@ bool StateClassReachabilityGraph::job_clock_layout() const {
 }
 
 int StateClassReachabilityGraph::observation_cap(size_t task) const {
+  if (!saturate_observation_) {
+    return INF_TIME;
+  }
   const std::vector<TaskChain>& tasks = task_chains();
   if (task >= tasks.size()) {
     return INF_TIME;

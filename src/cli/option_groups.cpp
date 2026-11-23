@@ -4,6 +4,15 @@
 
 namespace cli {
 
+void add_priority_wcrt_option(CLI::App* cmd, app::PipelineOptions& opts) {
+  cmd->add_option("--priority-wcrt", opts.priority_wcrt_task,
+                  "Analyze one startup job, hiding independent lower-priority work. "
+                  "PTPN and SCG exports describe the projected net.")
+      ->check(CLI::Validator([](std::string& task) {
+        return task.empty() ? std::string("Expected a task name") : std::string{};
+      }, "TASK"));
+}
+
 void add_diagnostics_options(CLI::App* cmd, app::DiagnosticsOptions& diagnostics) {
   cmd->add_option("--diagnostics", diagnostics.output,
                   "Emit the versioned diagnostics JSON envelope on stdout (json)")

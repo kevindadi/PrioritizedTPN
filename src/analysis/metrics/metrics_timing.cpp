@@ -325,9 +325,12 @@ void MetricsAnalyzer::compute_task_timing(MetricsReport& report) {
       bool capped = false;
       bool infinite_proven = false;
       if (observation_usable) {
-        int cap = task_observation_cap(tm.deadline, tm.period);
-        if (cap == INF_TIME) {
-          cap = fallback_observation_cap(net_);
+        int cap = INF_TIME;
+        if (saturate_observation_) {
+          cap = task_observation_cap(tm.deadline, tm.period);
+          if (cap == INF_TIME) {
+            cap = fallback_observation_cap(net_);
+          }
         }
         const CompletionObservation obs = observe_completions(task, cap);
         observation_used = true;

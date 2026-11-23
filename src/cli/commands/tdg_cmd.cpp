@@ -15,6 +15,7 @@ class TdgCommand final : public Command {
     app_ = root.add_subcommand("tdg", "Analyze from TDG JSON input");
     app_->add_option("-f,--file", input_file_, "Input TDG JSON file")->required(true);
     add_common_pipeline_options(app_, options_);
+    add_priority_wcrt_option(app_, options_);
     app_->add_option("--policy", policy_,
                      "Override the TDG scheduling policy for lowering and native analysis")
         ->transform([this](const std::string& value) {
