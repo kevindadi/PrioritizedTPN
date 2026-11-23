@@ -72,7 +72,6 @@ TEST(ResponseDominance, PreservesTargetResponseAcrossDifferentCompletionOrders) 
   });
   ASSERT_NE(original, full_tasks.end());
   EXPECT_EQ(*original, tasks[0]);
-  EXPECT_GT(reduced.at("response_dominated").get<size_t>(), 0u);
   EXPECT_LT(reduced.at("states").get<size_t>(), baseline.at("states").get<size_t>());
   EXPECT_TRUE(reduced.at("deadlock").is_null());
 }
@@ -163,6 +162,22 @@ petri::PTPN make_merging_net() {
   info.bcet = 100;
   ptpn.set_task_info("T", info);
   return ptpn;
+}
+
+TEST(ResponseDominance, DropsLaterDiscoveredDominatedHistory) {
+  // Explicit transition IDs arrange for the wider history to be visited first,
+  // independent of the iteration order of the TDG node map.
+  const auto net = make_merging_net();
+  StateClassReachabilityGraph exact(net);
+  exact.set_completion_observation(true, /*saturate=*/false);
+  const size_t exact_states = exact.build(100);
+  ASSERT_FALSE(exact.get_statistics().truncated);
+
+  StateClassReachabilityGraph focused(net);
+  focused.set_response_dominance("T");
+  EXPECT_LT(focused.build(100), exact_states);
+  ASSERT_FALSE(focused.get_statistics().truncated);
+  EXPECT_GT(focused.get_statistics().response_dominated, 0u);
 }
 
 MetricsReport analyze(const StateClassReachabilityGraph& graph, const petri::PTPN& net, bool exact,
