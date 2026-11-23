@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -12,6 +13,7 @@
 #include "analysis/metrics/metrics_internal.h"
 #include "analysis/metrics/metrics_json.h"
 #include "analysis/reachability/ptpn_analysis.h"
+#include "cli_test_helpers.h"
 #include "model/petri.h"
 
 namespace {
@@ -242,6 +244,99 @@ TEST(MetricsTest, PeriodicLocalDeadlockIsDetected) {
   EXPECT_TRUE(t.local_deadlock);
   EXPECT_GT(t.local_deadlock_scc_size, 0u);
   EXPECT_FALSE(report.schedulable);
+}
+
+TEST(MetricsTest, PeriodicCertificateRejectsAnInfeasibleSymbolicCycle) {
+  petri::PTPN net = make_starved_task_net();
+  auto low = net.task_info().at("L");
+  low.deadline = 1;
+  net.set_task_info("L", low);
+  StateClassReachabilityGraph replay(net);
+  state_class::SCGraph graph;
+  const auto initial = boost::add_vertex(replay.compute_initial_class(), graph);
+  const auto timer = net.periodic_transitions().at("H").index();
+  // At the initial marking Hget_core must happen before any delay. A graph
+  // edge claiming H_fire can repeat here is not a concrete execution.
+  boost::add_edge(initial, initial, state_class::FiringEdge(static_cast<int>(timer), 2, 2), graph);
+  MetricsAnalyzer analyzer(graph, net, initial, /*exact=*/false);
+  analyzer.set_periodic_certification(true);
+  const auto report = analyzer.analyze();
+  ASSERT_EQ(report.tasks.size(), 1u);
+  EXPECT_FALSE(report.tasks.front().local_deadlock);
+  EXPECT_FALSE(report.tasks.front().periodic_certificate.has_value());
+  EXPECT_EQ(report.tasks.front().verdict, state_class::DeadlineVerdict::Unknown);
+  EXPECT_EQ(report.schedulability, state_class::Schedulability::Unknown);
+}
+
+TEST(MetricsTest, PeriodicCertificateRejectsPersistentClockDrift) {
+  petri::PTPN net = make_starved_task_net();
+  const auto watchdog_place = net.add_place("watchdog", 1);
+  const auto watchdog = net.add_transition("watchdog_tick", petri::TimeInterval(50, 50), 0, -1);
+  net.set_initial_marking(watchdog_place, 1);
+  net.set_pre_arc(watchdog_place, watchdog, 1);
+  net.set_post_arc(watchdog, watchdog_place, 1);
+
+  StateClassReachabilityGraph replay(net);
+  state_class::SCGraph graph;
+  const auto initial = boost::add_vertex(replay.compute_initial_class(), graph);
+  auto cursor = initial;
+  auto anchor = initial;
+  const std::vector<std::string> word = {"Hget_core", "H_fire", "Hexec", "Hconsume", "Hget_core"};
+  for (size_t i = 0; i < word.size(); ++i) {
+    const auto& transitions = net.transitions();
+    const auto found = std::find_if(transitions.begin(), transitions.end(), [&](const auto& t) {
+      return t.name == word[i];
+    });
+    ASSERT_NE(found, transitions.end());
+    const size_t t = static_cast<size_t>(found - transitions.begin());
+    const auto elapsed = replay.time_elapse(boost::get(boost::vertex_name, graph, cursor));
+    auto successors = replay.fire_all(elapsed, t);
+    ASSERT_EQ(successors.size(), 1u);
+    auto& next = successors.front();
+    if (i + 1 == word.size()) {
+      const auto& original = boost::get(boost::vertex_name, graph, anchor);
+      ASSERT_EQ(original.marking, next.marking);
+      ASSERT_EQ(original.priority_enabled, next.priority_enabled);
+      ASSERT_FALSE(original.zone == next.zone);  // watchdog has advanced by two ticks
+      boost::add_edge(cursor, anchor, state_class::FiringEdge(static_cast<int>(t), 0, 0), graph);
+    } else {
+      next.id = boost::num_vertices(graph);
+      const auto destination = boost::add_vertex(std::move(next), graph);
+      boost::add_edge(cursor, destination, state_class::FiringEdge(static_cast<int>(t), 0, 0), graph);
+      cursor = destination;
+      if (i == 0) {
+        anchor = cursor;
+      }
+    }
+  }
+  MetricsAnalyzer analyzer(graph, net, initial, /*exact=*/false);
+  analyzer.set_periodic_certification(true);
+  const auto report = analyzer.analyze();
+  ASSERT_EQ(report.tasks.size(), 1u);
+  EXPECT_FALSE(report.tasks.front().periodic_certificate);
+  EXPECT_EQ(report.schedulability, state_class::Schedulability::Unknown);
+}
+
+TEST(MetricsTest, PeriodicCertificateExportsAReachablePositiveTimeCycle) {
+  const std::string input = ptpn_test::write_temp_file("periodic", ".json", R"({
+    "graph": {"name": "Starvation"},
+    "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed",
+      "start": [{"task": "H"}, {"task": "L"}],
+      "periodic": [{"task": "H", "period": 2}]},
+    "nodes": [
+      {"id": "H", "type": "task", "priority": 10, "time": [[2, 2]], "locks": []},
+      {"id": "L", "type": "task", "priority": 1, "time": [[1, 1]], "locks": []}],
+    "edges": []
+  })");
+  const auto run = ptpn_test::run_cli({"tdg", "-f", input, "--certify-periodic", "--diagnostics", "json"});
+  ASSERT_EQ(run.exit_code, 6) << run.stdout_text << run.stderr_text;
+  const auto result = nlohmann::json::parse(run.stdout_text).at("result").at("analysis");
+  const auto& certificate = result.at("periodic_noncompletion").at("L");
+  EXPECT_EQ(certificate.at("status"), "certified");
+  EXPECT_EQ(certificate.at("cycle_duration"), 2);
+  EXPECT_FALSE(certificate.at("cycle").empty());
+  EXPECT_FALSE(certificate.at("initial_active").empty());
+  EXPECT_EQ(result.at("periodic_noncompletion").at("H").at("status"), "unknown");
 }
 
 size_t place_index(const petri::PTPN& net, const std::string& name) {

@@ -58,6 +58,9 @@ void add_common_pipeline_options(CLI::App* cmd, app::PipelineOptions& opts,
   cmd->add_option("-m,--max-states", opts.max_states,
                   "Maximum number of states in reachability graph (default: 10000)");
   cmd->add_flag("--no-analysis", opts.skip_analysis, "Skip state-class reachability analysis");
+  cmd->add_flag("--certify-periodic", opts.certify_periodic,
+                "Search for a concrete positive-time periodic noncompletion witness "
+                "(fixed-priority resume with closed intervals; export via diagnostics or metrics)");
   cmd->add_flag("--debug", opts.debug_mode, "Enable debug logging");
   cmd->add_option("--canonicalization", opts.canonicalization_mode,
                   "Canonicalization mode: equality, max-lower, or intersection "

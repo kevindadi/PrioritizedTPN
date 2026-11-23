@@ -67,6 +67,7 @@ struct PipelineOptions {
   // dwell-DP WCRT bounds. Faster on models with many tasks, but the values are
   // bounds and deadline verdicts become conservative.
   bool no_exact_wcrt = false;
+  bool certify_periodic = false;
   // Resource budget for the state-class exploration: a wall-clock limit in
   // seconds and an absolute process-memory ceiling in MB. Exceeding either
   // stops the build with partial results and an E-PERF-003/004 diagnostic.
