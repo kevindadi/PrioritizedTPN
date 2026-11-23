@@ -156,7 +156,8 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
   // neither proven nor refuted; null makes that explicit instead of emitting a
   // misleading boolean.
   out << "  \"schedulable\": ";
-  if (!report.deadlock_analysis_certified) {
+  if (!report.deadlock_analysis_certified ||
+      (report.periodic_certification && report.schedulability == Schedulability::Unknown)) {
     out << "null";
   } else {
     out << (report.schedulable ? "true" : "false");
@@ -214,7 +215,11 @@ bool save_metrics_json(const MetricsReport& report, const std::string& file_path
     out << "      \"max_in_flight\": " << t.max_in_flight << ",\n";
     out << "      \"slack\": " << (t.has_deadline ? time_json(t.slack) : std::string("null"))
         << ",\n";
-    out << "      \"deadline_missed\": " << (t.deadline_missed ? "true" : "false") << ",\n";
+    out << "      \"deadline_missed\": "
+        << (report.periodic_certification && t.has_deadline &&
+                    t.verdict == DeadlineVerdict::Unknown
+                ? "null" : (t.deadline_missed ? "true" : "false"))
+        << ",\n";
     if (t.has_deadline) {
       out << "      \"verdict\": \"" << deadline_verdict_to_string(t.verdict) << "\",\n";
     }

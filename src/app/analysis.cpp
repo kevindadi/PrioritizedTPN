@@ -858,8 +858,12 @@ void record_analysis_diagnostics(ptpn::Diagnostics* diagnostics,
   analysis["deadlock_states"] = report.response_task.empty()
                                     ? nlohmann::json(report.deadlock_states.size())
                                     : nlohmann::json(nullptr);
-  analysis["schedulable"] = report.deadlock_analysis_certified ? nlohmann::json(report.schedulable)
-                                                               : nlohmann::json(nullptr);
+  const bool schedulability_known =
+      report.deadlock_analysis_certified &&
+      (!report.periodic_certification ||
+       report.schedulability != state_class::Schedulability::Unknown);
+  analysis["schedulable"] = schedulability_known ? nlohmann::json(report.schedulable)
+                                                : nlohmann::json(nullptr);
   analysis["schedulability"] = state_class::schedulability_to_string(report.schedulability);
   analysis["local_deadlocks"] = report.response_task.empty() ? nlohmann::json(local_deadlocks)
                                                               : nlohmann::json(nullptr);

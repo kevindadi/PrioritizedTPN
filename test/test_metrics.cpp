@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstddef>
+#include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <iterator>
@@ -337,6 +338,28 @@ TEST(MetricsTest, PeriodicCertificateExportsAReachablePositiveTimeCycle) {
   EXPECT_FALSE(certificate.at("cycle").empty());
   EXPECT_FALSE(certificate.at("initial_active").empty());
   EXPECT_EQ(result.at("periodic_noncompletion").at("H").at("status"), "unknown");
+}
+
+TEST(MetricsTest, PeriodicCertificateExportsUnknownWithoutClaimingAbsence) {
+  const std::string input = ptpn_test::write_temp_file("aperiodic", ".json", R"({
+    "graph": {"name": "Aperiodic"},
+    "configuration": {"num_cpus": 1, "cores_per_cpu": 1, "policy": "fixed",
+      "start": [{"task": "T"}]},
+    "nodes": [{"id": "T", "type": "task", "priority": 1, "time": [[1, 1]], "locks": []}],
+    "edges": []
+  })");
+  const std::string metrics_path = input + ".metrics.json";
+  const auto run = ptpn_test::run_cli({"tdg", "-f", input, "--certify-periodic", "--diagnostics", "json",
+                                      "--export-metrics", metrics_path});
+  ASSERT_EQ(run.exit_code, 0) << run.stdout_text << run.stderr_text;
+  const auto analysis = nlohmann::json::parse(run.stdout_text).at("result").at("analysis");
+  EXPECT_TRUE(analysis.at("schedulable").is_null());
+  EXPECT_EQ(analysis.at("periodic_noncompletion").at("T").at("status"), "unknown");
+  const auto metrics = nlohmann::json::parse(ptpn_test::read_file(metrics_path));
+  std::filesystem::remove(metrics_path);
+  EXPECT_TRUE(metrics.at("schedulable").is_null());
+  EXPECT_TRUE(metrics.at("tasks").at(0).at("local_deadlock").is_null());
+  EXPECT_EQ(metrics.at("periodic_noncompletion"), analysis.at("periodic_noncompletion"));
 }
 
 size_t place_index(const petri::PTPN& net, const std::string& name) {
